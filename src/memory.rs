@@ -1,4 +1,4 @@
-use crate::cartridge::{Cartridge, Ram as CartridgeRam, Rom, RomSize, RamSize};
+use crate::cartridge::{Cartridge, Ram as CartridgeRam, RamSize, Rom, RomSize};
 use crate::error::Result;
 
 #[derive(Clone, Copy, Debug)]
@@ -114,10 +114,10 @@ impl Ram {
 impl std::fmt::Debug for Ram {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Memory")
-         .field("bank0", &self.bank0[0])
-         .field("bank1", &self.bank1[0])
-         .field("active_bank", &self.active_bank)
-         .finish()
+            .field("bank0", &self.bank0[0])
+            .field("bank1", &self.bank1[0])
+            .field("active_bank", &self.active_bank)
+            .finish()
     }
 }
 
@@ -137,7 +137,6 @@ pub struct Memory {
     ram: Ram,
 
     // ..ignored
-
     /// 0xFF80 - 0xFFFE
     high_ram: [u8; 0x80],
 
@@ -161,23 +160,15 @@ impl Memory {
     /// This will be converted into a read from the relevant memory section.
     pub fn read(&self, addr: Addr) -> u8 {
         match addr.0 {
-            0x0000..=0x7FFF => {
-                self.rom.read(addr)
-            }
-            0x8000..=0x9FFF => {
-                self.vram.read(addr)
-            }
-            0xA000..=0xBFFF => {
-                self.ram_switchable.as_ref().unwrap().read(addr)
-            }
-            0xC000..=0xDFFF => {
-                self.ram.read(addr)
-            }
+            0x0000..=0x7FFF => self.rom.read(addr),
+            0x8000..=0x9FFF => self.vram.read(addr),
+            0xA000..=0xBFFF => self.ram_switchable.as_ref().unwrap().read(addr),
+            0xC000..=0xDFFF => self.ram.read(addr),
             0xFF80..=0xFFFE => {
                 let addr = usize::from(addr - Addr(0xFF80));
                 self.high_ram[addr]
             }
-            _ => panic!("abc")
+            _ => panic!("abc"),
         }
     }
 }

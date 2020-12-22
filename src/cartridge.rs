@@ -22,10 +22,10 @@ pub enum RamSize {
 impl From<RamSize> for usize {
     fn from(s: RamSize) -> usize {
         match s {
-            RamSize::_2K   => 2 * 1024,
-            RamSize::_8K   => 8 * 1024,
-            RamSize::_32K  => 32 * 1024,
-            RamSize::_64K  => 64 * 1024,
+            RamSize::_2K => 2 * 1024,
+            RamSize::_8K => 8 * 1024,
+            RamSize::_32K => 32 * 1024,
+            RamSize::_64K => 64 * 1024,
             RamSize::_128K => 128 * 1024,
             RamSize::NotPresent => 0,
         }
@@ -37,11 +37,11 @@ impl TryFrom<u8> for RamSize {
 
     fn try_from(val: u8) -> std::result::Result<Self, Self::Error> {
         match val {
-            x if x == RamSize::_2K as u8        => Ok(RamSize::_2K),
-            x if x == RamSize::_8K as u8        => Ok(RamSize::_8K),
-            x if x == RamSize::_32K as u8       => Ok(RamSize::_32K),
-            x if x == RamSize::_64K as u8       => Ok(RamSize::_64K),
-            x if x == RamSize::_128K as u8      => Ok(RamSize::_128K),
+            x if x == RamSize::_2K as u8 => Ok(RamSize::_2K),
+            x if x == RamSize::_8K as u8 => Ok(RamSize::_8K),
+            x if x == RamSize::_32K as u8 => Ok(RamSize::_32K),
+            x if x == RamSize::_64K as u8 => Ok(RamSize::_64K),
+            x if x == RamSize::_128K as u8 => Ok(RamSize::_128K),
             x if x == RamSize::NotPresent as u8 => Ok(RamSize::NotPresent),
             _ => Err(Error::InvalidValue(format!("Invalid RamSize: {}", val))),
         }
@@ -59,7 +59,7 @@ pub enum Ram {
         active_bank: u16,
         num_banks: u16,
         ram_size: RamSize,
-    }
+    },
 }
 
 impl Ram {
@@ -70,10 +70,7 @@ impl Ram {
             // For 2K and 8K RAM sizes, the RAM is unbanked
             RamSize::_2K | RamSize::_8K => {
                 let data = [0u8; Self::BANK_SIZE];
-                Some(Self::Unbanked {
-                    data,
-                    ram_size,
-                })
+                Some(Self::Unbanked { data, ram_size })
             }
             RamSize::NotPresent => {
                 // TODO: logging
@@ -102,10 +99,10 @@ impl Ram {
     pub fn read(&self, addr: Addr) -> u8 {
         let addr: usize = addr.into();
         match &self {
-            Self::Unbanked { data, .. } => {
-                data[addr]
-            }
-            Self::Banked { data, active_bank, .. } => {
+            Self::Unbanked { data, .. } => data[addr],
+            Self::Banked {
+                data, active_bank, ..
+            } => {
                 let bank_offset = *active_bank as usize * Self::BANK_SIZE;
                 data[bank_offset + addr]
             }
@@ -125,7 +122,9 @@ impl Ram {
             Self::Unbanked { data, .. } => {
                 data[addr] = value;
             }
-            Self::Banked { data, active_bank, .. } => {
+            Self::Banked {
+                data, active_bank, ..
+            } => {
                 let bank_offset = *active_bank as usize * Self::BANK_SIZE;
                 data[bank_offset + addr] = value;
             }
@@ -136,18 +135,21 @@ impl Ram {
 impl std::fmt::Debug for Ram {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Unbanked { data, ram_size } => {
-                f.debug_struct("CartridgeRam::Unbanked")
+            Self::Unbanked { data, ram_size } => f
+                .debug_struct("CartridgeRam::Unbanked")
                 .field("ram_size", &ram_size)
-                .finish()
-            }
-            Self::Banked { data, active_bank, num_banks, ram_size } => {
-                f.debug_struct("CartridgeRam::Banked")
+                .finish(),
+            Self::Banked {
+                data,
+                active_bank,
+                num_banks,
+                ram_size,
+            } => f
+                .debug_struct("CartridgeRam::Banked")
                 .field("active_bank", &active_bank)
                 .field("num_banks", &num_banks)
                 .field("ram_size", &ram_size)
-                .finish()
-            }
+                .finish(),
         }
     }
 }
@@ -174,18 +176,18 @@ pub enum RomSize {
 impl From<RomSize> for usize {
     fn from(s: RomSize) -> usize {
         match s {
-            RomSize::_32K  => 2   * Rom::BANK_SIZE,   // 2 x 16K banks
-            RomSize::_64K  => 4   * Rom::BANK_SIZE,   // 4 x 16K banks
-            RomSize::_128K => 8   * Rom::BANK_SIZE,   // 8 x 16K banks
-            RomSize::_256K => 16  * Rom::BANK_SIZE,   // 8 x 16K banks
-            RomSize::_512K => 32  * Rom::BANK_SIZE,  // 32 x 16K banks
-            RomSize::_1M   => 64  * Rom::BANK_SIZE,  // 64 x 16K banks
-            RomSize::_1_1M => 72  * Rom::BANK_SIZE,  // 72 x 16K banks
-            RomSize::_1_2M => 80  * Rom::BANK_SIZE,  // 80 x 16K banks
-            RomSize::_1_5M => 96  * Rom::BANK_SIZE,  // 96 x 16K banks
-            RomSize::_2M   => 128 * Rom::BANK_SIZE, // 128 x 16K banks
-            RomSize::_4M   => 256 * Rom::BANK_SIZE, // 256 x 16K banks
-            RomSize::_8M   => 512 * Rom::BANK_SIZE, // 512 x 16K banks
+            RomSize::_32K => 2 * Rom::BANK_SIZE,   // 2 x 16K banks
+            RomSize::_64K => 4 * Rom::BANK_SIZE,   // 4 x 16K banks
+            RomSize::_128K => 8 * Rom::BANK_SIZE,  // 8 x 16K banks
+            RomSize::_256K => 16 * Rom::BANK_SIZE, // 8 x 16K banks
+            RomSize::_512K => 32 * Rom::BANK_SIZE, // 32 x 16K banks
+            RomSize::_1M => 64 * Rom::BANK_SIZE,   // 64 x 16K banks
+            RomSize::_1_1M => 72 * Rom::BANK_SIZE, // 72 x 16K banks
+            RomSize::_1_2M => 80 * Rom::BANK_SIZE, // 80 x 16K banks
+            RomSize::_1_5M => 96 * Rom::BANK_SIZE, // 96 x 16K banks
+            RomSize::_2M => 128 * Rom::BANK_SIZE,  // 128 x 16K banks
+            RomSize::_4M => 256 * Rom::BANK_SIZE,  // 256 x 16K banks
+            RomSize::_8M => 512 * Rom::BANK_SIZE,  // 512 x 16K banks
         }
     }
 }
@@ -195,18 +197,18 @@ impl TryFrom<u8> for RomSize {
 
     fn try_from(val: u8) -> std::result::Result<Self, Self::Error> {
         match val {
-            x if x == RomSize::_32K as u8  => Ok(RomSize::_32K),
-            x if x == RomSize::_64K as u8  => Ok(RomSize::_64K),
+            x if x == RomSize::_32K as u8 => Ok(RomSize::_32K),
+            x if x == RomSize::_64K as u8 => Ok(RomSize::_64K),
             x if x == RomSize::_128K as u8 => Ok(RomSize::_128K),
             x if x == RomSize::_256K as u8 => Ok(RomSize::_256K),
             x if x == RomSize::_512K as u8 => Ok(RomSize::_512K),
-            x if x == RomSize::_1M as u8   => Ok(RomSize::_1M),
+            x if x == RomSize::_1M as u8 => Ok(RomSize::_1M),
             x if x == RomSize::_1_1M as u8 => Ok(RomSize::_1_1M),
             x if x == RomSize::_1_2M as u8 => Ok(RomSize::_1_2M),
             x if x == RomSize::_1_5M as u8 => Ok(RomSize::_1_5M),
-            x if x == RomSize::_2M as u8   => Ok(RomSize::_2M),
-            x if x == RomSize::_4M as u8   => Ok(RomSize::_4M),
-            x if x == RomSize::_8M as u8   => Ok(RomSize::_8M),
+            x if x == RomSize::_2M as u8 => Ok(RomSize::_2M),
+            x if x == RomSize::_4M as u8 => Ok(RomSize::_4M),
+            x if x == RomSize::_8M as u8 => Ok(RomSize::_8M),
             _ => Err(Error::InvalidValue(format!("Invalid RomSize: {}", val))),
         }
     }
@@ -312,12 +314,12 @@ impl Rom {
 impl std::fmt::Debug for Rom {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Memory")
-         .field("bank0", &self.bank0[0])
-         .field("bank1", &self.bank1[0])
-         .field("active_bank", &self.active_bank)
-         .field("num_banks", &self.num_banks)
-         .field("rom_size", &self.rom_size)
-         .finish()
+            .field("bank0", &self.bank0[0])
+            .field("bank1", &self.bank1[0])
+            .field("active_bank", &self.active_bank)
+            .field("num_banks", &self.num_banks)
+            .field("rom_size", &self.rom_size)
+            .finish()
     }
 }
 
@@ -360,9 +362,7 @@ impl CartridgeType {
     fn is_none(&self) -> bool {
         use CartridgeType::*;
         match self {
-            Rom | RomRam | RomRamBattery => {
-                true
-            }
+            Rom | RomRam | RomRamBattery => true,
             _ => false,
         }
     }
@@ -370,9 +370,7 @@ impl CartridgeType {
     fn is_mbc1(&self) -> bool {
         use CartridgeType::*;
         match self {
-            Mbc1 | Mbc1Ram | Mbc1RamBattery => {
-                true
-            }
+            Mbc1 | Mbc1Ram | Mbc1RamBattery => true,
             _ => false,
         }
     }
@@ -380,9 +378,7 @@ impl CartridgeType {
     fn is_mbc2(&self) -> bool {
         use CartridgeType::*;
         match self {
-            Mbc2 | Mbc2Battery => {
-                true
-            }
+            Mbc2 | Mbc2Battery => true,
             _ => false,
         }
     }
@@ -390,10 +386,7 @@ impl CartridgeType {
     fn is_mbc3(&self) -> bool {
         use CartridgeType::*;
         match self {
-            Mbc3 | Mbc3Ram | Mbc3RamBattery | Mbc3TimerBattery |
-            Mbc3TimerRamBattery => {
-                true
-            }
+            Mbc3 | Mbc3Ram | Mbc3RamBattery | Mbc3TimerBattery | Mbc3TimerRamBattery => true,
             _ => false,
         }
     }
@@ -401,9 +394,7 @@ impl CartridgeType {
     fn is_mbc4(&self) -> bool {
         use CartridgeType::*;
         match self {
-            Mbc4 | Mbc4Ram | Mbc4RamBattery => {
-                true
-            }
+            Mbc4 | Mbc4Ram | Mbc4RamBattery => true,
             _ => false,
         }
     }
@@ -411,8 +402,7 @@ impl CartridgeType {
     fn is_mbc5(&self) -> bool {
         use CartridgeType::*;
         match self {
-            Mbc5 | Mbc5Ram | Mbc5RamBattery | Mbc5Rumble |
-            Mbc5RumbleRam | Mbc5RumbleRamBattery => {
+            Mbc5 | Mbc5Ram | Mbc5RamBattery | Mbc5Rumble | Mbc5RumbleRam | Mbc5RumbleRamBattery => {
                 true
             }
             _ => false,
@@ -437,7 +427,9 @@ impl TryFrom<u8> for CartridgeType {
             x if x == CartridgeType::Mmm01Ram as u8 => Ok(CartridgeType::Mmm01Ram),
             x if x == CartridgeType::Mmm01RamBattery as u8 => Ok(CartridgeType::Mmm01RamBattery),
             x if x == CartridgeType::Mbc3TimerBattery as u8 => Ok(CartridgeType::Mbc3TimerBattery),
-            x if x == CartridgeType::Mbc3TimerRamBattery as u8 => Ok(CartridgeType::Mbc3TimerRamBattery),
+            x if x == CartridgeType::Mbc3TimerRamBattery as u8 => {
+                Ok(CartridgeType::Mbc3TimerRamBattery)
+            }
             x if x == CartridgeType::Mbc3 as u8 => Ok(CartridgeType::Mbc3),
             x if x == CartridgeType::Mbc3Ram as u8 => Ok(CartridgeType::Mbc3Ram),
             x if x == CartridgeType::Mbc3RamBattery as u8 => Ok(CartridgeType::Mbc3RamBattery),
@@ -449,12 +441,17 @@ impl TryFrom<u8> for CartridgeType {
             x if x == CartridgeType::Mbc5RamBattery as u8 => Ok(CartridgeType::Mbc5RamBattery),
             x if x == CartridgeType::Mbc5Rumble as u8 => Ok(CartridgeType::Mbc5Rumble),
             x if x == CartridgeType::Mbc5RumbleRam as u8 => Ok(CartridgeType::Mbc5RumbleRam),
-            x if x == CartridgeType::Mbc5RumbleRamBattery as u8 => Ok(CartridgeType::Mbc5RumbleRamBattery),
+            x if x == CartridgeType::Mbc5RumbleRamBattery as u8 => {
+                Ok(CartridgeType::Mbc5RumbleRamBattery)
+            }
             x if x == CartridgeType::PocketCamera as u8 => Ok(CartridgeType::PocketCamera),
             x if x == CartridgeType::BandaiTama5 as u8 => Ok(CartridgeType::BandaiTama5),
             x if x == CartridgeType::HuC3 as u8 => Ok(CartridgeType::HuC3),
             x if x == CartridgeType::HuC1RamBattery as u8 => Ok(CartridgeType::HuC1RamBattery),
-            _ => Err(Error::InvalidValue(format!("Invalid CartridgeType: {}", val))),
+            _ => Err(Error::InvalidValue(format!(
+                "Invalid CartridgeType: {}",
+                val
+            ))),
         }
     }
 }
@@ -481,10 +478,7 @@ impl Cartridge {
         rom_file.seek(SeekFrom::Start(Self::HEADER_OFFSET))?;
         rom_file.read(&mut header)?;
 
-        Ok(Self {
-            rom_file,
-            header,
-        })
+        Ok(Self { rom_file, header })
     }
 
     /// Raw header data
@@ -520,7 +514,7 @@ impl Cartridge {
         let cgb = self.header[0x43];
         match cgb {
             0x80 | 0xC0 => true,
-            _   => false,
+            _ => false,
         }
     }
 
@@ -533,7 +527,7 @@ impl Cartridge {
             "01" => "Nintendo R&D 1",
             "13" => "Electronic Arts",
             "31" => "Nintendo",
-            _    => "Other",
+            _ => "Other",
         })
     }
 
@@ -543,7 +537,7 @@ impl Cartridge {
         match sgb {
             0x0 => false,
             0x3 => true,
-            _   => panic!("Unknown SGB value: {}", sgb),
+            _ => panic!("Unknown SGB value: {}", sgb),
         }
     }
 
@@ -569,7 +563,7 @@ impl Cartridge {
         match code {
             0x0 => true,
             0x1 => false,
-            _   => panic!("Unknown destination code: {}", code),
+            _ => panic!("Unknown destination code: {}", code),
         }
     }
 
@@ -620,15 +614,17 @@ mod test {
     #[test]
     fn test_valid_cartridge_header() {
         let sample_rom_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-                                   .join("samples")
-                                   .join("pokemon_gold.gbc");
+            .join("samples")
+            .join("pokemon_gold.gbc");
 
         let cartridge = Cartridge::from_file(&sample_rom_path).unwrap();
 
         // Info: https://datacrystal.romhacking.net/wiki/Pok%C3%A9mon_Gold_and_Silver
         assert_eq!(cartridge.title().unwrap(), "POKEMON_GLDAAUE");
-        assert_eq!(cartridge.cartridge_type().unwrap(),
-                   CartridgeType::Mbc3TimerRamBattery);
+        assert_eq!(
+            cartridge.cartridge_type().unwrap(),
+            CartridgeType::Mbc3TimerRamBattery
+        );
         assert_eq!(cartridge.ram_size().unwrap(), RamSize::_32K);
         assert_eq!(cartridge.rom_size().unwrap(), RomSize::_2M);
         assert_eq!(cartridge.sgb(), true);

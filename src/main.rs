@@ -22,10 +22,7 @@ fn main() -> Result<()> {
 
     dbg!(&memory);
 
-    let gameboy = Gameboy {
-        cpu,
-        cartridge,
-    };
+    let gameboy = Gameboy { cpu, cartridge };
 
     Ok(())
 }

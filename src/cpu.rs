@@ -11,10 +11,7 @@ impl Cpu {
     pub fn new(memory: Memory) -> Self {
         let registers = RegisterFile::new();
 
-        Self {
-            memory,
-            registers,
-        }
+        Self { memory, registers }
     }
 
     pub fn memory(&self) -> &Memory {
