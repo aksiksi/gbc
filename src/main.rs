@@ -20,6 +20,8 @@ fn main() -> Result<()> {
     let cpu = Cpu::new(memory);
     let memory = cpu.memory();
 
+    dbg!(&memory);
+
     let gameboy = Gameboy {
         cpu,
         cartridge,

@@ -44,35 +44,82 @@ impl std::ops::Add for Addr {
     }
 }
 
-/// Internal console RAM (8K)
-pub struct Ram([u8; Self::RAM_SIZE]);
+/// Internal console work RAM
+///
+/// 0xC000 - 0xCFFF: Bank 0,   4K, static
+/// 0xD000 - 0xDFFF: Bank 1-7, 4K, switchable
+pub struct Ram {
+    /// Static bank, 4K
+    bank0: [u8; Self::BANK_SIZE],
+
+    /// Dynamic bank, depends on active bank
+    bank1: Vec<u8>,
+
+    /// Currently active bank -- ignored in non-CGB mode
+    active_bank: u16,
+}
 
 impl Ram {
-    const RAM_SIZE: usize = 8 * 1024;
+    const BANK_SIZE: usize = 4 * 1024; // 4K
+    const NUM_BANKS: usize = 8;
 
     pub fn new() -> Self {
-        Self([0u8; Self::RAM_SIZE])
+        let bank0 = [0u8; Self::BANK_SIZE];
+        let bank1 = vec![0u8; Self::BANK_SIZE * Self::NUM_BANKS];
+
+        Self {
+            bank0,
+            bank1,
+            active_bank: 0,
+        }
     }
 
     #[inline]
     pub fn read(&self, addr: Addr) -> u8 {
-        self.0[addr.0 as usize]
+        let addr: usize = addr.into();
+
+        match addr {
+            0xC000..=0xCFFF => {
+                // Bank 0 (static)
+                self.bank0[addr]
+            }
+            0xD000..=0xDFFF => {
+                // Bank 1 (dynamic)
+                let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
+                self.bank1[bank_offset + addr]
+            }
+            _ => panic!("Unexpected read from: {}", addr),
+        }
     }
 
     #[inline]
     pub fn write(&mut self, addr: Addr, value: u8) {
-        self.0[addr.0 as usize] = value
+        let addr: usize = addr.into();
+
+        match addr {
+            0xC000..=0xCFFF => {
+                // Bank 0 (static)
+                self.bank0[addr] = value;
+            }
+            0xD000..=0xDFFF => {
+                // Bank 1 (dynamic)
+                let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
+                self.bank1[bank_offset + addr] = value;
+            }
+            _ => panic!("Unexpected write from: {}", addr),
+        }
     }
 }
 
 impl std::fmt::Debug for Ram {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Ram")
-         .field("size", &self.0.len())
+        f.debug_struct("Memory")
+         .field("bank0", &self.bank0[0])
+         .field("bank1", &self.bank1[0])
+         .field("active_bank", &self.active_bank)
          .finish()
     }
 }
-
 
 /// 64K memory map for the GBC
 #[derive(Debug)]
@@ -84,7 +131,7 @@ pub struct Memory {
     vram: Ram,
 
     /// 0xA000 - 0xBFFF
-    ram_switchable: CartridgeRam,
+    ram_switchable: Option<CartridgeRam>,
 
     /// 0xC000 - 0xDFFF
     ram: Ram,
@@ -102,8 +149,8 @@ impl Memory {
     pub fn from_cartridge(cartridge: &mut Cartridge) -> Result<Self> {
         Ok(Self {
             rom: cartridge.get_rom()?,
-            vram: Ram::new(),
-            ram_switchable: CartridgeRam::new(RamSize::_2K),
+            vram: Ram::new(), // TODO(aksiksi): Define new type for VRAM?
+            ram_switchable: cartridge.get_ram()?,
             ram: Ram::new(),
             high_ram: [0u8; 0x80],
             int_enable_reg: 0,
@@ -118,16 +165,13 @@ impl Memory {
                 self.rom.read(addr)
             }
             0x8000..=0x9FFF => {
-                let base = Addr(0x8000);
-                self.vram.read(addr - base)
+                self.vram.read(addr)
             }
             0xA000..=0xBFFF => {
-                let base = Addr(0xA000);
-                self.ram_switchable.read(addr - base)
+                self.ram_switchable.as_ref().unwrap().read(addr)
             }
             0xC000..=0xDFFF => {
-                let base = Addr(0xC000);
-                self.ram.read(addr - base)
+                self.ram.read(addr)
             }
             0xFF80..=0xFFFE => {
                 let addr = usize::from(addr - Addr(0xFF80));
@@ -135,29 +179,5 @@ impl Memory {
             }
             _ => panic!("abc")
         }
-    }
-
-    // pub fn rom(&self) -> &[u8] {
-    //     &self.rom.0[..]
-    // }
-
-    // pub fn rom_mut(&mut self) -> &mut [u8] {
-    //     &mut self.rom.0[..]
-    // }
-
-    pub fn ram(&self) -> &[u8] {
-        &self.ram.0[..]
-    }
-
-    pub fn ram_mut(&mut self) -> &mut [u8] {
-        &mut self.ram.0[..]
-    }
-
-    pub fn vram(&self) -> &[u8] {
-        &self.vram.0[..]
-    }
-
-    pub fn vram_mut(&mut self) -> &mut [u8] {
-        &mut self.vram.0[..]
     }
 }

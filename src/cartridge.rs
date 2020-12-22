@@ -48,15 +48,16 @@ impl TryFrom<u8> for RamSize {
     }
 }
 
-/// Cartridge RAM memory
+/// Cartridge RAM
 pub enum Ram {
     Unbanked {
-        data: Vec<u8>,
+        data: [u8; Self::BANK_SIZE],
         ram_size: RamSize,
     },
     Banked {
         data: Vec<u8>,
-        active_bank: usize,
+        active_bank: u16,
+        num_banks: u16,
         ram_size: RamSize,
     }
 }
@@ -64,29 +65,34 @@ pub enum Ram {
 impl Ram {
     const BANK_SIZE: usize = 8 * 1024; // 8K
 
-    pub fn new(ram_size: RamSize) -> Self {
-        // Get raw RAM size in bytes
-        let size = usize::from(ram_size);
-        let data = vec![0u8; size];
-
+    pub fn new(ram_size: RamSize) -> Option<Self> {
         match ram_size {
             // For 2K and 8K RAM sizes, the RAM is unbanked
             RamSize::_2K | RamSize::_8K => {
-                Self::Unbanked {
+                let data = [0u8; Self::BANK_SIZE];
+                Some(Self::Unbanked {
                     data,
                     ram_size,
-                }
+                })
             }
             RamSize::NotPresent => {
-                panic!("No cartridge RAM should be created");
+                // TODO: logging
+                eprintln!("No cartridge RAM should be created");
+                None
             }
             // Otherwise, we have banked RAM
             _ => {
-                Self::Banked {
+                // Get raw RAM size in bytes
+                let size = usize::from(ram_size);
+                let data = vec![0u8; size];
+                let num_banks = (size / Self::BANK_SIZE) as u16;
+
+                Some(Self::Banked {
                     data,
-                    ram_size,
                     active_bank: 0,
-                }
+                    num_banks,
+                    ram_size,
+                })
             }
         }
     }
@@ -94,13 +100,14 @@ impl Ram {
     /// Read a byte of data from the current active bank
     #[inline]
     pub fn read(&self, addr: Addr) -> u8 {
+        let addr: usize = addr.into();
         match &self {
             Self::Unbanked { data, .. } => {
-                data[addr.0 as usize]
+                data[addr]
             }
             Self::Banked { data, active_bank, .. } => {
-                let bank_offset = active_bank * Self::BANK_SIZE;
-                data[bank_offset + addr.0 as usize]
+                let bank_offset = *active_bank as usize * Self::BANK_SIZE;
+                data[bank_offset + addr]
             }
         }
     }
@@ -113,13 +120,14 @@ impl Ram {
     /// Write a byte of data to the current active bank
     #[inline]
     pub fn write(&mut self, addr: Addr, value: u8) {
+        let addr: usize = addr.into();
         match self {
             Self::Unbanked { data, .. } => {
-                data[addr.0 as usize] = value;
+                data[addr] = value;
             }
             Self::Banked { data, active_bank, .. } => {
-                let bank_offset = *active_bank * Self::BANK_SIZE;
-                data[bank_offset + addr.0 as usize] = value;
+                let bank_offset = *active_bank as usize * Self::BANK_SIZE;
+                data[bank_offset + addr] = value;
             }
         }
     }
@@ -133,10 +141,11 @@ impl std::fmt::Debug for Ram {
                 .field("ram_size", &ram_size)
                 .finish()
             }
-            Self::Banked { data, active_bank, ram_size } => {
-                f.debug_struct("CartridgeRam::Unbanked")
-                .field("ram_size", &ram_size)
+            Self::Banked { data, active_bank, num_banks, ram_size } => {
+                f.debug_struct("CartridgeRam::Banked")
                 .field("active_bank", &active_bank)
+                .field("num_banks", &num_banks)
+                .field("ram_size", &ram_size)
                 .finish()
             }
         }
@@ -260,7 +269,7 @@ impl Rom {
 
     #[inline]
     pub fn read(&self, addr: Addr) -> u8 {
-        let addr = addr.0 as usize;
+        let addr: usize = addr.into();
 
         match addr {
             0x0000..=0x3FFF => {
@@ -270,7 +279,7 @@ impl Rom {
             0x4000..=0x7FFF => {
                 // Bank 1 (dynamic)
                 let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
-                self.bank1[bank_offset + addr as usize]
+                self.bank1[bank_offset + addr]
             }
             _ => panic!("Unexpected read from: {}", addr),
         }
@@ -283,7 +292,7 @@ impl Rom {
 
     #[inline]
     pub fn write(&mut self, addr: Addr, value: u8) {
-        let addr = addr.0 as usize;
+        let addr: usize = addr.into();
 
         match addr {
             0x0000..=0x3FFF => {
@@ -293,7 +302,7 @@ impl Rom {
             0x4000..=0x7FFF => {
                 // Bank 1 (dynamic)
                 let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
-                self.bank1[bank_offset + addr as usize] = value;
+                self.bank1[bank_offset + addr] = value;
             }
             _ => panic!("Unexpected write to: {}", addr),
         }
@@ -303,9 +312,11 @@ impl Rom {
 impl std::fmt::Debug for Rom {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Memory")
-         .field("rom_size", &self.rom_size)
-         .field("num_banks", &self.num_banks)
+         .field("bank0", &self.bank0[0])
+         .field("bank1", &self.bank1[0])
          .field("active_bank", &self.active_bank)
+         .field("num_banks", &self.num_banks)
+         .field("rom_size", &self.rom_size)
          .finish()
     }
 }
@@ -476,6 +487,7 @@ impl Cartridge {
         })
     }
 
+    /// Raw header data
     pub fn header(&self) -> &[u8] {
         &self.header
     }
@@ -497,7 +509,8 @@ impl Cartridge {
     }
 
     pub fn manufacturer_code(&self) -> Result<&str> {
-        Ok(std::str::from_utf8(&self.header[0x3F..=0x42])?)
+        let raw = &self.header[0x3F..=0x42];
+        Ok(std::str::from_utf8(raw)?)
     }
 
     /// CGB flag
@@ -506,20 +519,21 @@ impl Cartridge {
     pub fn cgb(&self) -> bool {
         let cgb = self.header[0x43];
         match cgb {
-            0x80 => false,
-            0xC0 => true,
-            _   => panic!("Unknown CGB value: {}", cgb),
+            0x80 | 0xC0 => true,
+            _   => false,
         }
     }
 
     pub fn licensee_code(&self) -> Result<&str> {
-        let code: &str = std::str::from_utf8(&self.header[0x44..=0x45])?;
+        let raw = &self.header[0x44..=0x45];
+        let code: &str = std::str::from_utf8(raw)?;
+
         Ok(match code {
             "00" => "none",
             "01" => "Nintendo R&D 1",
             "13" => "Electronic Arts",
             "31" => "Nintendo",
-            _    => "Unknown",
+            _    => "Other",
         })
     }
 
@@ -593,8 +607,9 @@ impl Cartridge {
     /// Banked/Switchable RAM (external, optional)
     /// Banking is handled under-the-hood. The cartridge only inits the RAM.
     /// Region: A000-BFFF
-    pub fn get_ram(&self) -> Option<Ram> {
-        unimplemented!()
+    pub fn get_ram(&self) -> Result<Option<Ram>> {
+        let ram_size = self.ram_size()?;
+        Ok(Ram::new(ram_size))
     }
 }
 
@@ -617,7 +632,7 @@ mod test {
         assert_eq!(cartridge.ram_size().unwrap(), RamSize::_32K);
         assert_eq!(cartridge.rom_size().unwrap(), RomSize::_2M);
         assert_eq!(cartridge.sgb(), true);
-        assert_eq!(cartridge.cgb(), false);
+        assert_eq!(cartridge.cgb(), true);
         assert_eq!(cartridge.licensee_code().unwrap(), "Nintendo R&D 1");
         assert!(cartridge.verify_header_checksum());
     }
