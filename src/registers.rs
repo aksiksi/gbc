@@ -1,5 +1,5 @@
 /// 8-bit register names
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 #[allow(non_snake_case)]
 pub enum Reg8 {
     A,
@@ -14,7 +14,7 @@ pub enum Reg8 {
 
 /// 16-bit register names
 /// This includes the "combo" registers
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 #[allow(non_snake_case)]
 pub enum Reg16 {
     AF,
@@ -25,7 +25,7 @@ pub enum Reg16 {
     SP,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Flag {
     Zero,
     Subtract,
@@ -240,14 +240,6 @@ impl RegisterFile {
 
     pub fn flags_mut(&mut self) -> &mut Flags {
         &mut self.flags
-    }
-
-    pub fn pc(&self) -> u16 {
-        self.PC
-    }
-
-    pub fn sp(&self) -> u16 {
-        self.SP
     }
 }
 

@@ -1,10 +1,9 @@
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 use crate::error::{Error, Result};
-use crate::memory::Addr;
 
 // Cartridge RAM size
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -96,8 +95,8 @@ impl Ram {
 
     /// Read a byte of data from the current active bank
     #[inline]
-    pub fn read(&self, addr: Addr) -> u8 {
-        let addr: usize = addr.into();
+    pub fn read(&self, addr: u16) -> u8 {
+        let addr = addr as usize;
         match &self {
             Self::Unbanked { data, .. } => data[addr],
             Self::Banked {
@@ -110,14 +109,14 @@ impl Ram {
     }
 
     /// Handle a bank change request
-    fn update_bank(&mut self, addr: Addr, value: u8) {
+    fn update_bank(&mut self, addr: u16, value: u8) {
         unimplemented!()
     }
 
     /// Write a byte of data to the current active bank
     #[inline]
-    pub fn write(&mut self, addr: Addr, value: u8) {
-        let addr: usize = addr.into();
+    pub fn write(&mut self, addr: u16, value: u8) {
+        let addr = addr as usize;
         match self {
             Self::Unbanked { data, .. } => {
                 data[addr] = value;
@@ -235,6 +234,9 @@ pub struct Rom {
 impl Rom {
     pub const BANK_SIZE: usize = 16 * 1024; // 16K
 
+    // TODO: Define method(s) for interrupts and jump vectors
+    // Jump Vectors in first ROM bank
+
     pub fn new(rom_size: RomSize) -> Self {
         let bank0 = [0u8; Self::BANK_SIZE];
 
@@ -270,8 +272,8 @@ impl Rom {
     }
 
     #[inline]
-    pub fn read(&self, addr: Addr) -> u8 {
-        let addr: usize = addr.into();
+    pub fn read(&self, addr: u16) -> u8 {
+        let addr = addr as usize;
 
         match addr {
             0x0000..=0x3FFF => {
@@ -287,14 +289,37 @@ impl Rom {
         }
     }
 
+    /// Read the next 2 bytes as a single u16 (LS byte first)
+    #[inline]
+    pub fn read_u16(&self, addr: u16) -> u16 {
+        let addr = addr as usize;
+
+        match addr {
+            0x0000..=0x3FFF => {
+                // Bank 0 (static)
+                let lower = self.bank0[addr] as u16;
+                let upper = self.bank0[addr + 1] as u16;
+                (upper << 8) | lower
+            }
+            0x4000..=0x7FFF => {
+                // Bank 1 (dynamic)
+                let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
+                let lower = self.bank1[bank_offset + addr] as u16;
+                let upper = self.bank1[bank_offset + addr + 1] as u16;
+                (upper << 8) | lower
+            }
+            _ => panic!("Unexpected read from: {}", addr),
+        }
+    }
+
     /// Handle a bank change request
-    fn update_bank(&mut self, addr: Addr, value: u8) {
+    fn update_bank(&mut self, addr: u16, value: u8) {
         unimplemented!()
     }
 
     #[inline]
-    pub fn write(&mut self, addr: Addr, value: u8) {
-        let addr: usize = addr.into();
+    pub fn write(&mut self, addr: u16, value: u8) {
+        let addr = addr as usize;
 
         match addr {
             0x0000..=0x3FFF => {
@@ -487,8 +512,9 @@ impl Cartridge {
     }
 
     /// Entry point
-    pub fn entry_point(&self) -> &[u8] {
-        &self.header[0..=3]
+    pub fn entry_point(&self) -> [u8; 4] {
+        let raw = &self.header[0..=3];
+        raw.try_into().unwrap()
     }
 
     /// Nintendo logo
@@ -567,6 +593,10 @@ impl Cartridge {
         }
     }
 
+    pub fn header_checksum(&self) -> u8 {
+        self.header[0x4D]
+    }
+
     /// Returns `true` if computed checksum matches the header checksum
     pub fn verify_header_checksum(&self) -> bool {
         let mut checksum: u8 = 0;
@@ -577,30 +607,19 @@ impl Cartridge {
         checksum == self.header_checksum()
     }
 
-    pub fn header_checksum(&self) -> u8 {
-        self.header[0x4D]
-    }
-
     pub fn global_checksum(&self) -> u16 {
         let upper = self.header[0x4E] as u16;
         let lower = self.header[0x4F] as u16;
         upper << 8 | lower
     }
 
-    /// Bank 0 (16K, fixed)
-    ///
-    /// Banked/Switchable ROM
-    /// This ROM can be switched out on writes to specific areas of memory.
-    /// Banking is handled under-the-hood. The cartridge only inits the ROM.
-    /// Region: A000-BFFF
+    /// Builds ROM based on cartridge options and returns it.
     pub fn get_rom(&mut self) -> Result<Rom> {
         let rom_size = self.rom_size()?;
         Rom::from_file(rom_size, &mut self.rom_file)
     }
 
-    /// Banked/Switchable RAM (external, optional)
-    /// Banking is handled under-the-hood. The cartridge only inits the RAM.
-    /// Region: A000-BFFF
+    /// Builds cartridge RAM based on cartridge options and returns it, if available.
     pub fn get_ram(&self) -> Result<Option<Ram>> {
         let ram_size = self.ram_size()?;
         Ok(Ram::new(ram_size))

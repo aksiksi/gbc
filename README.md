@@ -10,4 +10,5 @@ This is intended as a learning project.
 - [ ] Get familiar with the GBC architecture
 - [ ] Work on basic CPU emulation
 - [ ] Get basic GUI up and running
+- [ ] Work on I/O emulation
 - [ ] TBD
