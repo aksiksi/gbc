@@ -23,10 +23,12 @@ fn main() -> Result<()> {
     let mut cpu = Cpu::new(memory);
     let memory = cpu.memory();
 
-    dbg!(&cpu);
+    cpu.step();
+    cpu.step();
+    cpu.step();
+    cpu.step();
 
-    cpu.step();
-    cpu.step();
+    dbg!(&cpu);
 
     let gameboy = Gameboy { cpu, cartridge };
 

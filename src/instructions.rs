@@ -2,7 +2,7 @@ use crate::cartridge::Rom;
 use crate::cpu::Cpu;
 use crate::error::{Error, Result};
 use crate::memory::MemoryBus;
-use crate::registers::{Reg8, Reg16, RegisterFile};
+use crate::registers::{Flag, Reg8, Reg16, RegisterFile};
 
 #[derive(Clone, Copy, Debug)]
 pub enum Cond {
@@ -181,7 +181,7 @@ pub enum Instruction {
     XorImm8(u8),
     XorMem(Reg16),
 
-    /// Compare A with Reg8 or Imm8 or value at address (Reg16)
+    /// Compare A with Reg8 or Imm8 or value at address (HL)
     ///
     /// Note: This is equivalent to `SUB A, n`, but with results
     /// thrown away.
@@ -193,7 +193,7 @@ pub enum Instruction {
     ///     * Carry: set for no borrow (i.e., A < n)
     CpReg8(Reg8),
     CpImm8(u8),
-    CpMem(Reg16),
+    CpMem,
 
     /// Increment Reg8 or value at address (HL)
     ///
@@ -470,53 +470,88 @@ pub enum Instruction {
     RetI,
 }
 
+/// Number of cycles required
+/// If this is a conditional, second arg is if the path is taken (slower)
+pub struct Cycles(pub u8, pub u8);
+
+impl Cycles {
+    pub fn taken(&self) -> u8 {
+        self.0
+    }
+
+    pub fn not_taken(&self) -> u8 {
+        self.1
+    }
+}
+
+impl From<u8> for Cycles {
+    fn from(count: u8) -> Self {
+        Self(count, count)
+    }
+}
+
 impl Instruction {
     /// Decode a single instruction starting at the address contained in PC.
     /// Returns: new PC, instruction, cycle count
-    pub fn decode(pc: u16, rom: &Rom) -> (u16, Self, usize) {
+    pub fn decode(pc: u16, rom: &Rom) -> (u16, Self, Cycles) {
         use Instruction::*;
 
         let (inst, size, cycles) = match rom.read(pc) {
-            0x00 => (Nop, 1, 4),
+            0x00 => (Nop, 1, 4.into()),
 
             // LdReg16Imm16
-            0x01 => (LdReg16Imm16(Reg16::BC, rom.read_u16(pc+1)), 3, 12),
-            0x11 => (LdReg16Imm16(Reg16::DE, rom.read_u16(pc+1)), 3, 12),
-            0x21 => (LdReg16Imm16(Reg16::HL, rom.read_u16(pc+1)), 3, 12),
-            0x31 => (LdReg16Imm16(Reg16::SP, rom.read_u16(pc+1)), 3, 12),
+            0x01 => (LdReg16Imm16(Reg16::BC, rom.read_u16(pc+1)), 3, 12.into()),
+            0x11 => (LdReg16Imm16(Reg16::DE, rom.read_u16(pc+1)), 3, 12.into()),
+            0x21 => (LdReg16Imm16(Reg16::HL, rom.read_u16(pc+1)), 3, 12.into()),
+            0x31 => (LdReg16Imm16(Reg16::SP, rom.read_u16(pc+1)), 3, 12.into()),
 
             // Inc
-            0x03 => (IncReg16(Reg16::BC), 1, 8),
-            0x13 => (IncReg16(Reg16::DE), 1, 8),
-            0x23 => (IncReg16(Reg16::HL), 1, 8),
-            0x33 => (IncReg16(Reg16::SP), 1, 8),
-            0x04 => (IncReg8(Reg8::B), 1, 4),
-            0x14 => (IncReg8(Reg8::D), 1, 4),
-            0x24 => (IncReg8(Reg8::H), 1, 4),
-            0x34 => (IncMem, 1, 12),
-            0x0C => (IncReg8(Reg8::C), 1, 4),
-            0x1C => (IncReg8(Reg8::E), 1, 4),
-            0x2C => (IncReg8(Reg8::L), 1, 4),
-            0x3C => (IncReg8(Reg8::A), 1, 4),
+            0x03 => (IncReg16(Reg16::BC), 1, 8.into()),
+            0x13 => (IncReg16(Reg16::DE), 1, 8.into()),
+            0x23 => (IncReg16(Reg16::HL), 1, 8.into()),
+            0x33 => (IncReg16(Reg16::SP), 1, 8.into()),
+            0x04 => (IncReg8(Reg8::B), 1, 4.into()),
+            0x14 => (IncReg8(Reg8::D), 1, 4.into()),
+            0x24 => (IncReg8(Reg8::H), 1, 4.into()),
+            0x34 => (IncMem, 1, 12.into()),
+            0x0C => (IncReg8(Reg8::C), 1, 4.into()),
+            0x1C => (IncReg8(Reg8::E), 1, 4.into()),
+            0x2C => (IncReg8(Reg8::L), 1, 4.into()),
+            0x3C => (IncReg8(Reg8::A), 1, 4.into()),
 
             // Dec
-            0x04 => (DecReg8(Reg8::B), 1, 4),
-            0x14 => (DecReg8(Reg8::D), 1, 4),
-            0x24 => (DecReg8(Reg8::H), 1, 4),
-            0x34 => (DecMem, 1, 12),
-            0x0B => (DecReg16(Reg16::BC), 1, 8),
-            0x1B => (DecReg16(Reg16::DE), 1, 8),
-            0x2B => (DecReg16(Reg16::HL), 1, 8),
-            0x3B => (DecReg16(Reg16::SP), 1, 8),
-            0x0D => (DecReg8(Reg8::C), 1, 4),
-            0x1D => (DecReg8(Reg8::E), 1, 4),
-            0x2D => (DecReg8(Reg8::L), 1, 4),
-            0x3D => (DecReg8(Reg8::A), 1, 4),
+            0x04 => (DecReg8(Reg8::B), 1, 4.into()),
+            0x14 => (DecReg8(Reg8::D), 1, 4.into()),
+            0x24 => (DecReg8(Reg8::H), 1, 4.into()),
+            0x34 => (DecMem, 1, 12.into()),
+            0x0B => (DecReg16(Reg16::BC), 1, 8.into()),
+            0x1B => (DecReg16(Reg16::DE), 1, 8.into()),
+            0x2B => (DecReg16(Reg16::HL), 1, 8.into()),
+            0x3B => (DecReg16(Reg16::SP), 1, 8.into()),
+            0x0D => (DecReg8(Reg8::C), 1, 4.into()),
+            0x1D => (DecReg8(Reg8::E), 1, 4.into()),
+            0x2D => (DecReg8(Reg8::L), 1, 4.into()),
+            0x3D => (DecReg8(Reg8::A), 1, 4.into()),
+
+            // Cp
+            0xBF => (CpReg8(Reg8::A), 1, 4.into()),
+            0xB8 => (CpReg8(Reg8::B), 1, 4.into()),
+            0xB9 => (CpReg8(Reg8::C), 1, 4.into()),
+            0xBA => (CpReg8(Reg8::D), 1, 4.into()),
+            0xBB => (CpReg8(Reg8::E), 1, 4.into()),
+            0xBC => (CpReg8(Reg8::H), 1, 4.into()),
+            0xBD => (CpReg8(Reg8::L), 1, 4.into()),
+            0xBE => (CpMem, 1, 8.into()),
+            0xFE => (CpImm8(rom.read(pc+1)), 2, 8.into()),
 
             // Jump
+            0x28 => {
+                let offset = rom.read(pc+1) as i8;
+                (Jr(offset, Cond::Zero), 2, Cycles(12, 8))
+            }
             0xC3 => {
                 let addr = rom.read_u16(pc+1);
-                (Jp(addr, Cond::None), 3, 16)
+                (Jp(addr, Cond::None), 3, 16.into())
             }
 
             other => panic!("Unknown instruction: {}", other),
@@ -525,8 +560,84 @@ impl Instruction {
         (pc + size, inst, cycles)
     }
 
-    /// Execute the instruction at the address contained in PC.
-    pub fn execute(&self, cpu: &mut Cpu) -> Result<usize> {
-        Ok(10)
+    /// Executes this instruction on the CPU
+    pub fn execute(&self, cpu: &mut Cpu) {
+        use Instruction::*;
+
+        let flags = &mut cpu.flags;
+        let memory = &mut cpu.memory;
+        let registers = &mut cpu.registers;
+
+        match self {
+            Nop => (),
+            LdReg16Imm16(dst, src) => {
+                registers.write_u16(*dst, *src);
+            }
+            IncReg8(dst) => {
+                let curr = registers.read_u8(*dst);
+                registers.write_u8(*dst, curr.wrapping_add(1));
+            }
+            IncReg16(dst) => {
+                let curr = registers.read_u16(*dst);
+                registers.write_u16(*dst, curr.wrapping_add(1));
+            }
+            IncMem => {
+                let addr = registers.read_u16(Reg16::HL);
+                let curr = memory.read(addr);
+                memory.write(addr, curr.wrapping_add(1));
+            }
+            DecReg8(dst) => {
+                let curr = registers.read_u8(*dst);
+                registers.write_u8(*dst, curr.wrapping_sub(1));
+            }
+            DecReg16(dst) => {
+                let curr = registers.read_u16(*dst);
+                registers.write_u16(*dst, curr.wrapping_sub(1));
+            }
+            DecMem => {
+                let addr = registers.read_u16(Reg16::HL);
+                let curr = memory.read(addr);
+                memory.write(addr, curr.wrapping_sub(1));
+            } 
+            CpImm8(src) => {
+                let a = registers.read_u8(Reg8::A);
+
+                if *src == a {
+                    flags.set(Flag::Zero);
+                } else if *src > a {
+                    flags.set(Flag::Carry);
+                }
+            }
+            Jp(addr, cond) => {
+                let ok = match cond {
+                    Cond::None => true,
+                    Cond::NotZero if !flags.is_zero() => true,
+                    Cond::Zero if flags.is_zero() => true,
+                    Cond::NotCarry if !flags.is_carry() => true,
+                    Cond::Carry if flags.is_carry() => true,
+                    _ => false,
+                };
+
+                if ok {
+                    registers.PC = *addr;
+                }
+            }
+            Jr(offset, cond) => {
+                let ok = match cond {
+                    Cond::None => true,
+                    Cond::NotZero if !flags.is_zero() => true,
+                    Cond::Zero if flags.is_zero() => true,
+                    Cond::NotCarry if !flags.is_carry() => true,
+                    Cond::Carry if flags.is_carry() => true,
+                    _ => false,
+                };
+
+                if ok {
+                    // Numeric casts from signed to unsigned will sign extend
+                    registers.PC = registers.PC.wrapping_add(*offset as u16);
+                }
+            }
+            other => panic!("Unknown")
+        }
     }
 }

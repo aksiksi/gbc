@@ -150,7 +150,6 @@ pub struct RegisterFile {
     L: u8,
     pub PC: u16,
     pub SP: u16,
-    flags: Flags,
 }
 
 impl RegisterFile {
@@ -170,7 +169,6 @@ impl RegisterFile {
             L: 0,
             PC: 0x0100,
             SP: 0xFFFE,
-            flags: Flags::new(),
         }
     }
 
@@ -210,14 +208,14 @@ impl RegisterFile {
 
     pub fn write_u8(&mut self, reg: Reg8, value: u8) {
         match reg {
-            Reg8::A => self.A = value as u8,
-            Reg8::F => self.F = value as u8,
-            Reg8::B => self.B = value as u8,
-            Reg8::C => self.C = value as u8,
-            Reg8::D => self.D = value as u8,
-            Reg8::E => self.E = value as u8,
-            Reg8::H => self.H = value as u8,
-            Reg8::L => self.L = value as u8,
+            Reg8::A => self.A = value,
+            Reg8::F => self.F = value,
+            Reg8::B => self.B = value,
+            Reg8::C => self.C = value,
+            Reg8::D => self.D = value,
+            Reg8::E => self.E = value,
+            Reg8::H => self.H = value,
+            Reg8::L => self.L = value,
         }
     }
 
@@ -232,14 +230,6 @@ impl RegisterFile {
             Reg8::H => self.H,
             Reg8::L => self.L,
         }
-    }
-
-    pub fn flags(&self) -> &Flags {
-        &self.flags
-    }
-
-    pub fn flags_mut(&mut self) -> &mut Flags {
-        &mut self.flags
     }
 }
 
@@ -262,8 +252,7 @@ mod test {
 
     #[test]
     fn test_flags() {
-        let mut regs = RegisterFile::new();
-        let flags = regs.flags_mut();
+        let mut flags = Flags::new();
 
         flags.set(Flag::Zero);
         assert!(flags.is_zero());
