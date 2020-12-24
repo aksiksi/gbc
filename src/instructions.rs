@@ -1,6 +1,6 @@
 use std::convert::TryInto;
 
-use crate::registers::{Reg8, Reg16};
+use crate::registers::{Reg16, Reg8};
 
 /// A single argument to an instruction.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -567,6 +567,7 @@ mod test {
     #[test]
     fn test_decode_ld() {
         // Vector of (input instruction, expected decoded, size, cycle count)
+        #[rustfmt::skip]
         let test_vectors: &[([u8; 3], Instruction, u8, Cycles)] = &[
             ([0x01, 0x34, 0x12], Ld(Arg::Reg16(Reg16::BC), Arg::Imm16(0x1234)), 3, 12.into()),
             ([0x11, 0x34, 0x12], Ld(Arg::Reg16(Reg16::DE), Arg::Imm16(0x1234)), 3, 12.into()),

@@ -35,12 +35,13 @@ pub enum Ram {
         /// CGB mode
         data: [u8; Self::BANK_SIZE * 8],
         active_bank: u8,
-    }
+    },
 }
 
 impl Ram {
     const BANK_SIZE: usize = 4 * 1024; // 4K
     pub const BASE_ADDR: u16 = 0xC000;
+    pub const LAST_ADDR: u16 = 0xDFFF;
 
     pub fn new(cgb: bool) -> Self {
         if cgb {
@@ -62,9 +63,7 @@ impl MemoryRead<u16, u8> for Ram {
         let addr = (addr - Self::BASE_ADDR) as usize;
 
         match self {
-            Self::Unbanked { data } => {
-               data[addr]
-            },
+            Self::Unbanked { data } => data[addr],
             Self::Banked { data, active_bank } => {
                 match addr {
                     0x0000..=0x0FFF => {
@@ -89,8 +88,8 @@ impl MemoryWrite<u16, u8> for Ram {
 
         match self {
             Self::Unbanked { data } => {
-               data[addr] = value;
-            },
+                data[addr] = value;
+            }
             Self::Banked { data, active_bank } => {
                 match addr {
                     0x0000..=0x0FFF => {
@@ -115,10 +114,7 @@ impl std::fmt::Debug for Ram {
                 .debug_struct("Ram::Unbanked")
                 .field("size", &data.len())
                 .finish(),
-            Self::Banked {
-                data,
-                active_bank,
-            } => f
+            Self::Banked { data, active_bank } => f
                 .debug_struct("CartridgeRam::Banked")
                 .field("size", &data.len())
                 .field("active_bank", &active_bank)
@@ -138,12 +134,13 @@ pub enum Vram {
         /// CGB mode
         data: [u8; Self::BANK_SIZE * 2],
         active_bank: u8,
-    }
+    },
 }
 
 impl Vram {
     const BANK_SIZE: usize = 8 * 1024;
     pub const BASE_ADDR: u16 = 0x8000;
+    pub const LAST_ADDR: u16 = 0x9FFF;
 
     pub fn new(cgb: bool) -> Self {
         if cgb {
@@ -200,10 +197,7 @@ impl std::fmt::Debug for Vram {
                 .debug_struct("Vram::Unbanked")
                 .field("vram_size", &data.len())
                 .finish(),
-            Self::Banked {
-                data,
-                active_bank,
-            } => f
+            Self::Banked { data, active_bank } => f
                 .debug_struct("Vram::Banked")
                 .field("vram_size", &data.len())
                 .field("active_bank", &active_bank)
@@ -257,10 +251,12 @@ impl MemoryRead<u16, u8> for MemoryBus {
     /// This will be converted into a read from the relevant memory section.
     fn read(&self, addr: u16) -> u8 {
         match addr {
-            0x0000..=0x7FFF => self.rom.read(addr),
-            0x8000..=0x9FFF => self.vram.read(addr),
-            0xA000..=0xBFFF => self.cartridge_ram.as_ref().unwrap().read(addr),
-            0xC000..=0xDFFF => self.ram.read(addr),
+            Rom::BASE_ADDR..=Rom::LAST_ADDR => self.rom.read(addr),
+            Vram::BASE_ADDR..=Vram::LAST_ADDR => self.vram.read(addr),
+            CartridgeRam::BASE_ADDR..=CartridgeRam::LAST_ADDR => {
+                self.cartridge_ram.as_ref().unwrap().read(addr)
+            }
+            Ram::BASE_ADDR..=Ram::LAST_ADDR => self.ram.read(addr),
             0xFF80..=0xFFFE => {
                 let addr = addr as usize - 0xFF80;
                 self.high_ram[addr]
@@ -270,12 +266,35 @@ impl MemoryRead<u16, u8> for MemoryBus {
     }
 }
 
+impl MemoryRange<u16, u8> for MemoryBus {
+    /// Return a range of bytes from the relevant memory.
+    fn range(&self, range: std::ops::Range<u16>) -> &[u8] {
+        match range.start {
+            Rom::BASE_ADDR..=Rom::LAST_ADDR => self.rom.range(range),
+            // 0x8000..=0x9FFF => self.vram.read(addr),
+            CartridgeRam::BASE_ADDR..=CartridgeRam::LAST_ADDR => {
+                self.cartridge_ram.as_ref().unwrap().range(range)
+            }
+            // 0xC000..=0xDFFF => self.ram.read(addr),
+            0xFF80..=0xFFFE => {
+                let start = range.start as usize - 0xFF80;
+                let end = range.end as usize - 0xFF80;
+                &self.high_ram[start..end]
+            }
+            _ => panic!("Unable to handle range: {:?}", range),
+        }
+    }
+}
+
 impl MemoryWrite<u16, u8> for MemoryBus {
     fn write(&mut self, addr: u16, value: u8) {
         match addr {
-            0x8000..=0x9FFF => self.vram.write(addr, value),
-            0xA000..=0xBFFF => self.cartridge_ram.as_mut().unwrap().write(addr, value),
-            0xC000..=0xDFFF => self.ram.write(addr, value),
+            Rom::BASE_ADDR..=Rom::LAST_ADDR => self.rom.write(addr, value),
+            Vram::BASE_ADDR..=Vram::LAST_ADDR => self.vram.write(addr, value),
+            CartridgeRam::BASE_ADDR..=CartridgeRam::LAST_ADDR => {
+                self.cartridge_ram.as_mut().unwrap().write(addr, value)
+            }
+            Ram::BASE_ADDR..=Ram::LAST_ADDR => self.ram.write(addr, value),
             0xFF80..=0xFFFE => {
                 let addr = addr as usize - 0xFF80;
                 self.high_ram[addr] = value;

@@ -4,7 +4,7 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 use crate::error::{Error, Result};
-use crate::memory::{MemoryRead, MemoryRange, MemoryWrite};
+use crate::memory::{MemoryRange, MemoryRead, MemoryWrite};
 
 // Cartridge RAM size
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -66,6 +66,7 @@ pub enum Ram {
 impl Ram {
     const BANK_SIZE: usize = 8 * 1024; // 8K
     pub const BASE_ADDR: u16 = 0xA000;
+    pub const LAST_ADDR: u16 = 0xBFFF;
 
     pub fn new(ram_size: RamSize) -> Option<Self> {
         match ram_size {
@@ -129,9 +130,7 @@ impl MemoryRange<u16, u8> for Ram {
         let end = (range.end - Self::BASE_ADDR) as usize;
 
         match self {
-            Self::Unbanked { data, .. } => {
-                &data[start..end]
-            }
+            Self::Unbanked { data, .. } => &data[start..end],
             Self::Banked {
                 data, active_bank, ..
             } => {
@@ -263,6 +262,8 @@ pub struct Rom {
 
 impl Rom {
     pub const BANK_SIZE: usize = 16 * 1024; // 16K
+    pub const BASE_ADDR: u16 = 0x0000;
+    pub const LAST_ADDR: u16 = 0x7FFF;
 
     // TODO: Define method(s) for interrupts and jump vectors
     // Jump Vectors in first ROM bank
@@ -370,7 +371,7 @@ impl MemoryRange<u16, u8> for Rom {
             0x4000..=0x7FFF => {
                 // Bank 1 (dynamic)
                 let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
-                &self.bank1[(bank_offset+start as usize)..(bank_offset+end as usize)]
+                &self.bank1[(bank_offset + start as usize)..(bank_offset + end as usize)]
             }
             _ => panic!("Range start is larger than allowed: {}", start),
         }
