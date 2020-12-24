@@ -32,6 +32,8 @@ impl Cpu {
         // Decode the instruction
         let (inst, size, cycles) = Instruction::decode(data);
 
+        dbg!(inst);
+
         // Execute the instruction on this CPU
         inst.execute(self);
 

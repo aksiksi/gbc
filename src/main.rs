@@ -27,8 +27,12 @@ fn main() -> Result<()> {
     cpu.step();
     cpu.step();
     cpu.step();
+    cpu.step();
+    cpu.step();
+    cpu.step();
+    cpu.step();
 
-    dbg!(&cpu);
+    // dbg!(&cpu);
 
     let gameboy = Gameboy { cpu, cartridge };
 

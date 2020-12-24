@@ -1,10 +1,35 @@
 use std::convert::TryInto;
 
-use crate::cartridge::Rom;
 use crate::cpu::Cpu;
-use crate::error::{Error, Result};
-use crate::memory::MemoryBus;
-use crate::registers::{Flag, Reg8, Reg16, RegisterFile};
+use crate::registers::{Flag, Reg8, Reg16};
+
+/// A single argument to an instruction.
+#[derive(Clone, Copy, Debug)]
+pub enum Arg {
+    /// 8-bit register
+    Reg8(Reg8),
+
+    /// 16-bit register
+    Reg16(Reg16),
+
+    /// 8-bit immediate
+    Imm8(u8),
+
+    /// 8-bit signed immediate
+    Imm8i(i8),
+
+    /// 16-bit immediate
+    Imm16(u16),
+
+    /// Memory address (register)
+    Mem(Reg16),
+
+    /// Memory address (immediate)
+    MemImm(u16),
+
+    /// Memory address in HL
+    MemHl,
+}
 
 #[derive(Clone, Copy, Debug)]
 pub enum Cond {
@@ -20,42 +45,18 @@ pub enum Cond {
 /// Tuple contains either: (source) or (dest) or (dest, source)
 #[derive(Clone, Copy, Debug)]
 pub enum Instruction {
-    /// Load 8-bit immediate value into reg
-    LdReg8Imm8(Reg8, u8),
+    /// Load an 8-bit or 16-bit value from src into dest
+    /// src: Imm8 or Reg8 or Imm16 or Mem
+    /// dst: Reg8 or Reg16 or Mem
+    Ld(Arg, Arg),
 
-    /// Load second reg into first
-    LdReg8Reg8(Reg8, Reg8),
+    /// Load an 8-bit value into register A
+    /// src: Imm8 or Mem or MemImm
+    LdA(Arg),
 
-    /// Load value memory at address (HL) into Reg8
-    LdReg8Mem(Reg8),
-
-    /// Load Reg8 into memory at address (HL)
-    LdMemReg8(Reg8),
-
-    /// Load Imm8 into memory at address (HL)
-    LdMemImm8(u8),
-
-    /// Load Reg8 into A (use LdReg8Reg8)
-
-    /// Load memory at address (Reg16) into A
-    LdAMem(Reg16), // TODO
-
-    /// Load memory at address (Imm16) into A
-    /// Note: LS byte first
-    LdAMemImm16(u16),
-
-    /// Load Imm8 into A
-    LdAImm8(u8),
-
-    /// Load A into reg
-    LdReg8A(Reg8),
-
-    /// Load A to address (Reg16)
-    LdMemA(Reg16), // TODO
-
-    /// Load A to address (Imm16)
-    /// Note: LS byte first
-    LdMemImm16A(u16),
+    /// Load A into Arg
+    /// dst: Reg8 or Mem or MemImm
+    LdArgA(Arg),
 
     /// Load value at address (0xFF00 + C) into A
     /// Same as: LD A, ($FF00 + C)
@@ -76,29 +77,26 @@ pub enum Instruction {
     /// Load A into address (HL), then decrement HL
     LdiMemHlA,
 
-    /// Load A into address (0xFF00 + Imm8)
-    LdhMemImm8A(u8),
-
     /// Load value at address (0xFF00 + Imm8) into A
-    LdhAMemImm8(u8),
+    LdhA(u8),
 
-    /// Load Imm16 into Reg16
-    LdReg16Imm16(Reg16, u16),
+    /// Load A into address (0xFF00 + Imm8)
+    LdhMemImmA(u8),
 
     /// Load HL into SP
     LdSpHl,
 
-    /// Load SP + Imm8 into HL
+    /// Load SP + Imm8i into HL
     ///
     /// Flags:
     ///     * Zero: reset
     ///     * Subtract: reset
     ///     * HalfCarry: set or reset
     ///     * Carry: set or reset
-    LdHlSpImm8(i8),
+    LdHlSpImm8i(i8),
 
-    /// Load SP into address (Imm16)
-    LdMemImm16Sp(u16),
+    /// Load SP into address (MemImm)
+    LdMemImmSp(u16),
 
     /// Push Reg16 (register pair) onto stack
     PushReg16(Reg16),
@@ -113,9 +111,7 @@ pub enum Instruction {
     ///     * Subtract: reset
     ///     * HalfCarry: set if carry from bit 3
     ///     * Carry: set if carry from bit 7
-    AddAReg8(Reg8),
-    AddAImm8(u8), // TODO: signed?
-    AddAMem(Reg16),
+    Add(Arg),
 
     /// Add carry flag **and** Reg8 or Imm8 or value at address (Reg16) to A
     ///
@@ -124,9 +120,7 @@ pub enum Instruction {
     ///     * Subtract: reset
     ///     * HalfCarry: set if carry from bit 3
     ///     * Carry: set if carry from bit 7
-    AdcAReg8(Reg8),
-    AdcAImm8(u8), // TODO: signed?
-    AdcAMem(Reg16),
+    Adc(Arg),
 
     /// Subtract Reg8 or Imm8 or value at address (Reg16) from A
     ///
@@ -135,9 +129,7 @@ pub enum Instruction {
     ///     * Subtract: set
     ///     * HalfCarry: set if no borrow from bit 4
     ///     * Carry: set if no borrow
-    SubReg8(Reg8),
-    SubImm8(u8),
-    SubMem(Reg16),
+    Sub(Arg),
 
     /// Subtract carry flag **and** Reg8 or Imm8 or value at address (Reg16) from A
     ///
@@ -146,9 +138,7 @@ pub enum Instruction {
     ///     * Subtract: set
     ///     * HalfCarry: set if no borrow from bit 4
     ///     * Carry: set if no borrow
-    SbcAReg8(Reg8),
-    SbcAImm8(u8), // TODO: signed?
-    SbcAMem(Reg16),
+    Sbc(Arg),
 
     /// AND Reg8 or Imm8 or value at address (Reg16) with A.
     ///
@@ -157,9 +147,7 @@ pub enum Instruction {
     ///     * Subtract: reset
     ///     * HalfCarry: set
     ///     * Carry: reset
-    AndReg8(Reg8),
-    AndImm8(u8),
-    AndMem(Reg16),
+    And(Arg),
 
     /// OR Reg8 or Imm8 or value at address (Reg16) with A.
     ///
@@ -168,20 +156,16 @@ pub enum Instruction {
     ///     * Subtract: reset
     ///     * HalfCarry: reset
     ///     * Carry: reset
-    OrReg8(Reg8),
-    OrImm8(u8),
-    OrMem(Reg16),
+    Or(Arg),
 
-    /// XOR Reg8 or Imm8 or value at address (Reg16) with A.
+    /// XOR Reg8 or Imm8 or value at address (HL) with A.
     ///
     /// Flags:
     ///     * Zero: set if result 0
     ///     * Subtract: reset
     ///     * HalfCarry: reset
     ///     * Carry: reset
-    XorReg8(Reg8),
-    XorImm8(u8),
-    XorMem(Reg16),
+    Xor(Arg),
 
     /// Compare A with Reg8 or Imm8 or value at address (HL)
     ///
@@ -193,29 +177,29 @@ pub enum Instruction {
     ///     * Subtract: set
     ///     * HalfCarry: set if no borrow from bit 4
     ///     * Carry: set for no borrow (i.e., A < n)
-    CpReg8(Reg8),
-    CpImm8(u8),
-    CpMem,
+    Cp(Arg),
 
-    /// Increment Reg8 or value at address (HL)
+    /// Increment Reg8 or Reg16 or value at address (HL)
+    ///
+    /// **Note:** Reg16 variant does not affect flags
     ///
     /// Flags:
     ///     * Zero: set if result 0
     ///     * Subtract: reset
     ///     * HalfCarry: set if carry from bit 3
     ///     * Carry: not affected
-    IncReg8(Reg8),
-    IncMem,
+    Inc(Arg),
 
-    /// Decrement Reg8 or value at address (HL)
+    /// Decrement Reg8 or Reg16 or value at address (HL)
+    ///
+    /// **Note:** Reg16 variant does not affect flags
     ///
     /// Flags:
     ///     * Zero: set if result 0
     ///     * Subtract: set
     ///     * HalfCarry: set if no borrow from bit 4
     ///     * Carry: not affected
-    DecReg8(Reg8),
-    DecMem,
+    Dec(Arg),
 
     /// Add Reg16 to HL.
     ///
@@ -226,24 +210,14 @@ pub enum Instruction {
     ///     * Carry: set if carry from bit 15
     AddHlReg16(Reg16),
 
-    /// Add Imm8 to SP.
+    /// Add Imm8i to SP.
     ///
     /// Flags:
     ///     * Zero: reset
     ///     * Subtract: reset
     ///     * HalfCarry: set if carry from bit 11
     ///     * Carry: set if carry from bit 15
-    AddSpImm8(u8),
-
-    /// Increment Reg16
-    ///
-    /// Flags: Not affected
-    IncReg16(Reg16),
-
-    /// Decrement Reg16
-    ///
-    /// Flags: Not affected
-    DecReg16(Reg16),
+    AddSpImm8i(i8),
 
     /// Swap upper & lower nibbles of Reg8 or value at memory address (Reg16)
     ///
@@ -252,8 +226,7 @@ pub enum Instruction {
     ///     * Subtract: reset
     ///     * HalfCarry: reset
     ///     * Carry: reset
-    SwapReg8,
-    SwapMem(Reg16),
+    Swap(Arg),
 
     /// Adjusts register A to correct BCD representation.
     ///
@@ -357,8 +330,7 @@ pub enum Instruction {
     ///     * Subtract: reset
     ///     * HalfCarry: reset
     ///     * Carry: contains old bit 7
-    Rlc(Reg8),
-    RlcMem,
+    Rlc(Arg),
 
     /// Rotate Reg8 or (HL) left through carry flag.
     ///
@@ -367,8 +339,7 @@ pub enum Instruction {
     ///     * Subtract: reset
     ///     * HalfCarry: reset
     ///     * Carry: contains old bit 7
-    Rl(Reg8),
-    RlMem,
+    Rl(Arg),
 
     /// Rotate Reg8 or (HL) right. Place old bit 0 in carry flag.
     ///
@@ -377,8 +348,7 @@ pub enum Instruction {
     ///     * Subtract: reset
     ///     * HalfCarry: reset
     ///     * Carry: contains old bit 0
-    Rrc(Reg8),
-    RrcMem,
+    Rrc(Arg),
 
     /// Rotate Reg8 or (HL) right through carry flag.
     ///
@@ -387,8 +357,7 @@ pub enum Instruction {
     ///     * Subtract: reset
     ///     * HalfCarry: reset
     ///     * Carry: contains old bit 0
-    Rr(Reg8),
-    RrMem,
+    Rr(Arg),
 
     /// Shift Reg8 or (HL) left into carry.
     ///
@@ -397,8 +366,7 @@ pub enum Instruction {
     ///     * Subtract: reset
     ///     * HalfCarry: reset
     ///     * Carry: contains old bit 7
-    Sla(Reg8),
-    SlaMem,
+    Sla(Arg),
 
     /// Shift Reg8 or (HL) right into carry.
     /// Note: MSB does not change.
@@ -408,8 +376,7 @@ pub enum Instruction {
     ///     * Subtract: reset
     ///     * HalfCarry: reset
     ///     * Carry: contains old bit 0
-    Sra(Reg8),
-    SraMem,
+    Sra(Arg),
 
     /// Shift Reg8 or (HL) right into carry.
     /// Note: MSB is set to 0.
@@ -419,8 +386,7 @@ pub enum Instruction {
     ///     * Subtract: reset
     ///     * HalfCarry: reset
     ///     * Carry: contains old bit 0
-    Srl(Reg8),
-    SrlMem,
+    Srl(Arg),
 
     /// Test bit `b` in Reg8 or (HL).
     ///
@@ -429,20 +395,17 @@ pub enum Instruction {
     ///     * Subtract: reset
     ///     * HalfCarry: set
     ///     * Carry: not affected
-    Bit(Reg8, u8),
-    BitMem(u8),
+    Bit(Arg, u8),
 
     /// Set bit `b` in Reg8 or (HL).
     ///
     /// Flags: None
-    Set(Reg8, u8),
-    SetMem(u8),
+    Set(Arg, u8),
 
     /// Reset bit `b` in Reg8 or (HL).
     ///
     /// Flags: None
-    Res(Reg8, u8),
-    ResMem(u8),
+    Res(Arg, u8),
 
     /// Jump to address `Addr`
     /// If `Cond` != `Cond::None`, jump has a condition.
@@ -498,60 +461,90 @@ impl Instruction {
     pub fn decode(data: [u8; 3]) -> (Self, u16, Cycles) {
         use Instruction::*;
 
-        // Extract the next arg as a 16-bit number
+        // Extract the next arg as a 8-bit and 16-bit immediates
+        let arg8 = data[1];
         let arg16 = u16::from_le_bytes(data[1..3].try_into().unwrap());
 
         let (inst, size, cycles) = match data[0] {
             0x00 => (Nop, 1, 4.into()),
 
-            // LdReg16Imm16
-            0x01 => (LdReg16Imm16(Reg16::BC, arg16), 3, 12.into()),
-            0x11 => (LdReg16Imm16(Reg16::DE, arg16), 3, 12.into()),
-            0x21 => (LdReg16Imm16(Reg16::HL, arg16), 3, 12.into()),
-            0x31 => (LdReg16Imm16(Reg16::SP, arg16), 3, 12.into()),
+            // Load
+            0x01 => (Ld(Arg::Reg16(Reg16::BC), Arg::Imm16(arg16)), 3, 12.into()),
+            0x11 => (Ld(Arg::Reg16(Reg16::DE), Arg::Imm16(arg16)), 3, 12.into()),
+            0x21 => (Ld(Arg::Reg16(Reg16::HL), Arg::Imm16(arg16)), 3, 12.into()),
+            0x31 => (Ld(Arg::Reg16(Reg16::SP), Arg::Imm16(arg16)), 3, 12.into()),
+            0x06 => (Ld(Arg::Reg8(Reg8::B), Arg::Imm8(arg8)), 2, 8.into()),
+            0x16 => (Ld(Arg::Reg8(Reg8::D), Arg::Imm8(arg8)), 2, 8.into()),
+            0x26 => (Ld(Arg::Reg8(Reg8::H), Arg::Imm8(arg8)), 2, 8.into()),
+            0x36 => (Ld(Arg::Mem(Reg16::HL), Arg::Imm8(arg8)), 2, 12.into()),
+            0x0A => (Ld(Arg::Reg8(Reg8::A), Arg::Mem(Reg16::BC)), 1, 8.into()),
+            0x1A => (Ld(Arg::Reg8(Reg8::A), Arg::Mem(Reg16::DE)), 1, 8.into()),
+            0x2A => (LdiAMemHl, 1, 8.into()),
+            0x3A => (LddAMemHl, 1, 8.into()),
+            0x0E => (Ld(Arg::Reg8(Reg8::C), Arg::Imm8(arg8)), 2, 8.into()),
+            0x1E => (Ld(Arg::Reg8(Reg8::E), Arg::Imm8(arg8)), 2, 8.into()),
+            0x2E => (Ld(Arg::Reg8(Reg8::L), Arg::Imm8(arg8)), 2, 8.into()),
+            0x3E => (Ld(Arg::Reg8(Reg8::A), Arg::Imm8(arg8)), 2, 8.into()),
+            0xE0 => (LdhMemImmA(arg8), 2, 12.into()),
+            0xF0 => (LdhA(arg8), 2, 12.into()),
+
+            // Xor
+            0xA8 => (Xor(Arg::Reg8(Reg8::B)), 1, 4.into()),
+            0xA9 => (Xor(Arg::Reg8(Reg8::C)), 1, 4.into()),
+            0xAA => (Xor(Arg::Reg8(Reg8::D)), 1, 4.into()),
+            0xAB => (Xor(Arg::Reg8(Reg8::E)), 1, 4.into()),
+            0xAC => (Xor(Arg::Reg8(Reg8::H)), 1, 4.into()),
+            0xAD => (Xor(Arg::Reg8(Reg8::L)), 1, 4.into()),
+            0xAE => (Xor(Arg::MemHl), 1, 8.into()),
+            0xAF => (Xor(Arg::Reg8(Reg8::A)), 1, 4.into()),
+            0xEE => (Xor(Arg::Imm8(arg8)), 2, 8.into()),
 
             // Inc
-            0x03 => (IncReg16(Reg16::BC), 1, 8.into()),
-            0x13 => (IncReg16(Reg16::DE), 1, 8.into()),
-            0x23 => (IncReg16(Reg16::HL), 1, 8.into()),
-            0x33 => (IncReg16(Reg16::SP), 1, 8.into()),
-            0x04 => (IncReg8(Reg8::B), 1, 4.into()),
-            0x14 => (IncReg8(Reg8::D), 1, 4.into()),
-            0x24 => (IncReg8(Reg8::H), 1, 4.into()),
-            0x34 => (IncMem, 1, 12.into()),
-            0x0C => (IncReg8(Reg8::C), 1, 4.into()),
-            0x1C => (IncReg8(Reg8::E), 1, 4.into()),
-            0x2C => (IncReg8(Reg8::L), 1, 4.into()),
-            0x3C => (IncReg8(Reg8::A), 1, 4.into()),
+            0x03 => (Inc(Arg::Reg16(Reg16::BC)), 1, 8.into()),
+            0x13 => (Inc(Arg::Reg16(Reg16::DE)), 1, 8.into()),
+            0x23 => (Inc(Arg::Reg16(Reg16::HL)), 1, 8.into()),
+            0x33 => (Inc(Arg::Reg16(Reg16::SP)), 1, 8.into()),
+            0x04 => (Inc(Arg::Reg8(Reg8::B)), 1, 4.into()),
+            0x14 => (Inc(Arg::Reg8(Reg8::D)), 1, 4.into()),
+            0x24 => (Inc(Arg::Reg8(Reg8::H)), 1, 4.into()),
+            0x34 => (Inc(Arg::MemHl), 1, 12.into()),
+            0x0C => (Inc(Arg::Reg8(Reg8::C)), 1, 4.into()),
+            0x1C => (Inc(Arg::Reg8(Reg8::E)), 1, 4.into()),
+            0x2C => (Inc(Arg::Reg8(Reg8::L)), 1, 4.into()),
+            0x3C => (Inc(Arg::Reg8(Reg8::A)), 1, 4.into()),
 
             // Dec
-            0x04 => (DecReg8(Reg8::B), 1, 4.into()),
-            0x14 => (DecReg8(Reg8::D), 1, 4.into()),
-            0x24 => (DecReg8(Reg8::H), 1, 4.into()),
-            0x34 => (DecMem, 1, 12.into()),
-            0x0B => (DecReg16(Reg16::BC), 1, 8.into()),
-            0x1B => (DecReg16(Reg16::DE), 1, 8.into()),
-            0x2B => (DecReg16(Reg16::HL), 1, 8.into()),
-            0x3B => (DecReg16(Reg16::SP), 1, 8.into()),
-            0x0D => (DecReg8(Reg8::C), 1, 4.into()),
-            0x1D => (DecReg8(Reg8::E), 1, 4.into()),
-            0x2D => (DecReg8(Reg8::L), 1, 4.into()),
-            0x3D => (DecReg8(Reg8::A), 1, 4.into()),
+            0x05 => (Dec(Arg::Reg8(Reg8::B)), 1, 4.into()),
+            0x15 => (Dec(Arg::Reg8(Reg8::D)), 1, 4.into()),
+            0x25 => (Dec(Arg::Reg8(Reg8::H)), 1, 4.into()),
+            0x35 => (Dec(Arg::MemHl), 1, 12.into()),
+            0x0B => (Dec(Arg::Reg16(Reg16::BC)), 1, 8.into()),
+            0x1B => (Dec(Arg::Reg16(Reg16::DE)), 1, 8.into()),
+            0x2B => (Dec(Arg::Reg16(Reg16::HL)), 1, 8.into()),
+            0x3B => (Dec(Arg::Reg16(Reg16::SP)), 1, 8.into()),
+            0x0D => (Dec(Arg::Reg8(Reg8::C)), 1, 4.into()),
+            0x1D => (Dec(Arg::Reg8(Reg8::E)), 1, 4.into()),
+            0x2D => (Dec(Arg::Reg8(Reg8::L)), 1, 4.into()),
+            0x3D => (Dec(Arg::Reg8(Reg8::A)), 1, 4.into()),
 
             // Cp
-            0xBF => (CpReg8(Reg8::A), 1, 4.into()),
-            0xB8 => (CpReg8(Reg8::B), 1, 4.into()),
-            0xB9 => (CpReg8(Reg8::C), 1, 4.into()),
-            0xBA => (CpReg8(Reg8::D), 1, 4.into()),
-            0xBB => (CpReg8(Reg8::E), 1, 4.into()),
-            0xBC => (CpReg8(Reg8::H), 1, 4.into()),
-            0xBD => (CpReg8(Reg8::L), 1, 4.into()),
-            0xBE => (CpMem, 1, 8.into()),
-            0xFE => (CpImm8(data[1]), 2, 8.into()),
+            0xBF => (Cp(Arg::Reg8(Reg8::A)), 1, 4.into()),
+            0xB8 => (Cp(Arg::Reg8(Reg8::B)), 1, 4.into()),
+            0xB9 => (Cp(Arg::Reg8(Reg8::C)), 1, 4.into()),
+            0xBA => (Cp(Arg::Reg8(Reg8::D)), 1, 4.into()),
+            0xBB => (Cp(Arg::Reg8(Reg8::E)), 1, 4.into()),
+            0xBC => (Cp(Arg::Reg8(Reg8::H)), 1, 4.into()),
+            0xBD => (Cp(Arg::Reg8(Reg8::L)), 1, 4.into()),
+            0xBE => (Cp(Arg::MemHl), 1, 8.into()),
+            0xFE => (Cp(Arg::Imm8(arg8)), 2, 8.into()),
 
             // Jump
+            0x18 => {
+                let offset = arg8 as i8;
+                (Jr(offset, Cond::None), 2, Cycles(12, 8))
+            }
             0x28 => {
-                let offset = data[1] as i8;
+                let offset = arg8 as i8;
                 (Jr(offset, Cond::Zero), 2, Cycles(12, 8))
             }
             0xC3 => {
@@ -573,43 +566,115 @@ impl Instruction {
         let memory = &mut cpu.memory;
         let registers = &mut cpu.registers;
 
-        match self {
+        match *self {
             Nop => (),
-            LdReg16Imm16(dst, src) => {
-                registers.write_u16(*dst, *src);
+            Ld(dst, src) => {
+                match (dst, src) {
+                    (Arg::Reg16(dst), Arg::Imm16(src)) => {
+                        registers.write_u16(dst, src);
+                    }
+                    (Arg::Reg8(dst), Arg::Imm8(src)) => {
+                        registers.write_u8(dst, src);
+                    }
+                    _ => panic!("Unexpected dst and src: {:?}, {:?}", dst, src),
+                }
             }
-            IncReg8(dst) => {
-                let curr = registers.read_u8(*dst);
-                registers.write_u8(*dst, curr.wrapping_add(1));
+            Instruction::LdhA(src) => {
+                let value = memory.read(0xFF00 + src as u16);
+                registers.write_u8(Reg8::A, value);
             }
-            IncReg16(dst) => {
-                let curr = registers.read_u16(*dst);
-                registers.write_u16(*dst, curr.wrapping_add(1));
+            Instruction::LdhMemImmA(dst) => {
+                let a = registers.read_u8(Reg8::A);
+                memory.write(0xFF00 + dst as u16, a);
             }
-            IncMem => {
-                let addr = registers.read_u16(Reg16::HL);
-                let curr = memory.read(addr);
-                memory.write(addr, curr.wrapping_add(1));
-            }
-            DecReg8(dst) => {
-                let curr = registers.read_u8(*dst);
-                registers.write_u8(*dst, curr.wrapping_sub(1));
-            }
-            DecReg16(dst) => {
-                let curr = registers.read_u16(*dst);
-                registers.write_u16(*dst, curr.wrapping_sub(1));
-            }
-            DecMem => {
-                let addr = registers.read_u16(Reg16::HL);
-                let curr = memory.read(addr);
-                memory.write(addr, curr.wrapping_sub(1));
-            } 
-            CpImm8(src) => {
+            Xor(src) => {
                 let a = registers.read_u8(Reg8::A);
 
-                if *src == a {
+                let result = match src {
+                    Arg::Reg8(src) => {
+                        let curr = registers.read_u8(src);
+                        a ^ curr
+                    }
+                    Arg::Imm8(src) => {
+                        a ^ src
+                    }
+                    Arg::MemHl => {
+                        let addr = registers.read_u16(Reg16::HL);
+                        let curr = memory.read(addr);
+                        a ^ curr
+                    }
+                    _ => panic!("Unexpected src: {:?}", src),
+                };
+
+                registers.write_u8(Reg8::A, result);
+
+                // Flags
+                if result == 0 {
                     flags.set(Flag::Zero);
-                } else if *src > a {
+                }
+
+                flags.clear(Flag::Subtract);
+                flags.clear(Flag::Carry);
+                flags.clear(Flag::HalfCarry);
+            }
+            Inc(dst) => {
+                match dst {
+                    Arg::Reg8(dst) => {
+                        let curr = registers.read_u8(dst);
+                        registers.write_u8(dst, curr.wrapping_add(1));
+                    }
+                    Arg::Reg16(dst) => {
+                        let curr = registers.read_u16(dst);
+                        registers.write_u16(dst, curr.wrapping_add(1));
+                    }
+                    Arg::MemHl => {
+                        let addr = registers.read_u16(Reg16::HL);
+                        let curr = memory.read(addr);
+                        memory.write(addr, curr.wrapping_add(1));
+                    }
+                    _ => panic!("Unexpected dst: {:?}", dst),
+                }
+            }
+            Dec(dst) => {
+                // TODO: Flags
+                match dst {
+                    Arg::Reg8(dst) => {
+                        let curr = registers.read_u8(dst);
+                        registers.write_u8(dst, curr.wrapping_sub(1));
+                    }
+                    Arg::Reg16(dst) => {
+                        let curr = registers.read_u16(dst);
+                        registers.write_u16(dst, curr.wrapping_sub(1));
+                    }
+                    Arg::MemHl => {
+                        let addr = registers.read_u16(Reg16::HL);
+                        let curr = memory.read(addr);
+                        memory.write(addr, curr.wrapping_sub(1));
+                    }
+                    _ => panic!("Unexpected dst: {:?}", dst),
+                }
+            }
+            Cp(src) => {
+                let a = registers.read_u8(Reg8::A);
+
+                let other = match src {
+                    Arg::Reg8(src) => {
+                        registers.read_u8(src)
+                    }
+                    Arg::Imm8(src) => {
+                        src
+                    }
+                    Arg::MemHl => {
+                        let addr = registers.read_u16(Reg16::HL);
+                        memory.read(addr)
+                    }
+                    _ => panic!("Unexpected src: {:?}", src),
+                };
+
+                // Flags
+                if other == a {
+                    flags.set(Flag::Zero);
+                } else if other > a {
                     flags.set(Flag::Carry);
                 }
             }
@@ -624,7 +689,7 @@ impl Instruction {
                 };
 
                 if ok {
-                    registers.PC = *addr;
+                    registers.PC = addr;
                 }
             }
             Jr(offset, cond) => {
@@ -639,10 +704,10 @@ impl Instruction {
 
                 if ok {
                     // Numeric casts from signed to unsigned will sign extend
-                    registers.PC = registers.PC.wrapping_add(*offset as u16);
+                    registers.PC = registers.PC.wrapping_add(offset as u16);
                 }
             }
-            other => panic!("Unknown")
+            other => panic!("Cannot execute instruction: {:?}", other),
         }
     }
 }
