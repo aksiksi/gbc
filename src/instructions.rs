@@ -5,7 +5,7 @@ use crate::memory::{MemoryRead, MemoryWrite};
 use crate::registers::{Flag, Reg8, Reg16};
 
 /// A single argument to an instruction.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Arg {
     /// 8-bit register
     Reg8(Reg8),
@@ -32,7 +32,7 @@ pub enum Arg {
     MemHl,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Cond {
     None,
     NotZero,
@@ -44,7 +44,7 @@ pub enum Cond {
 /// Represents a single CPU instruction.
 ///
 /// Tuple contains either: (source) or (dest) or (dest, source)
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Instruction {
     /// Load an 8-bit or 16-bit value from src into dest
     /// src: Imm8 or Reg8 or Imm16 or Mem
@@ -438,6 +438,7 @@ pub enum Instruction {
 
 /// Number of cycles required
 /// If this is a conditional, second arg is if the path is not taken (faster)
+#[derive(Debug, PartialEq)]
 pub struct Cycles(pub u8, pub u8);
 
 impl Cycles {
@@ -459,10 +460,10 @@ impl From<u8> for Cycles {
 impl Instruction {
     /// Decode a single instruction from a 3-byte slice.
     /// Returns: instruction, instruction size, cycle count
-    pub fn decode(data: [u8; 3]) -> (Self, u16, Cycles) {
+    pub fn decode(data: [u8; 3]) -> (Self, u8, Cycles) {
         use Instruction::*;
 
-        // Extract the next arg as a 8-bit and 16-bit immediates
+        // Extract the next arg as 8-bit and 16-bit immediates
         let arg8 = data[1];
         let arg16 = u16::from_le_bytes(data[1..3].try_into().unwrap());
 
@@ -709,6 +710,48 @@ impl Instruction {
                 }
             }
             other => panic!("Cannot execute instruction: {:?}", other),
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use Instruction::*;
+
+    #[test]
+    fn test_decode_ld() {
+        // Vector of (input instruction, expected decoded, size, cycle count)
+        let test_vectors: &[([u8; 3], Instruction, u8, Cycles)] = &[
+            ([0x01, 0x34, 0x12], Ld(Arg::Reg16(Reg16::BC), Arg::Imm16(0x1234)), 3, 12.into()),
+            ([0x11, 0x34, 0x12], Ld(Arg::Reg16(Reg16::DE), Arg::Imm16(0x1234)), 3, 12.into()),
+            ([0x21, 0x34, 0x12], Ld(Arg::Reg16(Reg16::HL), Arg::Imm16(0x1234)), 3, 12.into()),
+            ([0x31, 0x34, 0x12], Ld(Arg::Reg16(Reg16::SP), Arg::Imm16(0x1234)), 3, 12.into()),
+
+            ([0x06, 0x34, 0x00], Ld(Arg::Reg8(Reg8::B),  Arg::Imm8(0x34)), 2, 8.into()),
+            ([0x16, 0x34, 0x00], Ld(Arg::Reg8(Reg8::D),  Arg::Imm8(0x34)), 2, 8.into()),
+            ([0x26, 0x34, 0x00], Ld(Arg::Reg8(Reg8::H),  Arg::Imm8(0x34)), 2, 8.into()),
+            ([0x36, 0x34, 0x00], Ld(Arg::Mem(Reg16::HL), Arg::Imm8(0x34)), 2, 12.into()),
+
+            ([0x0A, 0x34, 0x00], Ld(Arg::Reg8(Reg8::A),  Arg::Mem(Reg16::BC)), 1, 8.into()),
+            ([0x1A, 0x34, 0x00], Ld(Arg::Reg8(Reg8::A),  Arg::Mem(Reg16::DE)), 1, 8.into()),
+            ([0x2A, 0x34, 0x00], LdiAMemHl, 1, 8.into()),
+            ([0x3A, 0x34, 0x00], LddAMemHl, 1, 8.into()),
+
+            ([0x0E, 0x34, 0x00], Ld(Arg::Reg8(Reg8::C),  Arg::Imm8(0x34)), 2, 8.into()),
+            ([0x1E, 0x34, 0x00], Ld(Arg::Reg8(Reg8::E),  Arg::Imm8(0x34)), 2, 8.into()),
+            ([0x2E, 0x34, 0x00], Ld(Arg::Reg8(Reg8::L),  Arg::Imm8(0x34)), 2, 8.into()),
+            ([0x3E, 0x34, 0x00], Ld(Arg::Reg8(Reg8::A),  Arg::Imm8(0x34)), 2, 8.into()),
+
+            ([0xE0, 0x34, 0x00], LdhMemImmA(0x34), 2, 12.into()),
+            ([0xF0, 0x34, 0x00], LdhA(0x34), 2, 12.into()),
+        ];
+
+        for (input, expected, expected_size, expected_cycles) in test_vectors {
+            let (inst, size, cycles) = Instruction::decode(*input);
+            assert_eq!(expected, &inst);
+            assert_eq!(expected_size, &size);
+            assert_eq!(expected_cycles, &cycles);
         }
     }
 }
