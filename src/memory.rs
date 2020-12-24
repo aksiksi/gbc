@@ -11,7 +11,7 @@ pub trait MemoryRead<A, V> {
 pub trait MemoryRange<A, V> {
     /// Returns a read-only slice of an address range.
     /// Primarily used for instruction decoding.
-    fn range(&self, range: std::ops::Range<A>) -> &[V];
+    fn range(&self, range: std::ops::RangeFrom<A>) -> &[V];
 }
 
 pub trait MemoryWrite<A, V> {
@@ -268,7 +268,7 @@ impl MemoryRead<u16, u8> for MemoryBus {
 
 impl MemoryRange<u16, u8> for MemoryBus {
     /// Return a range of bytes from the relevant memory.
-    fn range(&self, range: std::ops::Range<u16>) -> &[u8] {
+    fn range(&self, range: std::ops::RangeFrom<u16>) -> &[u8] {
         match range.start {
             Rom::BASE_ADDR..=Rom::LAST_ADDR => self.rom.range(range),
             // 0x8000..=0x9FFF => self.vram.read(addr),
@@ -278,8 +278,7 @@ impl MemoryRange<u16, u8> for MemoryBus {
             // 0xC000..=0xDFFF => self.ram.read(addr),
             0xFF80..=0xFFFE => {
                 let start = range.start as usize - 0xFF80;
-                let end = range.end as usize - 0xFF80;
-                &self.high_ram[start..end]
+                &self.high_ram[start..]
             }
             _ => panic!("Unable to handle range: {:?}", range),
         }

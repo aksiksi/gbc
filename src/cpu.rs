@@ -1,8 +1,6 @@
-use std::convert::TryInto;
-
 use crate::instructions::{Arg, Cond, Instruction};
 use crate::memory::{MemoryBus, MemoryRange, MemoryRead, MemoryWrite};
-use crate::registers::{Flag, Flags, Reg16, Reg8, RegisterFile};
+use crate::registers::{Flag, Flags, Reg16, Reg8, RegisterFile, RegisterOps};
 
 #[derive(Debug)]
 pub struct Cpu {
@@ -27,7 +25,13 @@ impl Cpu {
     pub fn step(&mut self) -> u8 {
         let pc = self.registers.PC;
 
-        let data: [u8; 3] = self.memory.range(pc..pc + 3).try_into().unwrap();
+        // This returns a read-only slice of the relevant memory, starting from PC.
+        // The slice is used to decode the next instruction.
+        //
+        // Note that the slice is unbounded: it ends at the end of the relevant memory/bank.
+        // For example, if the current PC is in ROM bank 0, `data` will contain a slice
+        // from PC to the end of ROM bank 0.
+        let data = self.memory.range(pc..);
 
         // Decode the instruction
         let (inst, size, cycles) = Instruction::decode(data);
@@ -60,39 +64,39 @@ impl Cpu {
             Nop => (),
             Ld(dst, src) => match (dst, src) {
                 (Arg::Reg16(dst), Arg::Imm16(src)) => {
-                    regs.write_u16(dst, src);
+                    regs.write(dst, src);
                 }
                 (Arg::Reg8(dst), Arg::Imm8(src)) => {
-                    regs.write_u8(dst, src);
+                    regs.write(dst, src);
                 }
                 _ => panic!("Unexpected dst and src: {:?}, {:?}", dst, src),
             },
             LdhA(src) => {
                 let value = memory.read(0xFF00 + src as u16);
-                regs.write_u8(Reg8::A, value);
+                regs.write(Reg8::A, value);
             }
             LdhMemImmA(dst) => {
-                let a = regs.read_u8(Reg8::A);
+                let a = regs.read(Reg8::A);
                 memory.write(0xFF00 + dst as u16, a);
             }
             Xor(src) => {
-                let a = regs.read_u8(Reg8::A);
+                let a = regs.read(Reg8::A);
 
                 let result = match src {
                     Arg::Reg8(src) => {
-                        let curr = regs.read_u8(src);
+                        let curr = regs.read(src);
                         a ^ curr
                     }
                     Arg::Imm8(src) => a ^ src,
                     Arg::MemHl => {
-                        let addr = regs.read_u16(Reg16::HL);
+                        let addr = regs.read(Reg16::HL);
                         let curr = memory.read(addr);
                         a ^ curr
                     }
                     _ => panic!("Unexpected src: {:?}", src),
                 };
 
-                regs.write_u8(Reg8::A, result);
+                regs.write(Reg8::A, result);
 
                 // Flags
                 if result == 0 {
@@ -105,15 +109,15 @@ impl Cpu {
             }
             Inc(dst) => match dst {
                 Arg::Reg8(dst) => {
-                    let curr = regs.read_u8(dst);
-                    regs.write_u8(dst, curr.wrapping_add(1));
+                    let curr = regs.read(dst);
+                    regs.write(dst, curr.wrapping_add(1));
                 }
                 Arg::Reg16(dst) => {
-                    let curr = regs.read_u16(dst);
-                    regs.write_u16(dst, curr.wrapping_add(1));
+                    let curr = regs.read(dst);
+                    regs.write(dst, curr.wrapping_add(1));
                 }
                 Arg::MemHl => {
-                    let addr = regs.read_u16(Reg16::HL);
+                    let addr = regs.read(Reg16::HL);
                     let curr = memory.read(addr);
                     memory.write(addr, curr.wrapping_add(1));
                 }
@@ -123,15 +127,15 @@ impl Cpu {
                 // TODO: Flags
                 match dst {
                     Arg::Reg8(dst) => {
-                        let curr = regs.read_u8(dst);
-                        regs.write_u8(dst, curr.wrapping_sub(1));
+                        let curr = regs.read(dst);
+                        regs.write(dst, curr.wrapping_sub(1));
                     }
                     Arg::Reg16(dst) => {
-                        let curr = regs.read_u16(dst);
-                        regs.write_u16(dst, curr.wrapping_sub(1));
+                        let curr = regs.read(dst);
+                        regs.write(dst, curr.wrapping_sub(1));
                     }
                     Arg::MemHl => {
-                        let addr = regs.read_u16(Reg16::HL);
+                        let addr = regs.read(Reg16::HL);
                         let curr = memory.read(addr);
                         memory.write(addr, curr.wrapping_sub(1));
                     }
@@ -139,13 +143,13 @@ impl Cpu {
                 }
             }
             Cp(src) => {
-                let a = regs.read_u8(Reg8::A);
+                let a = regs.read(Reg8::A);
 
                 let other = match src {
-                    Arg::Reg8(src) => regs.read_u8(src),
+                    Arg::Reg8(src) => regs.read(src),
                     Arg::Imm8(src) => src,
                     Arg::MemHl => {
-                        let addr = regs.read_u16(Reg16::HL);
+                        let addr = regs.read(Reg16::HL);
                         memory.read(addr)
                     }
                     _ => panic!("Unexpected src: {:?}", src),

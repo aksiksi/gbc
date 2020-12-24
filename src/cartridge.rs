@@ -125,17 +125,16 @@ impl MemoryRange<u16, u8> for Ram {
     ///
     /// Note: This internally handles both banked and unbanked cartridge RAM.
     #[inline]
-    fn range(&self, range: std::ops::Range<u16>) -> &[u8] {
+    fn range(&self, range: std::ops::RangeFrom<u16>) -> &[u8] {
         let start = (range.start - Self::BASE_ADDR) as usize;
-        let end = (range.end - Self::BASE_ADDR) as usize;
 
         match self {
-            Self::Unbanked { data, .. } => &data[start..end],
+            Self::Unbanked { data, .. } => &data[start..],
             Self::Banked {
                 data, active_bank, ..
             } => {
                 let bank_offset = *active_bank as usize * Self::BANK_SIZE;
-                &data[bank_offset + start..bank_offset + end]
+                &data[bank_offset + start..]
             }
         }
     }
@@ -359,19 +358,18 @@ impl MemoryRange<u16, u8> for Rom {
     ///
     /// Note that this does not handle cross-bank slices.
     #[inline]
-    fn range(&self, range: std::ops::Range<u16>) -> &[u8] {
+    fn range(&self, range: std::ops::RangeFrom<u16>) -> &[u8] {
         let start = range.start;
-        let end = range.end;
 
         match start {
             0x0000..=0x3FFF => {
                 // Bank 0 (static)
-                &self.bank0[start as usize..end as usize]
+                &self.bank0[start as usize..]
             }
             0x4000..=0x7FFF => {
                 // Bank 1 (dynamic)
                 let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
-                &self.bank1[(bank_offset + start as usize)..(bank_offset + end as usize)]
+                &self.bank1[bank_offset + start as usize..]
             }
             _ => panic!("Range start is larger than allowed: {}", start),
         }

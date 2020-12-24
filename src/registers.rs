@@ -25,6 +25,12 @@ pub enum Reg16 {
     SP,
 }
 
+/// A trait that defines basic register operations.
+pub trait RegisterOps<R, V> {
+    fn read(&self, reg: R) -> V;
+    fn write(&mut self, reg: R, value: V);
+}
+
 #[derive(Debug, PartialEq)]
 pub enum Flag {
     Zero,
@@ -171,8 +177,49 @@ impl RegisterFile {
             SP: 0xFFFE,
         }
     }
+}
 
-    pub fn write_u16(&mut self, reg: Reg16, value: u16) {
+impl RegisterOps<Reg8, u8> for RegisterFile {
+    fn read(&self, reg: Reg8) -> u8 {
+        match reg {
+            Reg8::A => self.A,
+            Reg8::F => self.F,
+            Reg8::B => self.B,
+            Reg8::C => self.C,
+            Reg8::D => self.D,
+            Reg8::E => self.E,
+            Reg8::H => self.H,
+            Reg8::L => self.L,
+        }
+    }
+
+    fn write(&mut self, reg: Reg8, value: u8) {
+        match reg {
+            Reg8::A => self.A = value,
+            Reg8::F => self.F = value,
+            Reg8::B => self.B = value,
+            Reg8::C => self.C = value,
+            Reg8::D => self.D = value,
+            Reg8::E => self.E = value,
+            Reg8::H => self.H = value,
+            Reg8::L => self.L = value,
+        }
+    }
+}
+
+impl RegisterOps<Reg16, u16> for RegisterFile {
+    fn read(&self, reg: Reg16) -> u16 {
+        match reg {
+            Reg16::AF => (self.F as u16) << 8 | self.A as u16,
+            Reg16::BC => (self.C as u16) << 8 | self.B as u16,
+            Reg16::DE => (self.E as u16) << 8 | self.D as u16,
+            Reg16::HL => (self.L as u16) << 8 | self.H as u16,
+            Reg16::SP => self.SP,
+            Reg16::PC => self.PC,
+        }
+    }
+
+    fn write(&mut self, reg: Reg16, value: u16) {
         match reg {
             Reg16::AF => {
                 self.A = (value & 0xFF) as u8;
@@ -194,43 +241,6 @@ impl RegisterFile {
             Reg16::SP => self.SP = value,
         }
     }
-
-    pub fn read_u16(&self, reg: Reg16) -> u16 {
-        match reg {
-            Reg16::AF => (self.F as u16) << 8 | self.A as u16,
-            Reg16::BC => (self.C as u16) << 8 | self.B as u16,
-            Reg16::DE => (self.E as u16) << 8 | self.D as u16,
-            Reg16::HL => (self.L as u16) << 8 | self.H as u16,
-            Reg16::SP => self.SP,
-            Reg16::PC => self.PC,
-        }
-    }
-
-    pub fn write_u8(&mut self, reg: Reg8, value: u8) {
-        match reg {
-            Reg8::A => self.A = value,
-            Reg8::F => self.F = value,
-            Reg8::B => self.B = value,
-            Reg8::C => self.C = value,
-            Reg8::D => self.D = value,
-            Reg8::E => self.E = value,
-            Reg8::H => self.H = value,
-            Reg8::L => self.L = value,
-        }
-    }
-
-    pub fn read_u8(&self, reg: Reg8) -> u8 {
-        match reg {
-            Reg8::A => self.A,
-            Reg8::F => self.F,
-            Reg8::B => self.B,
-            Reg8::C => self.C,
-            Reg8::D => self.D,
-            Reg8::E => self.E,
-            Reg8::H => self.H,
-            Reg8::L => self.L,
-        }
-    }
 }
 
 #[cfg(test)]
@@ -241,13 +251,13 @@ mod test {
     fn test_combined_regs() {
         let mut regs = RegisterFile::new();
 
-        regs.write_u8(Reg8::A, 0x10);
-        regs.write_u8(Reg8::F, 0xFF);
-        assert_eq!(regs.read_u16(Reg16::AF), 0xFF10);
+        regs.write(Reg8::A, 0x10);
+        regs.write(Reg8::F, 0xFF);
+        assert_eq!(regs.read(Reg16::AF), 0xFF10);
 
-        regs.write_u16(Reg16::BC, 0xBEEF);
-        assert_eq!(regs.read_u8(Reg8::B), 0xEF);
-        assert_eq!(regs.read_u8(Reg8::C), 0xBE);
+        regs.write(Reg16::BC, 0xBEEF);
+        assert_eq!(regs.read(Reg8::B), 0xEF);
+        assert_eq!(regs.read(Reg8::C), 0xBE);
     }
 
     #[test]

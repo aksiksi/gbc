@@ -458,12 +458,17 @@ impl From<u8> for Cycles {
 impl Instruction {
     /// Decode a single instruction from a 3-byte slice.
     /// Returns: instruction, instruction size, cycle count
-    pub fn decode(data: [u8; 3]) -> (Self, u8, Cycles) {
+    pub fn decode(data: &[u8]) -> (Self, u8, Cycles) {
         use Instruction::*;
 
-        // Extract the next arg as 8-bit and 16-bit immediates
-        let arg8 = data[1];
-        let arg16 = u16::from_le_bytes(data[1..3].try_into().unwrap());
+        // Safely extract the next arg as 8-bit and 16-bit immediates
+        // If we are at the end of the memory range, we will return 0.
+        let arg8 = if data.len() >= 2 { data[1] } else { 0 };
+        let arg16 = if data.len() >= 3 {
+            u16::from_le_bytes(data[1..3].try_into().unwrap())
+        } else {
+            0
+        };
 
         let (inst, size, cycles) = match data[0] {
             0x00 => (Nop, 1, 4.into()),
@@ -594,7 +599,7 @@ mod test {
         ];
 
         for (input, expected, expected_size, expected_cycles) in test_vectors {
-            let (inst, size, cycles) = Instruction::decode(*input);
+            let (inst, size, cycles) = Instruction::decode(&input[..]);
             assert_eq!(expected, &inst);
             assert_eq!(expected_size, &size);
             assert_eq!(expected_cycles, &cycles);
