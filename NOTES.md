@@ -18,7 +18,10 @@
 
 ### Cartridge
 
+### Instruction Handling
 
+* Look into abstracting out all arg types to simplify instruction handling
+    * e.g., `Operand` can be `Reg8`, `Reg16`, `Imm8u`, `Imm8i`, `Imm16`, `Mem`, `MemImm16`
 
 ## A GUI in Rust
 

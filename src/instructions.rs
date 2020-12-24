@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use crate::cartridge::Rom;
 use crate::cpu::Cpu;
 use crate::error::{Error, Result};
@@ -471,7 +473,7 @@ pub enum Instruction {
 }
 
 /// Number of cycles required
-/// If this is a conditional, second arg is if the path is taken (slower)
+/// If this is a conditional, second arg is if the path is not taken (faster)
 pub struct Cycles(pub u8, pub u8);
 
 impl Cycles {
@@ -491,19 +493,22 @@ impl From<u8> for Cycles {
 }
 
 impl Instruction {
-    /// Decode a single instruction starting at the address contained in PC.
-    /// Returns: new PC, instruction, cycle count
-    pub fn decode(pc: u16, rom: &Rom) -> (u16, Self, Cycles) {
+    /// Decode a single instruction from a 3-byte slice.
+    /// Returns: instruction, instruction size, cycle count
+    pub fn decode(data: [u8; 3]) -> (Self, u16, Cycles) {
         use Instruction::*;
 
-        let (inst, size, cycles) = match rom.read(pc) {
+        // Extract the next arg as a 16-bit number
+        let arg16 = u16::from_le_bytes(data[1..3].try_into().unwrap());
+
+        let (inst, size, cycles) = match data[0] {
             0x00 => (Nop, 1, 4.into()),
 
             // LdReg16Imm16
-            0x01 => (LdReg16Imm16(Reg16::BC, rom.read_u16(pc+1)), 3, 12.into()),
-            0x11 => (LdReg16Imm16(Reg16::DE, rom.read_u16(pc+1)), 3, 12.into()),
-            0x21 => (LdReg16Imm16(Reg16::HL, rom.read_u16(pc+1)), 3, 12.into()),
-            0x31 => (LdReg16Imm16(Reg16::SP, rom.read_u16(pc+1)), 3, 12.into()),
+            0x01 => (LdReg16Imm16(Reg16::BC, arg16), 3, 12.into()),
+            0x11 => (LdReg16Imm16(Reg16::DE, arg16), 3, 12.into()),
+            0x21 => (LdReg16Imm16(Reg16::HL, arg16), 3, 12.into()),
+            0x31 => (LdReg16Imm16(Reg16::SP, arg16), 3, 12.into()),
 
             // Inc
             0x03 => (IncReg16(Reg16::BC), 1, 8.into()),
@@ -542,22 +547,22 @@ impl Instruction {
             0xBC => (CpReg8(Reg8::H), 1, 4.into()),
             0xBD => (CpReg8(Reg8::L), 1, 4.into()),
             0xBE => (CpMem, 1, 8.into()),
-            0xFE => (CpImm8(rom.read(pc+1)), 2, 8.into()),
+            0xFE => (CpImm8(data[1]), 2, 8.into()),
 
             // Jump
             0x28 => {
-                let offset = rom.read(pc+1) as i8;
+                let offset = data[1] as i8;
                 (Jr(offset, Cond::Zero), 2, Cycles(12, 8))
             }
             0xC3 => {
-                let addr = rom.read_u16(pc+1);
+                let addr = arg16;
                 (Jp(addr, Cond::None), 3, 16.into())
             }
 
             other => panic!("Unknown instruction: {}", other),
         };
 
-        (pc + size, inst, cycles)
+        (inst, size, cycles)
     }
 
     /// Executes this instruction on the CPU

@@ -271,6 +271,29 @@ impl Rom {
         Ok(rom)
     }
 
+    /// Returns a slice of bytes from the ROM bank corresponding to
+    /// the given `start` address.
+    ///
+    /// Note that this does not handle cross-bank slices.
+    #[inline]
+    pub fn range(&self, range: std::ops::Range<u16>) -> &[u8] {
+        let start = range.start;
+        let end = range.end;
+
+        match start {
+            0x0000..=0x3FFF => {
+                // Bank 0 (static)
+                &self.bank0[start as usize..end as usize]
+            }
+            0x4000..=0x7FFF => {
+                // Bank 1 (dynamic)
+                let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
+                &self.bank1[(bank_offset+start as usize)..(bank_offset+end as usize)]
+            }
+            _ => panic!("Range start is larger than allowed: {}", start),
+        }
+    }
+
     #[inline]
     pub fn read(&self, addr: u16) -> u8 {
         let addr = addr as usize;
