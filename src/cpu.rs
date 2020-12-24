@@ -1,7 +1,7 @@
 use std::convert::TryInto;
 
 use crate::instructions::Instruction;
-use crate::memory::MemoryBus;
+use crate::memory::{MemoryBus, MemoryRange};
 use crate::registers::{Flags, RegisterFile};
 
 #[derive(Debug)]

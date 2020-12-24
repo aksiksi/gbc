@@ -4,6 +4,7 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 use crate::error::{Error, Result};
+use crate::memory::{MemoryRead, MemoryRange, MemoryWrite};
 
 // Cartridge RAM size
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -93,9 +94,16 @@ impl Ram {
         }
     }
 
+    /// Handle a bank change request
+    fn update_bank(&mut self, _addr: u16, _value: u8) {
+        unimplemented!()
+    }
+}
+
+impl MemoryRead<u16, u8> for Ram {
     /// Read a byte of data from the current active bank
     #[inline]
-    pub fn read(&self, addr: u16) -> u8 {
+    fn read(&self, addr: u16) -> u8 {
         let addr = addr as usize;
         match &self {
             Self::Unbanked { data, .. } => data[addr],
@@ -107,15 +115,35 @@ impl Ram {
             }
         }
     }
+}
 
-    /// Handle a bank change request
-    fn update_bank(&mut self, addr: u16, value: u8) {
-        unimplemented!()
+impl MemoryRange<u16, u8> for Ram {
+    /// Return a slice of memory corresponding to the given range.
+    ///
+    /// Note: This internally handles both banked and unbanked cartridge RAM.
+    #[inline]
+    fn range(&self, range: std::ops::Range<u16>) -> &[u8] {
+        let start = range.start;
+        let end = range.end;
+
+        match self {
+            Self::Unbanked { data, .. } => {
+                &data[start as usize..end as usize]
+            }
+            Self::Banked {
+                data, active_bank, ..
+            } => {
+                let bank_offset = *active_bank as usize * Self::BANK_SIZE;
+                &data[bank_offset + start as usize..bank_offset + end as usize]
+            }
+        }
     }
+}
 
+impl MemoryWrite<u16, u8> for Ram {
     /// Write a byte of data to the current active bank
     #[inline]
-    pub fn write(&mut self, addr: u16, value: u8) {
+    fn write(&mut self, addr: u16, value: u8) {
         let addr = addr as usize;
         match self {
             Self::Unbanked { data, .. } => {
@@ -134,12 +162,12 @@ impl Ram {
 impl std::fmt::Debug for Ram {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Unbanked { data, ram_size } => f
+            Self::Unbanked { data: _, ram_size } => f
                 .debug_struct("CartridgeRam::Unbanked")
                 .field("ram_size", &ram_size)
                 .finish(),
             Self::Banked {
-                data,
+                data: _,
                 active_bank,
                 num_banks,
                 ram_size,
@@ -271,31 +299,15 @@ impl Rom {
         Ok(rom)
     }
 
-    /// Returns a slice of bytes from the ROM bank corresponding to
-    /// the given `start` address.
-    ///
-    /// Note that this does not handle cross-bank slices.
-    #[inline]
-    pub fn range(&self, range: std::ops::Range<u16>) -> &[u8] {
-        let start = range.start;
-        let end = range.end;
-
-        match start {
-            0x0000..=0x3FFF => {
-                // Bank 0 (static)
-                &self.bank0[start as usize..end as usize]
-            }
-            0x4000..=0x7FFF => {
-                // Bank 1 (dynamic)
-                let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
-                &self.bank1[(bank_offset+start as usize)..(bank_offset+end as usize)]
-            }
-            _ => panic!("Range start is larger than allowed: {}", start),
-        }
+    /// Handle a bank change request
+    fn update_bank(&mut self, _addr: u16, _value: u8) {
+        unimplemented!()
     }
+}
 
+impl MemoryRead<u16, u8> for Rom {
     #[inline]
-    pub fn read(&self, addr: u16) -> u8 {
+    fn read(&self, addr: u16) -> u8 {
         let addr = addr as usize;
 
         match addr {
@@ -311,10 +323,12 @@ impl Rom {
             _ => panic!("Unexpected read from: {}", addr),
         }
     }
+}
 
+impl MemoryRead<u16, u16> for Rom {
     /// Read the next 2 bytes as a single u16 (LS byte first)
     #[inline]
-    pub fn read_u16(&self, addr: u16) -> u16 {
+    fn read(&self, addr: u16) -> u16 {
         let addr = addr as usize;
 
         match addr {
@@ -334,14 +348,36 @@ impl Rom {
             _ => panic!("Unexpected read from: {}", addr),
         }
     }
+}
 
-    /// Handle a bank change request
-    fn update_bank(&mut self, addr: u16, value: u8) {
-        unimplemented!()
-    }
-
+impl MemoryRange<u16, u8> for Rom {
+    /// Returns a slice of bytes from the ROM bank corresponding to
+    /// the given `start` address.
+    ///
+    /// Note that this does not handle cross-bank slices.
     #[inline]
-    pub fn write(&mut self, addr: u16, value: u8) {
+    fn range(&self, range: std::ops::Range<u16>) -> &[u8] {
+        let start = range.start;
+        let end = range.end;
+
+        match start {
+            0x0000..=0x3FFF => {
+                // Bank 0 (static)
+                &self.bank0[start as usize..end as usize]
+            }
+            0x4000..=0x7FFF => {
+                // Bank 1 (dynamic)
+                let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
+                &self.bank1[(bank_offset+start as usize)..(bank_offset+end as usize)]
+            }
+            _ => panic!("Range start is larger than allowed: {}", start),
+        }
+    }
+}
+
+impl MemoryWrite<u16, u8> for Rom {
+    #[inline]
+    fn write(&mut self, addr: u16, value: u8) {
         let addr = addr as usize;
 
         match addr {
@@ -361,7 +397,7 @@ impl Rom {
 
 impl std::fmt::Debug for Rom {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Memory")
+        f.debug_struct("Rom")
             .field("bank0", &self.bank0[0])
             .field("bank1", &self.bank1[0])
             .field("active_bank", &self.active_bank)

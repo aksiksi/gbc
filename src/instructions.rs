@@ -1,6 +1,7 @@
 use std::convert::TryInto;
 
 use crate::cpu::Cpu;
+use crate::memory::{MemoryRead, MemoryWrite};
 use crate::registers::{Flag, Reg8, Reg16};
 
 /// A single argument to an instruction.
