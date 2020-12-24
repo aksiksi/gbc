@@ -22,41 +22,36 @@ pub trait MemoryWrite<A, V> {
 /// Internal console work RAM
 ///
 /// 0xC000 - 0xCFFF: Bank 0,   4K, static
-/// 0xD000 - 0xDFFF: Bank 1, 4K (non-CGB mode)
+/// 0xD000 - 0xDFFF: Bank 1,   4K  (non-CGB mode)
 /// 0xD000 - 0xDFFF: Bank 1-7, 4K, switchable (CGB mode)
-pub struct Ram {
-    /// Static bank, 4K
-    bank0: [u8; Self::BANK_SIZE],
-
-    /// Dynamic bank, depends on active bank
-    ///
-    /// Non-CGB mode: 1 x 4K
-    /// CGB mode: 8 x 4K
-    bank1: Vec<u8>,
-
-    /// Currently active bank
-    ///
-    /// Note: This is ignored in non-CGB mode
-    active_bank: u8,
+pub enum Ram {
+    Unbanked {
+        /// Two static banks, 4K each
+        /// Non-CGB mode
+        data: [u8; Self::BANK_SIZE * 2],
+    },
+    Banked {
+        /// Eight static banks, 4K each
+        /// CGB mode
+        data: [u8; Self::BANK_SIZE * 8],
+        active_bank: u8,
+    }
 }
 
 impl Ram {
     const BANK_SIZE: usize = 4 * 1024; // 4K
-    const NUM_BANKS: usize = 8;
+    pub const BASE_ADDR: u16 = 0xC000;
 
     pub fn new(cgb: bool) -> Self {
-        let bank0 = [0u8; Self::BANK_SIZE];
-
-        let bank1 = if cgb {
-            vec![0u8; Self::BANK_SIZE * Self::NUM_BANKS]
+        if cgb {
+            Self::Banked {
+                data: [0u8; Self::BANK_SIZE * 8],
+                active_bank: 0,
+            }
         } else {
-            vec![0u8; Self::BANK_SIZE]
-        };
-
-        Self {
-            bank0,
-            bank1,
-            active_bank: 0,
+            Self::Unbanked {
+                data: [0u8; Self::BANK_SIZE * 2],
+            }
         }
     }
 }
@@ -64,19 +59,25 @@ impl Ram {
 impl MemoryRead<u16, u8> for Ram {
     #[inline]
     fn read(&self, addr: u16) -> u8 {
-        let addr = addr as usize;
+        let addr = (addr - Self::BASE_ADDR) as usize;
 
-        match addr {
-            0xC000..=0xCFFF => {
-                // Bank 0 (static)
-                self.bank0[addr]
+        match self {
+            Self::Unbanked { data } => {
+               data[addr]
+            },
+            Self::Banked { data, active_bank } => {
+                match addr {
+                    0x0000..=0x0FFF => {
+                        // Read from the first bank
+                        data[addr]
+                    }
+                    _ => {
+                        // Read from the switchable bank
+                        let bank_offset = *active_bank as usize * Self::BANK_SIZE;
+                        data[bank_offset + addr]
+                    }
+                }
             }
-            0xD000..=0xDFFF => {
-                // Bank 1 (dynamic)
-                let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
-                self.bank1[bank_offset + addr]
-            }
-            _ => panic!("Unexpected read from: {}", addr),
         }
     }
 }
@@ -84,41 +85,57 @@ impl MemoryRead<u16, u8> for Ram {
 impl MemoryWrite<u16, u8> for Ram {
     #[inline]
     fn write(&mut self, addr: u16, value: u8) {
-        let addr = addr as usize;
+        let addr = (addr - Self::BASE_ADDR) as usize;
 
-        match addr {
-            0xC000..=0xCFFF => {
-                // Bank 0 (static)
-                self.bank0[addr] = value;
+        match self {
+            Self::Unbanked { data } => {
+               data[addr] = value;
+            },
+            Self::Banked { data, active_bank } => {
+                match addr {
+                    0x0000..=0x0FFF => {
+                        // Write to the first bank
+                        data[addr] = value;
+                    }
+                    _ => {
+                        // Write to the switchable bank
+                        let bank_offset = *active_bank as usize * Self::BANK_SIZE;
+                        data[bank_offset + addr] = value;
+                    }
+                }
             }
-            0xD000..=0xDFFF => {
-                // Bank 1 (dynamic)
-                let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
-                self.bank1[bank_offset + addr] = value;
-            }
-            _ => panic!("Unexpected write from: {}", addr),
         }
     }
 }
 
 impl std::fmt::Debug for Ram {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Memory")
-            .field("bank0", &self.bank0[0])
-            .field("bank1", &self.bank1[0])
-            .field("active_bank", &self.active_bank)
-            .finish()
+        match self {
+            Self::Unbanked { data } => f
+                .debug_struct("Ram::Unbanked")
+                .field("size", &data.len())
+                .finish(),
+            Self::Banked {
+                data,
+                active_bank,
+            } => f
+                .debug_struct("CartridgeRam::Banked")
+                .field("size", &data.len())
+                .field("active_bank", &active_bank)
+                .finish(),
+        }
     }
 }
 
 pub enum Vram {
     Unbanked {
         /// Static bank, 8K
+        /// Non-CGB mode
         data: [u8; Self::BANK_SIZE],
     },
     Banked {
         /// Two static banks, 8K each
-        /// This mode is only present in CGB mode
+        /// CGB mode
         data: [u8; Self::BANK_SIZE * 2],
         active_bank: u8,
     }
@@ -126,6 +143,7 @@ pub enum Vram {
 
 impl Vram {
     const BANK_SIZE: usize = 8 * 1024;
+    pub const BASE_ADDR: u16 = 0x8000;
 
     pub fn new(cgb: bool) -> Self {
         if cgb {
@@ -144,8 +162,7 @@ impl Vram {
 impl MemoryRead<u16, u8> for Vram {
     #[inline]
     fn read(&self, addr: u16) -> u8 {
-        let addr = addr as usize;
-
+        let addr = (addr - Self::BASE_ADDR) as usize;
         match self {
             Self::Unbanked { data } => {
                 // Bank 0 (static)
@@ -162,8 +179,7 @@ impl MemoryRead<u16, u8> for Vram {
 impl MemoryWrite<u16, u8> for Vram {
     #[inline]
     fn write(&mut self, addr: u16, value: u8) {
-        let addr = addr as usize;
-
+        let addr = (addr - Self::BASE_ADDR) as usize;
         match self {
             Self::Unbanked { data } => {
                 // Bank 0 (static)
@@ -266,5 +282,37 @@ impl MemoryWrite<u16, u8> for MemoryBus {
             }
             _ => panic!("Unable to write to address: {:?}", addr),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::cartridge::RomSize;
+
+    #[test]
+    fn test_rom_operations() {
+        let mut rom = Rom::new(RomSize::_2M);
+
+        rom.write(0u16, 0x66u8);
+        let value: u8 = rom.read(0u16);
+        assert_eq!(value, 0x66);
+
+        rom.write(0x1234u16, 0x66u8);
+        let value: u8 = rom.read(0x1234u16);
+        assert_eq!(value, 0x66);
+    }
+
+    #[test]
+    fn test_ram_operations() {
+        let mut ram = Ram::new(true);
+
+        ram.write(Ram::BASE_ADDR, 0x66u8);
+        let value: u8 = ram.read(Ram::BASE_ADDR);
+        assert_eq!(value, 0x66);
+
+        ram.write(Ram::BASE_ADDR + 0x1234u16, 0x66u8);
+        let value: u8 = ram.read(Ram::BASE_ADDR + 0x1234u16);
+        assert_eq!(value, 0x66);
     }
 }

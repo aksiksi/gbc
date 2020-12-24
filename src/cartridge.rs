@@ -62,8 +62,10 @@ pub enum Ram {
     },
 }
 
+/// 8 KB switchable/banked external RAM
 impl Ram {
     const BANK_SIZE: usize = 8 * 1024; // 8K
+    pub const BASE_ADDR: u16 = 0xA000;
 
     pub fn new(ram_size: RamSize) -> Option<Self> {
         match ram_size {
@@ -104,7 +106,7 @@ impl MemoryRead<u16, u8> for Ram {
     /// Read a byte of data from the current active bank
     #[inline]
     fn read(&self, addr: u16) -> u8 {
-        let addr = addr as usize;
+        let addr = (addr - Self::BASE_ADDR) as usize;
         match &self {
             Self::Unbanked { data, .. } => data[addr],
             Self::Banked {
@@ -123,18 +125,18 @@ impl MemoryRange<u16, u8> for Ram {
     /// Note: This internally handles both banked and unbanked cartridge RAM.
     #[inline]
     fn range(&self, range: std::ops::Range<u16>) -> &[u8] {
-        let start = range.start;
-        let end = range.end;
+        let start = (range.start - Self::BASE_ADDR) as usize;
+        let end = (range.end - Self::BASE_ADDR) as usize;
 
         match self {
             Self::Unbanked { data, .. } => {
-                &data[start as usize..end as usize]
+                &data[start..end]
             }
             Self::Banked {
                 data, active_bank, ..
             } => {
                 let bank_offset = *active_bank as usize * Self::BANK_SIZE;
-                &data[bank_offset + start as usize..bank_offset + end as usize]
+                &data[bank_offset + start..bank_offset + end]
             }
         }
     }
@@ -144,7 +146,7 @@ impl MemoryWrite<u16, u8> for Ram {
     /// Write a byte of data to the current active bank
     #[inline]
     fn write(&mut self, addr: u16, value: u8) {
-        let addr = addr as usize;
+        let addr = (addr - Self::BASE_ADDR) as usize;
         match self {
             Self::Unbanked { data, .. } => {
                 data[addr] = value;
@@ -326,7 +328,7 @@ impl MemoryRead<u16, u8> for Rom {
 }
 
 impl MemoryRead<u16, u16> for Rom {
-    /// Read the next 2 bytes as a single u16 (LS byte first)
+    /// Read the next 2 bytes in ROM as a single u16 (LS byte first)
     #[inline]
     fn read(&self, addr: u16) -> u16 {
         let addr = addr as usize;
