@@ -335,12 +335,22 @@ impl MemoryRead<u16, u16> for Rom {
 
         match addr {
             0x0000..=0x3FFF => {
+                if addr + 1 > self.bank0.len() {
+                    eprintln!("Cannot read 16-bit value at address {}", addr);
+                    return 0;
+                }
+
                 // Bank 0 (static)
                 let lower = self.bank0[addr] as u16;
                 let upper = self.bank0[addr + 1] as u16;
                 (upper << 8) | lower
             }
             0x4000..=0x7FFF => {
+                if addr + 1 > Self::LAST_ADDR as usize {
+                    eprintln!("Cannot read 16-bit value at address {}", addr);
+                    return 0;
+                }
+
                 // Bank 1 (dynamic)
                 let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
                 let lower = self.bank1[bank_offset + addr] as u16;
@@ -547,6 +557,7 @@ pub struct Cartridge {
     rom_file: File,
 
     /// Cartridge header
+    ///
     /// See: https://gbdev.gg8.se/wiki/articles/The_Cartridge_Header
     header: [u8; Self::HEADER_SIZE],
 }
@@ -643,6 +654,7 @@ impl Cartridge {
     }
 
     /// Destination code
+    ///
     /// `true` if Japanese, `false` otherwise
     pub fn destination_code(&self) -> bool {
         let code = self.header[0x4A];
@@ -674,13 +686,13 @@ impl Cartridge {
     }
 
     /// Builds ROM based on cartridge options and returns it.
-    pub fn get_rom(&mut self) -> Result<Rom> {
+    pub fn build_rom(&mut self) -> Result<Rom> {
         let rom_size = self.rom_size()?;
         Rom::from_file(rom_size, &mut self.rom_file)
     }
 
     /// Builds cartridge RAM based on cartridge options and returns it, if available.
-    pub fn get_ram(&self) -> Result<Option<Ram>> {
+    pub fn build_ram(&self) -> Result<Option<Ram>> {
         let ram_size = self.ram_size()?;
         Ok(Ram::new(ram_size))
     }

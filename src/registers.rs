@@ -161,8 +161,8 @@ pub struct RegisterFile {
 impl RegisterFile {
     /// Returns a new register file
     ///
-    /// PC is initialized to 0x100 on boot
-    /// SP is initialized to 0xFFFE on boot
+    /// * PC is initialized to 0x100 on boot
+    /// * SP is initialized to 0xFFFE on boot
     pub fn new() -> Self {
         Self {
             A: 0,

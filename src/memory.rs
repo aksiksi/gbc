@@ -2,6 +2,7 @@ use crate::cartridge::{Cartridge, Ram as CartridgeRam, Rom};
 use crate::error::Result;
 
 /// Generic traits that provide access to some memory.
+///
 /// `A` is the address size, and `V` is the value size.
 pub trait MemoryRead<A, V> {
     /// Read a single value from an address.
@@ -10,6 +11,7 @@ pub trait MemoryRead<A, V> {
 
 pub trait MemoryRange<A, V> {
     /// Returns a read-only slice of an address range.
+    ///
     /// Primarily used for instruction decoding.
     fn range(&self, range: std::ops::RangeFrom<A>) -> &[V];
 }
@@ -21,9 +23,9 @@ pub trait MemoryWrite<A, V> {
 
 /// Internal console work RAM
 ///
-/// 0xC000 - 0xCFFF: Bank 0,   4K, static
-/// 0xD000 - 0xDFFF: Bank 1,   4K  (non-CGB mode)
-/// 0xD000 - 0xDFFF: Bank 1-7, 4K, switchable (CGB mode)
+/// * 0xC000 - 0xCFFF: Bank 0,   4K, static
+/// * 0xD000 - 0xDFFF: Bank 1,   4K  (non-CGB mode)
+/// * 0xD000 - 0xDFFF: Bank 1-7, 4K, switchable (CGB mode)
 pub enum Ram {
     Unbanked {
         /// Two static banks, 4K each
@@ -126,11 +128,13 @@ impl std::fmt::Debug for Ram {
 pub enum Vram {
     Unbanked {
         /// Static bank, 8K
+        ///
         /// Non-CGB mode
         data: [u8; Self::BANK_SIZE],
     },
     Banked {
         /// Two static banks, 8K each
+        ///
         /// CGB mode
         data: [u8; Self::BANK_SIZE * 2],
         active_bank: u8,
@@ -222,6 +226,7 @@ pub struct MemoryBus {
     ram: Ram,
 
     // ..ignored
+
     /// 0xFF80 - 0xFFFE
     high_ram: [u8; 0x80],
 
@@ -232,9 +237,9 @@ pub struct MemoryBus {
 impl MemoryBus {
     pub fn from_cartridge(cartridge: &mut Cartridge) -> Result<Self> {
         Ok(Self {
-            rom: cartridge.get_rom()?,
+            rom: cartridge.build_rom()?,
             vram: Vram::new(true),
-            cartridge_ram: cartridge.get_ram()?,
+            cartridge_ram: cartridge.build_ram()?,
             ram: Ram::new(true),
             high_ram: [0u8; 0x80],
             int_enable_reg: 0,
@@ -248,6 +253,7 @@ impl MemoryBus {
 
 impl MemoryRead<u16, u8> for MemoryBus {
     /// Read a single byte from an arbitrary memory address.
+    ///
     /// This will be converted into a read from the relevant memory section.
     fn read(&self, addr: u16) -> u8 {
         match addr {

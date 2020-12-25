@@ -26,7 +26,7 @@ pub enum Arg {
     /// Memory address (immediate)
     MemImm(u16),
 
-    /// Memory address in HL
+    /// Memory address in [HL](Reg16::HL)
     MemHl,
 }
 
@@ -44,214 +44,235 @@ pub enum Cond {
 /// Tuple contains either: (source) or (dest) or (dest, source)
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Instruction {
-    /// Load an 8-bit or 16-bit value from src into dest
-    /// src: Imm8 or Reg8 or Imm16 or Mem
-    /// dst: Reg8 or Reg16 or Mem
+    /// Load an 8-bit or 16-bit value from `src` into `dst`
+    ///
+    /// * src: [Imm8](Arg::Imm8) or [Reg8](Arg::Reg8) or [Imm16](Arg::Imm16) or [Mem](Arg::Mem)
+    /// * dst: [Reg8](Arg::Reg8) or [Reg16](Arg::Reg16) or [Mem](Arg::Mem)
     Ld(Arg, Arg),
 
-    /// Load an 8-bit value into register A
-    /// src: Imm8 or Mem or MemImm
+    /// Load an 8-bit value into register [A](Reg8::A)
+    ///
+    /// * src: [Imm8](Arg::Imm8) or [Mem](Arg::Mem) or [MemImm](Arg::MemImm)
     LdA(Arg),
 
-    /// Load A into Arg
-    /// dst: Reg8 or Mem or MemImm
+    /// Load A into `Arg`
+    ///
+    /// * dst: [Reg8](Arg::Reg8) or [Mem](Arg::Mem) or [MemImm](Arg::MemImm)
     LdArgA(Arg),
 
-    /// Load value at address (0xFF00 + C) into A
+    /// Load value at address (0xFF00 + C) into [A](Reg8::A)
+    ///
     /// Same as: LD A, ($FF00 + C)
     LdAMemC,
 
-    /// Load A into 0xFF00 + C
+    /// Load [A](Reg8::A) into 0xFF00 + C
     LdMemCA,
 
-    /// Load value at address (HL) into A, then decrement HL
+    /// Load value at address ([HL](Reg16::HL)) into [A](Reg8::A), then decrement [HL](Reg16::HL)
     LddAMemHl,
 
-    /// Load A into address (HL), then decrement HL
+    /// Load [A](Reg8::A) into address ([HL](Reg16::HL)), then decrement [HL](Reg16::HL)
     LddMemHlA,
 
-    /// Load value at address (HL) into A, then increment HL
+    /// Load value at address ([HL](Reg16::HL)) into [A](Reg8::A), then increment [HL](Reg16::HL)
     LdiAMemHl,
 
-    /// Load A into address (HL), then decrement HL
+    /// Load [A](Reg8::A) into address ([HL](Reg16::HL)), then decrement [HL](Reg16::HL)
     LdiMemHlA,
 
-    /// Load value at address (0xFF00 + Imm8) into A
+    /// Load value at address (0xFF00 + [Imm8](Arg::Imm8)) into [A](Reg8::A)
     LdhA(u8),
 
-    /// Load A into address (0xFF00 + Imm8)
+    /// Load [A](Reg8::A) into address (0xFF00 + [Imm8](Arg::Imm8))
     LdhMemImmA(u8),
 
-    /// Load HL into SP
+    /// Load [HL](Reg16::HL) into SP
     LdSpHl,
 
-    /// Load SP + Imm8i into HL
+    /// Load SP + Imm8i into [HL](Reg16::HL)
     ///
     /// Flags:
-    ///     * Zero: reset
-    ///     * Subtract: reset
-    ///     * HalfCarry: set or reset
-    ///     * Carry: set or reset
+    ///
+    /// * Zero: reset
+    /// * Subtract: reset
+    /// * HalfCarry: set or reset
+    /// * Carry: set or reset
     LdHlSpImm8i(i8),
 
-    /// Load SP into address (MemImm)
+    /// Load SP into address ([MemImm](Arg::MemImm))
     LdMemImmSp(u16),
 
-    /// Push Reg16 (register pair) onto stack
+    /// Push [Reg16](Arg::Reg16) (register pair) onto stack
     PushReg16(Reg16),
 
-    /// Pop 2 bytes off the stack into Reg16
+    /// Pop 2 bytes off the stack into [Reg16](Arg::Reg16)
     PopReg16(Reg16),
 
-    /// Add Reg8 or Imm8 or value at address (Reg16) to A
+    /// Add [Reg8](Arg::Reg8) or [Imm8](Arg::Imm8) or value at address ([Reg16](Arg::Reg16)) to [A](Reg8::A)
     ///
     /// Flags:
-    ///     * Zero: set if result 0
-    ///     * Subtract: reset
-    ///     * HalfCarry: set if carry from bit 3
-    ///     * Carry: set if carry from bit 7
+    ///
+    /// * Zero: set if result 0
+    /// * Subtract: reset
+    /// * HalfCarry: set if carry from bit 3
+    /// * Carry: set if carry from bit 7
     Add(Arg),
 
-    /// Add carry flag **and** Reg8 or Imm8 or value at address (Reg16) to A
+    /// Add carry flag **and** [Reg8](Arg::Reg8) or [Imm8](Arg::Imm8) or value at address ([Reg16](Arg::Reg16)) to [A](Reg8::A)
     ///
     /// Flags:
-    ///     * Zero: set if result 0
-    ///     * Subtract: reset
-    ///     * HalfCarry: set if carry from bit 3
-    ///     * Carry: set if carry from bit 7
+    ///
+    /// * Zero: set if result 0
+    /// * Subtract: reset
+    /// * HalfCarry: set if carry from bit 3
+    /// * Carry: set if carry from bit 7
     Adc(Arg),
 
-    /// Subtract Reg8 or Imm8 or value at address (Reg16) from A
+    /// Subtract [Reg8](Arg::Reg8) or [Imm8](Arg::Imm8) or value at address ([Reg16](Arg::Reg16)) from [A](Reg8::A)
     ///
     /// Flags:
-    ///     * Zero: set if result 0
-    ///     * Subtract: set
-    ///     * HalfCarry: set if no borrow from bit 4
-    ///     * Carry: set if no borrow
+    ///
+    /// * Zero: set if result 0
+    /// * Subtract: set
+    /// * HalfCarry: set if no borrow from bit 4
+    /// * Carry: set if no borrow
     Sub(Arg),
 
-    /// Subtract carry flag **and** Reg8 or Imm8 or value at address (Reg16) from A
+    /// Subtract carry flag **and** [Reg8](Arg::Reg8) or [Imm8](Arg::Imm8) or value at address ([Reg16](Arg::Reg16)) from [A](Reg8::A)
     ///
     /// Flags:
-    ///     * Zero: set if result 0
-    ///     * Subtract: set
-    ///     * HalfCarry: set if no borrow from bit 4
-    ///     * Carry: set if no borrow
+    ///
+    /// * Zero: set if result 0
+    /// * Subtract: set
+    /// * HalfCarry: set if no borrow from bit 4
+    /// * Carry: set if no borrow
     Sbc(Arg),
 
-    /// AND Reg8 or Imm8 or value at address (Reg16) with A.
+    /// AND [Reg8](Arg::Reg8) or [Imm8](Arg::Imm8) or value at address ([Reg16](Arg::Reg16)) with [A](Reg8::A).
     ///
     /// Flags:
-    ///     * Zero: set if result 0
-    ///     * Subtract: reset
-    ///     * HalfCarry: set
-    ///     * Carry: reset
+    ///
+    /// * Zero: set if result 0
+    /// * Subtract: reset
+    /// * HalfCarry: set
+    /// * Carry: reset
     And(Arg),
 
-    /// OR Reg8 or Imm8 or value at address (Reg16) with A.
+    /// OR [Reg8](Arg::Reg8) or [Imm8](Arg::Imm8) or value at address ([Reg16](Arg::Reg16)) with [A](Reg8::A).
     ///
     /// Flags:
-    ///     * Zero: set if result 0
-    ///     * Subtract: reset
-    ///     * HalfCarry: reset
-    ///     * Carry: reset
+    ///
+    /// * Zero: set if result 0
+    /// * Subtract: reset
+    /// * HalfCarry: reset
+    /// * Carry: reset
     Or(Arg),
 
-    /// XOR Reg8 or Imm8 or value at address (HL) with A.
+    /// XOR [Reg8](Arg::Reg8) or [Imm8](Arg::Imm8) or value at address ([HL](Reg16::HL)) with [A](Reg8::A).
     ///
     /// Flags:
-    ///     * Zero: set if result 0
-    ///     * Subtract: reset
-    ///     * HalfCarry: reset
-    ///     * Carry: reset
+    ///
+    /// * Zero: set if result 0
+    /// * Subtract: reset
+    /// * HalfCarry: reset
+    /// * Carry: reset
     Xor(Arg),
 
-    /// Compare A with Reg8 or Imm8 or value at address (HL)
+    /// Compare [A](Reg8::A) with [Reg8](Arg::Reg8) or [Imm8](Arg::Imm8) or value at address ([HL](Reg16::HL))
     ///
     /// Note: This is equivalent to `SUB A, n`, but with results
     /// thrown away.
     ///
     /// Flags:
-    ///     * Zero: set if result 0 (i.e., A == n)
-    ///     * Subtract: set
-    ///     * HalfCarry: set if no borrow from bit 4
-    ///     * Carry: set for no borrow (i.e., A < n)
+    ///
+    /// * Zero: set if result 0 (i.e., A == n)
+    /// * Subtract: set
+    /// * HalfCarry: set if no borrow from bit 4
+    /// * Carry: set for no borrow (i.e., A < n)
     Cp(Arg),
 
-    /// Increment Reg8 or Reg16 or value at address (HL)
+    /// Increment [Reg8](Arg::Reg8) or [Reg16](Arg::Reg16) or value at address ([HL](Reg16::HL))
     ///
     /// **Note:** Reg16 variant does not affect flags
     ///
     /// Flags:
-    ///     * Zero: set if result 0
-    ///     * Subtract: reset
-    ///     * HalfCarry: set if carry from bit 3
-    ///     * Carry: not affected
+    ///
+    /// * Zero: set if result 0
+    /// * Subtract: reset
+    /// * HalfCarry: set if carry from bit 3
+    /// * Carry: not affected
     Inc(Arg),
 
-    /// Decrement Reg8 or Reg16 or value at address (HL)
+    /// Decrement [Reg8](Arg::Reg8) or [Reg16](Arg::Reg16) or value at address ([HL](Reg16::HL))
     ///
     /// **Note:** Reg16 variant does not affect flags
     ///
     /// Flags:
-    ///     * Zero: set if result 0
-    ///     * Subtract: set
-    ///     * HalfCarry: set if no borrow from bit 4
-    ///     * Carry: not affected
+    ///
+    /// * Zero: set if result 0
+    /// * Subtract: set
+    /// * HalfCarry: set if no borrow from bit 4
+    /// * Carry: not affected
     Dec(Arg),
 
-    /// Add Reg16 to HL.
+    /// Add [Reg16](Arg::Reg16) to [HL](Reg16::HL).
     ///
     /// Flags:
-    ///     * Zero: set if result 0
-    ///     * Subtract: reset
-    ///     * HalfCarry: set if carry from bit 11
-    ///     * Carry: set if carry from bit 15
+    ///
+    /// * Zero: set if result 0
+    /// * Subtract: reset
+    /// * HalfCarry: set if carry from bit 11
+    /// * Carry: set if carry from bit 15
     AddHlReg16(Reg16),
 
     /// Add Imm8i to SP.
     ///
     /// Flags:
-    ///     * Zero: reset
-    ///     * Subtract: reset
-    ///     * HalfCarry: set if carry from bit 11
-    ///     * Carry: set if carry from bit 15
+    ///
+    /// * Zero: reset
+    /// * Subtract: reset
+    /// * HalfCarry: set if carry from bit 11
+    /// * Carry: set if carry from bit 15
     AddSpImm8i(i8),
 
-    /// Swap upper & lower nibbles of Reg8 or value at memory address (Reg16)
+    /// Swap upper & lower nibbles of [Reg8](Arg::Reg8) or value at memory address ([Reg16](Arg::Reg16))
     ///
     /// Flags:
-    ///     * Zero: set if result 0
-    ///     * Subtract: reset
-    ///     * HalfCarry: reset
-    ///     * Carry: reset
+    ///
+    /// * Zero: set if result 0
+    /// * Subtract: reset
+    /// * HalfCarry: reset
+    /// * Carry: reset
     Swap(Arg),
 
-    /// Adjusts register A to correct BCD representation.
+    /// Adjusts register [A](Reg8::A) to correct BCD representation.
     ///
     /// Flags:
-    ///     * Zero: set if register A is 0
-    ///     * Subtract: not affected
-    ///     * HalfCarry: reset
-    ///     * Carry: set or reset according to operation
+    ///
+    /// * Zero: set if register A is 0
+    /// * Subtract: not affected
+    /// * HalfCarry: reset
+    /// * Carry: set or reset according to operation
     Daa,
 
     /// Complement the carry flag
     ///
     /// Flags:
-    ///     * Zero: not affected
-    ///     * Subtract: reset
-    ///     * HalfCarry: reset
-    ///     * Carry: complemented
+    ///
+    /// * Zero: not affected
+    /// * Subtract: reset
+    /// * HalfCarry: reset
+    /// * Carry: complemented
     Ccf,
 
     /// Set the carry flag
     ///
     /// Flags:
-    ///     * Zero: not affected
-    ///     * Subtract: reset
-    ///     * HalfCarry: reset
-    ///     * Carry: set
+    ///
+    /// * Zero: not affected
+    /// * Subtract: reset
+    /// * HalfCarry: reset
+    /// * Carry: set
     Scf,
 
     /// NOP
@@ -276,16 +297,17 @@ pub enum Instruction {
     /// n must be one of: [0x00, 0x08, 0x10, 0x18, 0x20, 0x28, 0x30, 0x38]
     Rst(u8),
 
-    /// Rotate A left. Place old bit 7 in carry flag.
+    /// Rotate [A](Reg8::A) left. Place old bit 7 in carry flag.
     ///
     /// Flags:
-    ///     * Zero: set if result 0
-    ///     * Subtract: reset
-    ///     * HalfCarry: reset
-    ///     * Carry: contains old bit 7
+    ///
+    /// * Zero: set if result 0
+    /// * Subtract: reset
+    /// * HalfCarry: reset
+    /// * Carry: contains old bit 7
     Rlca,
 
-    /// Rotate A left through carry flag.
+    /// Rotate [A](Reg8::A) left through carry flag.
     ///
     /// e.g., new bit 0 of A = carry flag
     ///       new carry flag = bit 7 of A
@@ -293,22 +315,24 @@ pub enum Instruction {
     ///       ..etc
     ///
     /// Flags:
-    ///     * Zero: set if result 0
-    ///     * Subtract: reset
-    ///     * HalfCarry: reset
-    ///     * Carry: contains old bit 7
+    ///
+    /// * Zero: set if result 0
+    /// * Subtract: reset
+    /// * HalfCarry: reset
+    /// * Carry: contains old bit 7
     Rla,
 
-    /// Rotate A right. Place old bit 0 in carry flag.
+    /// Rotate [A](Reg8::A) right. Place old bit 0 in carry flag.
     ///
     /// Flags:
-    ///     * Zero: set if result 0
-    ///     * Subtract: reset
-    ///     * HalfCarry: reset
-    ///     * Carry: contains old bit 0
+    ///
+    /// * Zero: set if result 0
+    /// * Subtract: reset
+    /// * HalfCarry: reset
+    /// * Carry: contains old bit 0
     Rrca,
 
-    /// Rotate A right through carry flag.
+    /// Rotate [A](Reg8::A) right through carry flag.
     ///
     /// e.g., new bit 7 of A = carry flag
     ///       new carry flag = bit 0 of A
@@ -316,92 +340,101 @@ pub enum Instruction {
     ///       ..etc
     ///
     /// Flags:
-    ///     * Zero: set if result 0
-    ///     * Subtract: reset
-    ///     * HalfCarry: reset
-    ///     * Carry: contains old bit 0
+    ///
+    /// * Zero: set if result 0
+    /// * Subtract: reset
+    /// * HalfCarry: reset
+    /// * Carry: contains old bit 0
     Rra,
 
-    /// Rotate Reg8 or (HL) left. Place old bit 7 in carry flag.
+    /// Rotate [Reg8](Arg::Reg8) or ([HL](Reg16::HL)) left. Place old bit 7 in carry flag.
     ///
     /// Flags:
-    ///     * Zero: set if result 0
-    ///     * Subtract: reset
-    ///     * HalfCarry: reset
-    ///     * Carry: contains old bit 7
+    ///
+    /// * Zero: set if result 0
+    /// * Subtract: reset
+    /// * HalfCarry: reset
+    /// * Carry: contains old bit 7
     Rlc(Arg),
 
-    /// Rotate Reg8 or (HL) left through carry flag.
+    /// Rotate [Reg8](Arg::Reg8) or ([HL](Reg16::HL)) left through carry flag.
     ///
     /// Flags:
-    ///     * Zero: set if result 0
-    ///     * Subtract: reset
-    ///     * HalfCarry: reset
-    ///     * Carry: contains old bit 7
+    ///
+    /// * Zero: set if result 0
+    /// * Subtract: reset
+    /// * HalfCarry: reset
+    /// * Carry: contains old bit 7
     Rl(Arg),
 
-    /// Rotate Reg8 or (HL) right. Place old bit 0 in carry flag.
+    /// Rotate [Reg8](Arg::Reg8) or ([HL](Reg16::HL)) right. Place old bit 0 in carry flag.
     ///
     /// Flags:
-    ///     * Zero: set if result 0
-    ///     * Subtract: reset
-    ///     * HalfCarry: reset
-    ///     * Carry: contains old bit 0
+    ///
+    /// * Zero: set if result 0
+    /// * Subtract: reset
+    /// * HalfCarry: reset
+    /// * Carry: contains old bit 0
     Rrc(Arg),
 
-    /// Rotate Reg8 or (HL) right through carry flag.
+    /// Rotate [Reg8](Arg::Reg8) or ([HL](Reg16::HL)) right through carry flag.
     ///
     /// Flags:
-    ///     * Zero: set if result 0
-    ///     * Subtract: reset
-    ///     * HalfCarry: reset
-    ///     * Carry: contains old bit 0
+    ///
+    /// * Zero: set if result 0
+    /// * Subtract: reset
+    /// * HalfCarry: reset
+    /// * Carry: contains old bit 0
     Rr(Arg),
 
-    /// Shift Reg8 or (HL) left into carry.
+    /// Shift [Reg8](Arg::Reg8) or ([HL](Reg16::HL)) left into carry.
     ///
     /// Flags:
-    ///     * Zero: set if result 0
-    ///     * Subtract: reset
-    ///     * HalfCarry: reset
-    ///     * Carry: contains old bit 7
+    ///
+    /// * Zero: set if result 0
+    /// * Subtract: reset
+    /// * HalfCarry: reset
+    /// * Carry: contains old bit 7
     Sla(Arg),
 
-    /// Shift Reg8 or (HL) right into carry.
+    /// Shift [Reg8](Arg::Reg8) or ([HL](Reg16::HL)) right into carry.
     /// Note: MSB does not change.
     ///
     /// Flags:
-    ///     * Zero: set if result 0
-    ///     * Subtract: reset
-    ///     * HalfCarry: reset
-    ///     * Carry: contains old bit 0
+    ///
+    /// * Zero: set if result 0
+    /// * Subtract: reset
+    /// * HalfCarry: reset
+    /// * Carry: contains old bit 0
     Sra(Arg),
 
-    /// Shift Reg8 or (HL) right into carry.
+    /// Shift [Reg8](Arg::Reg8) or ([HL](Reg16::HL)) right into carry.
     /// Note: MSB is set to 0.
     ///
     /// Flags:
-    ///     * Zero: set if result 0
-    ///     * Subtract: reset
-    ///     * HalfCarry: reset
-    ///     * Carry: contains old bit 0
+    ///
+    /// * Zero: set if result 0
+    /// * Subtract: reset
+    /// * HalfCarry: reset
+    /// * Carry: contains old bit 0
     Srl(Arg),
 
-    /// Test bit `b` in Reg8 or (HL).
+    /// Test bit `b` in [Reg8](Arg::Reg8) or ([HL](Reg16::HL)).
     ///
     /// Flags:
-    ///     * Zero: set if result 0
-    ///     * Subtract: reset
-    ///     * HalfCarry: set
-    ///     * Carry: not affected
+    ///
+    /// * Zero: set if result 0
+    /// * Subtract: reset
+    /// * HalfCarry: set
+    /// * Carry: not affected
     Bit(Arg, u8),
 
-    /// Set bit `b` in Reg8 or (HL).
+    /// Set bit `b` in [Reg8](Arg::Reg8) or ([HL](Reg16::HL)).
     ///
     /// Flags: None
     Set(Arg, u8),
 
-    /// Reset bit `b` in Reg8 or (HL).
+    /// Reset bit `b` in [Reg8](Arg::Reg8) or ([HL](Reg16::HL)).
     ///
     /// Flags: None
     Res(Arg, u8),
@@ -410,7 +443,7 @@ pub enum Instruction {
     /// If `Cond` != `Cond::None`, jump has a condition.
     Jp(u16, Cond),
 
-    /// Jump to address (HL)
+    /// Jump to address ([HL](Reg16::HL))
     /// If `Cond` != `Cond::None`, jump has a condition.
     JpHl,
 
@@ -434,8 +467,10 @@ pub enum Instruction {
     RetI,
 }
 
-/// Number of cycles required
-/// If this is a conditional, second arg is if the path is not taken (faster)
+/// Number of cycles required to execute to an instruction.
+///
+/// If this is a conditional instruction, the second arg represents the number of
+/// cycles consumed if the path is not taken (faster).
 #[derive(Debug, PartialEq)]
 pub struct Cycles(pub u8, pub u8);
 
@@ -456,12 +491,18 @@ impl From<u8> for Cycles {
 }
 
 impl Instruction {
-    /// Decode a single instruction from a 3-byte slice.
+    /// Decode a single instruction from a slice. The slice must contain
+    /// at least a single byte (opcode).
+    ///
+    /// In all cases, we will attempt to extract an argument from the following
+    /// 2 bytes. If we are at the end of a memory region, we will silently fail
+    /// and return 0 for the arg.
+    ///
     /// Returns: instruction, instruction size, cycle count
     pub fn decode(data: &[u8]) -> (Self, u8, Cycles) {
         use Instruction::*;
 
-        // Safely extract the next arg as 8-bit and 16-bit immediates
+        // Safely attempt to extract the next arg as 8-bit and 16-bit immediates.
         // If we are at the end of the memory range, we will return 0.
         let arg8 = if data.len() >= 2 { data[1] } else { 0 };
         let arg16 = if data.len() >= 3 {
