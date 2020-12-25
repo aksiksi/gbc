@@ -61,6 +61,12 @@ impl Cpu {
         match instruction {
             Nop => (),
             Halt => (),
+            Di => {
+                // TODO: Disable interrupts
+            }
+            Ei => {
+                // TODO: Enable interrupts
+            }
             Ld { dst, src } => match (dst, src) {
                 (Arg::Reg16(dst), Arg::Imm16(src)) => {
                     self.registers.write(dst, src);

@@ -57,6 +57,16 @@ impl Ram {
             }
         }
     }
+
+    /// Update the active RAM bank
+    pub fn update_bank(&mut self, bank: u8) {
+        match self {
+            Self::Banked { data: _, active_bank} => {
+                *active_bank = bank;
+            }
+            _ => panic!("Received RAM bank change request on unbanked RAM"),
+        }
+    }
 }
 
 impl MemoryRead<u16, u8> for Ram {
@@ -188,6 +198,16 @@ impl Vram {
             }
         }
     }
+
+    /// Update the active VRAM bank
+    pub fn update_bank(&mut self, bank: u8) {
+        match self {
+            Self::Banked { data: _, active_bank} => {
+                *active_bank = bank;
+            }
+            _ => panic!("Received VRAM bank change request on unbanked VRAM"),
+        }
+    }
 }
 
 impl MemoryRead<u16, u8> for Vram {
@@ -240,6 +260,143 @@ impl std::fmt::Debug for Vram {
     }
 }
 
+/// Memory-mapped I/O registers and buffers
+#[derive(Debug, Default)]
+pub struct Io {
+    /// Range: 0xFF00 - 0xFF02
+    port0: [u8; 3],
+
+    /// Range: 0xFF04 - 0xFF07
+    port1: [u8; 3],
+
+    /// Range: 0xFF10 - 0xFF26
+    sound: [u8; 23],
+
+    /// Range: 0xFF30 - 0xFF3F
+    waveform_ram: [u8; 16],
+
+    /// Range: 0xFF40 - 0xFF4B
+    lcd: [u8; 12],
+
+    /// Range: 0xFF4F
+    vram_bank: u8,
+
+    /// Range: 0xFF50
+    disable_boot_rom: u8,
+
+    /// Range: 0xFF51 - 0xFF55
+    hdma: [u8; 4],
+
+    /// Range: 0xFF68 - 0xFF69
+    bcp: [u8; 2],
+
+    /// Range: 0xFF70
+    wram_bank: u8,
+}
+
+impl Io {
+    pub const BASE_ADDR: u16 = 0xFF00;
+    pub const LAST_ADDR: u16 = 0xFF7F;
+    pub const VRAM_BANK_SELECT_ADDR: u16 = 0xFF4F;
+    pub const WRAM_BANK_SELECT_ADDR: u16 = 0xFF70;
+
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    /// Returns currently selected VRAM bank
+    pub fn vram_bank(&self) -> u8 {
+        self.vram_bank
+    }
+
+    /// Returns currently selected WRAM bank
+    pub fn wram_bank(&self) -> u8 {
+        self.wram_bank
+    }
+}
+
+impl MemoryRead<u16, u8> for Io {
+    #[inline]
+    fn read(&self, addr: u16) -> u8 {
+        let idx = (addr - Self::BASE_ADDR) as usize;
+
+        match addr {
+            0xFF00..=0xFF02 => {
+                self.port0[idx]
+            }
+            0xFF04..=0xFF07 => {
+                self.port1[idx]
+            }
+            0xFF10..=0xFF26 => {
+                self.sound[idx]
+            }
+            0xFF30..=0xFF3F => {
+                self.waveform_ram[idx]
+            }
+            0xFF40..=0xFF4B => {
+                self.lcd[idx]
+            }
+            Self::VRAM_BANK_SELECT_ADDR => {
+                self.vram_bank
+            }
+            0xFF50 => {
+                self.disable_boot_rom
+            }
+            0xFF51..=0xFF55 => {
+                self.hdma[idx]
+            }
+            0xFF68..=0xFF69 => {
+                self.bcp[idx]
+            }
+            Self::WRAM_BANK_SELECT_ADDR => {
+                self.wram_bank
+            }
+            _ => panic!("Invalid write to address {}", addr),
+        }
+    }
+}
+
+impl MemoryWrite<u16, u8> for Io {
+    #[inline]
+    fn write(&mut self, addr: u16, value: u8) {
+        let idx = (addr - Self::BASE_ADDR) as usize;
+
+        match addr {
+            0xFF00..=0xFF02 => {
+                self.port0[idx] = value;
+            }
+            0xFF04..=0xFF07 => {
+                self.port1[idx] = value;
+            }
+            0xFF10..=0xFF26 => {
+                self.sound[idx] = value;
+            }
+            0xFF30..=0xFF3F => {
+                self.waveform_ram[idx] = value;
+            }
+            0xFF40..=0xFF4B => {
+                self.lcd[idx] = value;
+            }
+            Self::VRAM_BANK_SELECT_ADDR => {
+                self.vram_bank = value;
+            }
+            0xFF50 => {
+                self.disable_boot_rom = value;
+            }
+            0xFF51..=0xFF55 => {
+                self.hdma[idx] = value;
+            }
+            0xFF68..=0xFF69 => {
+                self.bcp[idx] = value;
+            }
+            Self::WRAM_BANK_SELECT_ADDR => {
+                self.wram_bank = value;
+            }
+            _ => panic!("Invalid write to address {}: value {}", addr, value),
+        }
+    }
+}
+
 /// 64K memory map for the GBC
 #[derive(Debug)]
 pub struct MemoryBus {
@@ -257,6 +414,9 @@ pub struct MemoryBus {
 
     // ..ignored
 
+    // 0xFF00 - 0xFF7F
+    io: Io,
+
     /// 0xFF80 - 0xFFFE
     high_ram: [u8; 0x80],
 
@@ -271,6 +431,7 @@ impl MemoryBus {
             vram: Vram::new(true),
             cartridge_ram: CartridgeRam::new(ram_size),
             ram: Ram::new(true),
+            io: Io::new(),
             high_ram: [0u8; 0x80],
             int_enable_reg: 0,
         }
@@ -282,6 +443,7 @@ impl MemoryBus {
             vram: Vram::new(true),
             cartridge_ram: cartridge.build_ram()?,
             ram: Ram::new(true),
+            io: Io::new(),
             high_ram: [0u8; 0x80],
             int_enable_reg: 0,
         })
@@ -304,6 +466,7 @@ impl MemoryRead<u16, u8> for MemoryBus {
                 self.cartridge_ram.as_ref().unwrap().read(addr)
             }
             Ram::BASE_ADDR..=Ram::LAST_ADDR => self.ram.read(addr),
+            Io::BASE_ADDR..=Io::LAST_ADDR => self.io.read(addr),
             0xFF80..=0xFFFE => {
                 let addr = addr as usize - 0xFF80;
                 self.high_ram[addr]
@@ -341,6 +504,18 @@ impl MemoryWrite<u16, u8> for MemoryBus {
                 self.cartridge_ram.as_mut().unwrap().write(addr, value)
             }
             Ram::BASE_ADDR..=Ram::LAST_ADDR => self.ram.write(addr, value),
+            Io::BASE_ADDR..=Io::LAST_ADDR => {
+                self.io.write(addr, value);
+
+                // Snoop for bank changes
+                if addr == Io::VRAM_BANK_SELECT_ADDR {
+                    let bank = self.io.vram_bank();
+                    self.vram.update_bank(bank);
+                } else if addr == Io::WRAM_BANK_SELECT_ADDR {
+                    let bank = self.io.wram_bank();
+                    self.ram.update_bank(bank);
+                }
+            }
             0xFF80..=0xFFFE => {
                 let addr = addr as usize - 0xFF80;
                 self.high_ram[addr] = value;

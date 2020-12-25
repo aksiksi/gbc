@@ -768,6 +768,10 @@ impl Instruction {
             0x38 => (Jr { offset: arg8.unwrap() as i8, cond: Cond::Carry }, 2, Cycles(12, 8)),
             0xC3 => (Jp { addr: arg16.unwrap(), cond: Cond::None }, 3, 16.into()),
 
+            // Misc
+            0xF3 => (Di, 1, 4.into()),
+            0xFB => (Ei, 1, 4.into()),
+
             other => panic!("Unknown instruction: {}", other),
         };
 
