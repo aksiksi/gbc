@@ -67,7 +67,7 @@ pub enum Instruction {
     /// Load value at address ([HL](Reg16::HL)) into [A](Reg8::A), then increment [HL](Reg16::HL)
     LdiAMemHl,
 
-    /// Load [A](Reg8::A) into address ([HL](Reg16::HL)), then decrement [HL](Reg16::HL)
+    /// Load [A](Reg8::A) into address ([HL](Reg16::HL)), then increment [HL](Reg16::HL)
     LdiMemHlA,
 
     /// Load value at address (0xFF00 + [Imm8](Arg::Imm8)) into [A](Reg8::A)
@@ -202,7 +202,7 @@ pub enum Instruction {
     /// * Zero: set if result 0
     /// * Subtract: set
     /// * HalfCarry: set if no borrow from bit 4
-    /// * Carry: not affected
+    /// * Carry: set if borrow, otherwise reset
     Dec { dst: Arg },
 
     /// Add [Reg16](Arg::Reg16) to [HL](Reg16::HL).
@@ -244,6 +244,16 @@ pub enum Instruction {
     /// * HalfCarry: reset
     /// * Carry: set or reset according to operation
     Daa,
+
+    /// Complements register [A](Reg8::A).
+    ///
+    /// ### Flags
+    ///
+    /// * Zero: not affected
+    /// * Subtract: set
+    /// * HalfCarry: set
+    /// * Carry: not affected
+    Cpl,
 
     /// Complement the carry flag
     ///
@@ -509,8 +519,14 @@ impl Instruction {
 
         let (inst, size, cycles) = match data[0] {
             0x00 => (Nop, 1, 4.into()),
+            0x10 => (Stop, 2, 4.into()),
 
             // Load
+            0x08 => (Ld { dst: Arg::MemImm(arg16.unwrap()), src: Arg::Reg16(Reg16::SP) }, 3, 20.into()),
+            0x02 => (Ld { dst: Arg::Mem(Reg16::BC), src: Arg::Reg8(Reg8::A) }, 1, 8.into()),
+            0x12 => (Ld { dst: Arg::Mem(Reg16::DE), src: Arg::Reg8(Reg8::A) }, 1, 8.into()),
+            0x0A => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::Mem(Reg16::BC)}, 1, 8.into()),
+            0x1A => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::Mem(Reg16::DE)}, 1, 8.into()),
             0x01 => (Ld { dst: Arg::Reg16(Reg16::BC), src: Arg::Imm16(arg16.unwrap()) }, 3, 12.into()),
             0x11 => (Ld { dst: Arg::Reg16(Reg16::DE), src: Arg::Imm16(arg16.unwrap()) }, 3, 12.into()),
             0x21 => (Ld { dst: Arg::Reg16(Reg16::HL), src: Arg::Imm16(arg16.unwrap()) }, 3, 12.into()),
@@ -519,8 +535,8 @@ impl Instruction {
             0x16 => (Ld { dst: Arg::Reg8(Reg8::D), src: Arg::Imm8(arg8.unwrap()) }, 2, 8.into()),
             0x26 => (Ld { dst: Arg::Reg8(Reg8::H), src: Arg::Imm8(arg8.unwrap()) }, 2, 8.into()),
             0x36 => (Ld { dst: Arg::Mem(Reg16::HL), src: Arg::Imm8(arg8.unwrap()) }, 2, 12.into()),
-            0x0A => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::Mem(Reg16::BC) }, 1, 8.into()),
-            0x1A => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::Mem(Reg16::DE) }, 1, 8.into()),
+            0x22 => (LdiMemHlA, 1, 8.into()),
+            0x32 => (LddMemHlA, 1, 8.into()),
             0x2A => (LdiAMemHl, 1, 8.into()),
             0x3A => (LddAMemHl, 1, 8.into()),
             0x0E => (Ld { dst: Arg::Reg8(Reg8::C), src: Arg::Imm8(arg8.unwrap()) }, 2, 8.into()),
@@ -530,35 +546,35 @@ impl Instruction {
             0x40 => (Ld { dst: Arg::Reg8(Reg8::B), src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
             0x50 => (Ld { dst: Arg::Reg8(Reg8::D), src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
             0x60 => (Ld { dst: Arg::Reg8(Reg8::H), src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
-            0x70 => (Ld { dst: Arg::MemHl, src: Arg::Reg8(Reg8::B) }, 1, 8.into()),
+            0x70 => (Ld { dst: Arg::Mem(Reg16::HL), src: Arg::Reg8(Reg8::B) }, 1, 8.into()),
             0x41 => (Ld { dst: Arg::Reg8(Reg8::B), src: Arg::Reg8(Reg8::C) }, 1, 4.into()),
             0x51 => (Ld { dst: Arg::Reg8(Reg8::D), src: Arg::Reg8(Reg8::C) }, 1, 4.into()),
             0x61 => (Ld { dst: Arg::Reg8(Reg8::H), src: Arg::Reg8(Reg8::C) }, 1, 4.into()),
-            0x71 => (Ld { dst: Arg::MemHl, src: Arg::Reg8(Reg8::C) }, 1, 8.into()),
+            0x71 => (Ld { dst: Arg::Mem(Reg16::HL), src: Arg::Reg8(Reg8::C) }, 1, 8.into()),
             0x42 => (Ld { dst: Arg::Reg8(Reg8::B), src: Arg::Reg8(Reg8::D) }, 1, 4.into()),
             0x52 => (Ld { dst: Arg::Reg8(Reg8::D), src: Arg::Reg8(Reg8::D) }, 1, 4.into()),
             0x62 => (Ld { dst: Arg::Reg8(Reg8::H), src: Arg::Reg8(Reg8::D) }, 1, 4.into()),
-            0x72 => (Ld { dst: Arg::MemHl, src: Arg::Reg8(Reg8::D) }, 1, 8.into()),
+            0x72 => (Ld { dst: Arg::Mem(Reg16::HL), src: Arg::Reg8(Reg8::D) }, 1, 8.into()),
             0x43 => (Ld { dst: Arg::Reg8(Reg8::B), src: Arg::Reg8(Reg8::E) }, 1, 4.into()),
             0x53 => (Ld { dst: Arg::Reg8(Reg8::D), src: Arg::Reg8(Reg8::E) }, 1, 4.into()),
             0x63 => (Ld { dst: Arg::Reg8(Reg8::H), src: Arg::Reg8(Reg8::E) }, 1, 4.into()),
-            0x73 => (Ld { dst: Arg::MemHl, src: Arg::Reg8(Reg8::E) }, 1, 8.into()),
+            0x73 => (Ld { dst: Arg::Mem(Reg16::HL), src: Arg::Reg8(Reg8::E) }, 1, 8.into()),
             0x44 => (Ld { dst: Arg::Reg8(Reg8::B), src: Arg::Reg8(Reg8::H) }, 1, 4.into()),
             0x54 => (Ld { dst: Arg::Reg8(Reg8::D), src: Arg::Reg8(Reg8::H) }, 1, 4.into()),
             0x64 => (Ld { dst: Arg::Reg8(Reg8::H), src: Arg::Reg8(Reg8::H) }, 1, 4.into()),
-            0x74 => (Ld { dst: Arg::MemHl, src: Arg::Reg8(Reg8::H) }, 1, 8.into()),
+            0x74 => (Ld { dst: Arg::Mem(Reg16::HL), src: Arg::Reg8(Reg8::H) }, 1, 8.into()),
             0x45 => (Ld { dst: Arg::Reg8(Reg8::B), src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
             0x55 => (Ld { dst: Arg::Reg8(Reg8::D), src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
             0x65 => (Ld { dst: Arg::Reg8(Reg8::H), src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
-            0x75 => (Ld { dst: Arg::MemHl, src: Arg::Reg8(Reg8::L) }, 1, 8.into()),
-            0x46 => (Ld { dst: Arg::Reg8(Reg8::B), src: Arg::MemHl }, 1, 8.into()),
-            0x56 => (Ld { dst: Arg::Reg8(Reg8::D), src: Arg::MemHl }, 1, 8.into()),
-            0x66 => (Ld { dst: Arg::Reg8(Reg8::H), src: Arg::MemHl }, 1, 8.into()),
+            0x75 => (Ld { dst: Arg::Mem(Reg16::HL), src: Arg::Reg8(Reg8::L) }, 1, 8.into()),
+            0x46 => (Ld { dst: Arg::Reg8(Reg8::B), src: Arg::Mem(Reg16::HL) }, 1, 8.into()),
+            0x56 => (Ld { dst: Arg::Reg8(Reg8::D), src: Arg::Mem(Reg16::HL) }, 1, 8.into()),
+            0x66 => (Ld { dst: Arg::Reg8(Reg8::H), src: Arg::Mem(Reg16::HL) }, 1, 8.into()),
             0x76 => (Halt, 1, 4.into()),
             0x47 => (Ld { dst: Arg::Reg8(Reg8::B), src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
             0x57 => (Ld { dst: Arg::Reg8(Reg8::D), src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
             0x67 => (Ld { dst: Arg::Reg8(Reg8::H), src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
-            0x77 => (Ld { dst: Arg::MemHl, src: Arg::Reg8(Reg8::A) }, 1, 8.into()),
+            0x77 => (Ld { dst: Arg::Mem(Reg16::HL), src: Arg::Reg8(Reg8::A) }, 1, 8.into()),
             0x48 => (Ld { dst: Arg::Reg8(Reg8::C), src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
             0x58 => (Ld { dst: Arg::Reg8(Reg8::E), src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
             0x68 => (Ld { dst: Arg::Reg8(Reg8::L), src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
@@ -583,27 +599,32 @@ impl Instruction {
             0x5D => (Ld { dst: Arg::Reg8(Reg8::E), src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
             0x6D => (Ld { dst: Arg::Reg8(Reg8::L), src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
             0x7D => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
-            0x4E => (Ld { dst: Arg::Reg8(Reg8::C), src: Arg::MemHl }, 1, 8.into()),
-            0x5E => (Ld { dst: Arg::Reg8(Reg8::E), src: Arg::MemHl }, 1, 8.into()),
-            0x6E => (Ld { dst: Arg::Reg8(Reg8::L), src: Arg::MemHl }, 1, 8.into()),
-            0x7E => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::MemHl }, 1, 8.into()),
+            0x4E => (Ld { dst: Arg::Reg8(Reg8::C), src: Arg::Mem(Reg16::HL) }, 1, 8.into()),
+            0x5E => (Ld { dst: Arg::Reg8(Reg8::E), src: Arg::Mem(Reg16::HL) }, 1, 8.into()),
+            0x6E => (Ld { dst: Arg::Reg8(Reg8::L), src: Arg::Mem(Reg16::HL) }, 1, 8.into()),
+            0x7E => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::Mem(Reg16::HL) }, 1, 8.into()),
             0x4F => (Ld { dst: Arg::Reg8(Reg8::C), src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
             0x5F => (Ld { dst: Arg::Reg8(Reg8::E), src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
             0x6F => (Ld { dst: Arg::Reg8(Reg8::L), src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
             0x7F => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
             0xE0 => (Ldh { offset: arg8.unwrap() }, 2, 12.into()),
             0xF0 => (LdhA { offset: arg8.unwrap() }, 2, 12.into()),
+            0xE2 => (LdMemCA, 2, 8.into()),
+            0xF2 => (LdAMemC, 2, 8.into()),
+            0xEA => (Ld { dst: Arg::MemImm(arg16.unwrap()), src: Arg::Reg8(Reg8::A) }, 3, 16.into()),
+            0xFA => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::MemImm(arg16.unwrap()) }, 3, 16.into()),
 
-            // Xor
-            0xA8 => (Xor { src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
-            0xA9 => (Xor { src: Arg::Reg8(Reg8::C) }, 1, 4.into()),
-            0xAA => (Xor { src: Arg::Reg8(Reg8::D) }, 1, 4.into()),
-            0xAB => (Xor { src: Arg::Reg8(Reg8::E) }, 1, 4.into()),
-            0xAC => (Xor { src: Arg::Reg8(Reg8::H) }, 1, 4.into()),
-            0xAD => (Xor { src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
-            0xAE => (Xor { src: Arg::MemHl }, 1, 8.into()),
-            0xAF => (Xor { src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
-            0xEE => (Xor { src: Arg::Imm8(arg8.unwrap()) }, 2, 8.into()),
+            // Misc
+            0x27 => (Daa, 1, 4.into()),
+            0x37 => (Scf, 1, 4.into()),
+            0x2F => (Cpl, 1, 4.into()),
+            0x3F => (Ccf, 1, 4.into()),
+
+            // Rotate
+            0x07 => (Rlca, 1, 4.into()),
+            0x17 => (Rla, 1, 4.into()),
+            0x0F => (Rrca, 1, 4.into()),
+            0x1F => (Rra, 1, 4.into()),
 
             // Inc
             0x03 => (Inc { dst: Arg::Reg16(Reg16::BC) }, 1, 8.into()),
@@ -633,6 +654,77 @@ impl Instruction {
             0x2D => (Dec { dst: Arg::Reg8(Reg8::L) }, 1, 4.into()),
             0x3D => (Dec { dst: Arg::Reg8(Reg8::A) }, 1, 4.into()),
 
+            // Add
+            0x09 => (AddHlReg16 { src: Reg16::BC }, 1, 8.into()),
+            0x19 => (AddHlReg16 { src: Reg16::DE }, 1, 8.into()),
+            0x29 => (AddHlReg16 { src: Reg16::HL }, 1, 8.into()),
+            0x39 => (AddHlReg16 { src: Reg16::SP }, 1, 8.into()),
+            0x80 => (Add { src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
+            0x81 => (Add { src: Arg::Reg8(Reg8::C) }, 1, 4.into()),
+            0x82 => (Add { src: Arg::Reg8(Reg8::D) }, 1, 4.into()),
+            0x83 => (Add { src: Arg::Reg8(Reg8::E) }, 1, 4.into()),
+            0x84 => (Add { src: Arg::Reg8(Reg8::H) }, 1, 4.into()),
+            0x85 => (Add { src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
+            0x86 => (Add { src: Arg::MemHl }, 1, 8.into()),
+            0x87 => (Add { src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
+            0x88 => (Adc { src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
+            0x89 => (Adc { src: Arg::Reg8(Reg8::C) }, 1, 4.into()),
+            0x8A => (Adc { src: Arg::Reg8(Reg8::D) }, 1, 4.into()),
+            0x8B => (Adc { src: Arg::Reg8(Reg8::E) }, 1, 4.into()),
+            0x8C => (Adc { src: Arg::Reg8(Reg8::H) }, 1, 4.into()),
+            0x8D => (Adc { src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
+            0x8E => (Adc { src: Arg::MemHl }, 1, 8.into()),
+            0x8F => (Adc { src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
+
+            // Sub
+            0x90 => (Sub { src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
+            0x91 => (Sub { src: Arg::Reg8(Reg8::C) }, 1, 4.into()),
+            0x92 => (Sub { src: Arg::Reg8(Reg8::D) }, 1, 4.into()),
+            0x93 => (Sub { src: Arg::Reg8(Reg8::E) }, 1, 4.into()),
+            0x94 => (Sub { src: Arg::Reg8(Reg8::H) }, 1, 4.into()),
+            0x95 => (Sub { src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
+            0x96 => (Sub { src: Arg::MemHl }, 1, 8.into()),
+            0x97 => (Sub { src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
+            0x98 => (Sbc { src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
+            0x99 => (Sbc { src: Arg::Reg8(Reg8::C) }, 1, 4.into()),
+            0x9A => (Sbc { src: Arg::Reg8(Reg8::D) }, 1, 4.into()),
+            0x9B => (Sbc { src: Arg::Reg8(Reg8::E) }, 1, 4.into()),
+            0x9C => (Sbc { src: Arg::Reg8(Reg8::H) }, 1, 4.into()),
+            0x9D => (Sbc { src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
+            0x9E => (Sbc { src: Arg::MemHl }, 1, 8.into()),
+            0x9F => (Sbc { src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
+
+            // And
+            0xA0 => (And { src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
+            0xA1 => (And { src: Arg::Reg8(Reg8::C) }, 1, 4.into()),
+            0xA2 => (And { src: Arg::Reg8(Reg8::D) }, 1, 4.into()),
+            0xA3 => (And { src: Arg::Reg8(Reg8::E) }, 1, 4.into()),
+            0xA4 => (And { src: Arg::Reg8(Reg8::H) }, 1, 4.into()),
+            0xA5 => (And { src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
+            0xA6 => (And { src: Arg::MemHl }, 1, 8.into()),
+            0xA7 => (And { src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
+
+            // Xor
+            0xA8 => (Xor { src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
+            0xA9 => (Xor { src: Arg::Reg8(Reg8::C) }, 1, 4.into()),
+            0xAA => (Xor { src: Arg::Reg8(Reg8::D) }, 1, 4.into()),
+            0xAB => (Xor { src: Arg::Reg8(Reg8::E) }, 1, 4.into()),
+            0xAC => (Xor { src: Arg::Reg8(Reg8::H) }, 1, 4.into()),
+            0xAD => (Xor { src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
+            0xAE => (Xor { src: Arg::MemHl }, 1, 8.into()),
+            0xAF => (Xor { src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
+            0xEE => (Xor { src: Arg::Imm8(arg8.unwrap()) }, 2, 8.into()),
+
+            // Or
+            0xB0 => (Or { src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
+            0xB1 => (Or { src: Arg::Reg8(Reg8::C) }, 1, 4.into()),
+            0xB2 => (Or { src: Arg::Reg8(Reg8::D) }, 1, 4.into()),
+            0xB3 => (Or { src: Arg::Reg8(Reg8::E) }, 1, 4.into()),
+            0xB4 => (Or { src: Arg::Reg8(Reg8::H) }, 1, 4.into()),
+            0xB5 => (Or { src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
+            0xB6 => (Or { src: Arg::MemHl }, 1, 8.into()),
+            0xB7 => (Or { src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
+
             // Cp
             0xBF => (Cp { src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
             0xB8 => (Cp { src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
@@ -645,18 +737,12 @@ impl Instruction {
             0xFE => (Cp { src: Arg::Imm8(arg8.unwrap()) }, 2, 8.into()),
 
             // Jump
-            0x18 => {
-                let offset = arg8.unwrap() as i8;
-                (Jr { offset, cond: Cond::None }, 2, Cycles(12, 8))
-            }
-            0x28 => {
-                let offset = arg8.unwrap() as i8;
-                (Jr { offset, cond: Cond::Zero }, 2, Cycles(12, 8))
-            }
-            0xC3 => {
-                let addr = arg16.unwrap();
-                (Jp { addr, cond: Cond::None }, 3, 16.into())
-            }
+            0x18 => (Jr { offset: arg8.unwrap() as i8, cond: Cond::None }, 2, Cycles(12, 8)),
+            0x20 => (Jr { offset: arg8.unwrap() as i8, cond: Cond::NotZero }, 2, Cycles(12, 8)),
+            0x28 => (Jr { offset: arg8.unwrap() as i8, cond: Cond::Zero }, 2, Cycles(12, 8)),
+            0x30 => (Jr { offset: arg8.unwrap() as i8, cond: Cond::NotCarry }, 2, Cycles(12, 8)),
+            0x38 => (Jr { offset: arg8.unwrap() as i8, cond: Cond::Carry }, 2, Cycles(12, 8)),
+            0xC3 => (Jp { addr: arg16.unwrap(), cond: Cond::None }, 3, 16.into()),
 
             other => panic!("Unknown instruction: {}", other),
         };

@@ -109,6 +109,36 @@ impl MemoryWrite<u16, u8> for Ram {
     }
 }
 
+impl MemoryWrite<u16, u16> for Ram {
+    #[inline]
+    fn write(&mut self, addr: u16, value: u16) {
+        let addr = (addr - Self::BASE_ADDR) as usize;
+        let value = value.to_le_bytes();
+
+        match self {
+            Self::Unbanked { data } => {
+                data[addr] = value[0];
+                data[addr+1] = value[1];
+            }
+            Self::Banked { data, active_bank } => {
+                match addr {
+                    0x0000..=0x0FFF => {
+                        // Write to the first bank
+                        data[addr] = value[0];
+                        data[addr+1] = value[1];
+                    }
+                    _ => {
+                        // Write to the switchable bank
+                        let bank_offset = *active_bank as usize * Self::BANK_SIZE;
+                        data[bank_offset + addr] = value[0];
+                        data[bank_offset + addr + 1] = value[1];
+                    }
+                }
+            }
+        }
+    }
+}
+
 impl std::fmt::Debug for Ram {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -309,23 +339,28 @@ impl MemoryWrite<u16, u8> for MemoryBus {
     }
 }
 
+/// Write a 16-bit word to memory.
+impl MemoryWrite<u16, u16> for MemoryBus {
+    fn write(&mut self, addr: u16, value: u16) {
+        match addr {
+            CartridgeRam::BASE_ADDR..=CartridgeRam::LAST_ADDR => {
+                self.cartridge_ram.as_mut().unwrap().write(addr, value)
+            }
+            Ram::BASE_ADDR..=Ram::LAST_ADDR => self.ram.write(addr, value),
+            0xFF80..=0xFFFE => {
+                let addr = addr as usize - 0xFF80;
+                let value = value.to_le_bytes();
+                self.high_ram[addr] = value[0];
+                self.high_ram[addr+1] = value[1];
+            }
+            _ => panic!("Unable to write to address: {:?}", addr),
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::cartridge::RomSize;
-
-    #[test]
-    fn test_rom_operations() {
-        let mut rom = Rom::new(RomSize::_2M);
-
-        rom.write(0u16, 0x66u8);
-        let value: u8 = rom.read(0u16);
-        assert_eq!(value, 0x66);
-
-        rom.write(0x1234u16, 0x66u8);
-        let value: u8 = rom.read(0x1234u16);
-        assert_eq!(value, 0x66);
-    }
 
     #[test]
     fn test_ram_operations() {

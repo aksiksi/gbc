@@ -159,6 +159,29 @@ impl MemoryWrite<u16, u8> for Ram {
     }
 }
 
+/// Write a 16-bit word to memory.
+impl MemoryWrite<u16, u16> for Ram {
+    #[inline]
+    fn write(&mut self, addr: u16, value: u16) {
+        let addr = (addr - Self::BASE_ADDR) as usize;
+        let value = value.to_le_bytes();
+        match self {
+            Self::Unbanked { data, .. } => {
+                data[addr] = value[0];
+                data[addr+1] = value[1];
+            }
+            Self::Banked {
+                data, active_bank, ..
+            } => {
+                let bank_offset = *active_bank as usize * Self::BANK_SIZE;
+                data[bank_offset + addr] = value[0];
+                data[bank_offset + addr + 1] = value[1];
+            }
+        }
+    }
+}
+
+
 impl std::fmt::Debug for Ram {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -722,5 +745,18 @@ mod test {
         assert_eq!(cartridge.cgb(), true);
         assert_eq!(cartridge.licensee_code().unwrap(), "Nintendo R&D 1");
         assert!(cartridge.verify_header_checksum());
+    }
+
+    #[test]
+    fn test_rom_operations() {
+        let mut rom = Rom::new(RomSize::_2M);
+
+        rom.write(0u16, 0x66u8);
+        let value: u8 = rom.read(0u16);
+        assert_eq!(value, 0x66);
+
+        rom.write(0x1234u16, 0x66u8);
+        let value: u8 = rom.read(0x1234u16);
+        assert_eq!(value, 0x66);
     }
 }

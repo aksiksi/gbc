@@ -75,17 +75,57 @@ impl Cpu {
                 (Arg::Reg8(dst), Arg::Reg8(src)) => {
                     regs.write(dst, regs.read(src));
                 }
-                (Arg::Reg8(dst), Arg::MemHl) => {
-                    let addr = regs.read(Reg16::HL);
+                (Arg::Reg8(dst), Arg::Mem(src)) => {
+                    let addr = regs.read(src);
                     let value = memory.read(addr);
                     regs.write(dst, value);
                 }
-                (Arg::MemHl, Arg::Reg8(src)) => {
-                    let addr = regs.read(Reg16::HL);
+                (Arg::Mem(dst), Arg::Reg8(src)) => {
+                    let addr = regs.read(dst);
                     memory.write(addr, regs.read(src));
+                }
+                (Arg::MemImm(dst), Arg::Reg8(src)) => {
+                    memory.write(dst, regs.read(src));
+                }
+                (Arg::MemImm(dst), Arg::Reg16(src)) => {
+                    memory.write(dst, regs.read(src));
+                }
+                (Arg::Reg8(dst), Arg::MemImm(src)) => {
+                    let value = memory.read(src);
+                    regs.write(dst, value);
                 }
                 _ => panic!("Unexpected dst and src: {:?}, {:?}", dst, src),
             },
+            LdMemCA => {
+                let addr = 0xFF00 + regs.read(Reg8::C) as u16;
+                memory.write(addr, regs.read(Reg8::A));
+            }
+            LdAMemC => {
+                let addr = 0xFF00 + regs.read(Reg8::C) as u16;
+                regs.write(Reg8::A, memory.read(addr));
+            }
+            LdiAMemHl => {
+                let addr = regs.read(Reg16::HL);
+                let value = memory.read(addr);
+                regs.write(Reg8::A, value);
+                regs.write(Reg16::HL, addr.wrapping_add(1));
+            }
+            LdiMemHlA => {
+                let addr = regs.read(Reg16::HL);
+                memory.write(addr, regs.read(Reg8::A));
+                regs.write(Reg16::HL, addr.wrapping_add(1));
+            }
+            LddAMemHl => {
+                let addr = regs.read(Reg16::HL);
+                let value = memory.read(addr);
+                regs.write(Reg8::A, value);
+                regs.write(Reg16::HL, addr.wrapping_sub(1));
+            }
+            LddMemHlA => {
+                let addr = regs.read(Reg16::HL);
+                memory.write(addr, regs.read(Reg8::A));
+                regs.write(Reg16::HL, addr.wrapping_sub(1));
+            }
             LdhA { offset } => {
                 let value = memory.read(0xFF00 + offset as u16);
                 regs.write(Reg8::A, value);
@@ -114,10 +154,7 @@ impl Cpu {
                 regs.write(Reg8::A, result);
 
                 // Flags
-                if result == 0 {
-                    flags.set(Flag::Zero);
-                }
-
+                flags.set(Flag::Zero, result == 0);
                 flags.clear(Flag::Subtract);
                 flags.clear(Flag::Carry);
                 flags.clear(Flag::HalfCarry);
@@ -139,22 +176,48 @@ impl Cpu {
                 _ => panic!("Unexpected dst: {:?}", dst),
             },
             Dec { dst } => {
-                // TODO: Flags
-                match dst {
+                let mut update_flags = true;
+                let mut half_carry = false;
+                let mut carry = false;
+
+                let result = match dst {
                     Arg::Reg8(dst) => {
-                        let curr = regs.read(dst);
-                        regs.write(dst, curr.wrapping_sub(1));
+                        // If lower nibble == 0, set the half-carry bit
+                        half_carry = regs.read(dst) & 0x0F == 0;
+
+                        // If value is 0, set the carry flag
+                        carry = regs.read(dst) == 0;
+
+                        let result = regs.read(dst).wrapping_sub(1);
+                        regs.write(dst, result);
+                        result as u16
                     }
                     Arg::Reg16(dst) => {
-                        let curr = regs.read(dst);
-                        regs.write(dst, curr.wrapping_sub(1));
+                        update_flags = false; // 16-bit variant does not touch flags
+                        let result = regs.read(dst).wrapping_sub(1);
+                        regs.write(dst, result);
+                        result
                     }
                     Arg::MemHl => {
                         let addr = regs.read(Reg16::HL);
                         let curr = memory.read(addr);
-                        memory.write(addr, curr.wrapping_sub(1));
+
+                        // If lower nibble == 0, set the half-carry bit
+                        half_carry = curr & 0xFF == 0;
+                        carry = curr == 0;
+
+                        let result = curr.wrapping_sub(1);
+                        memory.write(addr, result);
+                        result as u16
                     }
                     _ => panic!("Unexpected dst: {:?}", dst),
+                };
+
+                if update_flags {
+                    flags.set(Flag::Zero, result == 0);
+                    flags.set(Flag::Subtract, true);
+                    flags.set(Flag::HalfCarry, half_carry);
+                    flags.set(Flag::Carry, carry);
                 }
             }
             Cp { src } => {
@@ -172,18 +235,18 @@ impl Cpu {
 
                 // Flags
                 if other == a {
-                    flags.set(Flag::Zero);
+                    flags.set(Flag::Zero, true);
                 } else if other > a {
-                    flags.set(Flag::Carry);
+                    flags.set(Flag::Carry, true);
                 }
             }
             Jp { addr, cond } => {
                 let ok = match cond {
                     Cond::None => true,
-                    Cond::NotZero if !flags.is_zero() => true,
-                    Cond::Zero if flags.is_zero() => true,
-                    Cond::NotCarry if !flags.is_carry() => true,
-                    Cond::Carry if flags.is_carry() => true,
+                    Cond::NotZero if !flags.zero() => true,
+                    Cond::Zero if flags.zero() => true,
+                    Cond::NotCarry if !flags.carry() => true,
+                    Cond::Carry if flags.carry() => true,
                     _ => false,
                 };
 
@@ -194,10 +257,10 @@ impl Cpu {
             Jr { offset, cond } => {
                 let ok = match cond {
                     Cond::None => true,
-                    Cond::NotZero if !flags.is_zero() => true,
-                    Cond::Zero if flags.is_zero() => true,
-                    Cond::NotCarry if !flags.is_carry() => true,
-                    Cond::Carry if flags.is_carry() => true,
+                    Cond::NotZero if !flags.zero() => true,
+                    Cond::Zero if flags.zero() => true,
+                    Cond::NotCarry if !flags.carry() => true,
+                    Cond::Carry if flags.carry() => true,
                     _ => false,
                 };
 

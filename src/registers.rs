@@ -41,7 +41,6 @@ pub enum Flag {
 
 #[derive(Debug)]
 pub struct Flags {
-    raw: u8,
     zero: bool,
     subtract: bool,
     half_carry: bool,
@@ -49,14 +48,8 @@ pub struct Flags {
 }
 
 impl Flags {
-    const ZERO_MASK: u8 = (1 << 7);
-    const SUBTRACT_MASK: u8 = (1 << 6);
-    const HALF_CARRY_MASK: u8 = (1 << 5);
-    const CARRY_MASK: u8 = (1 << 4);
-
     pub fn new() -> Self {
         Self {
-            raw: 0,
             zero: false,
             subtract: false,
             half_carry: false,
@@ -65,30 +58,25 @@ impl Flags {
     }
 
     pub fn set_all(&mut self) {
-        self.raw = 0xFF;
         self.zero = true;
         self.subtract = true;
         self.half_carry = true;
         self.carry = true;
     }
 
-    pub fn set(&mut self, flag: Flag) {
+    pub fn set(&mut self, flag: Flag, value: bool) {
         match flag {
             Flag::Zero => {
-                self.zero = true;
-                self.raw |= Self::ZERO_MASK;
+                self.zero = value;
             }
             Flag::Subtract => {
-                self.subtract = true;
-                self.raw |= Self::SUBTRACT_MASK;
+                self.subtract = value;
             }
             Flag::HalfCarry => {
-                self.half_carry = true;
-                self.raw |= Self::HALF_CARRY_MASK;
+                self.half_carry = value;
             }
             Flag::Carry => {
-                self.carry = true;
-                self.raw |= Self::CARRY_MASK;
+                self.carry = value;
             }
         }
     }
@@ -97,48 +85,39 @@ impl Flags {
         match flag {
             Flag::Zero => {
                 self.zero = false;
-                self.raw &= !Self::ZERO_MASK;
             }
             Flag::Subtract => {
-                self.subtract = true;
-                self.raw &= !Self::SUBTRACT_MASK;
+                self.subtract = false;
             }
             Flag::HalfCarry => {
-                self.half_carry = true;
-                self.raw &= !Self::HALF_CARRY_MASK;
+                self.half_carry = false;
             }
             Flag::Carry => {
-                self.carry = true;
-                self.raw &= !Self::CARRY_MASK;
+                self.carry = false;
             }
         }
     }
 
     pub fn clear_all(&mut self) {
-        self.raw = 0;
         self.zero = false;
         self.subtract = false;
         self.half_carry = false;
         self.carry = false;
     }
 
-    pub fn raw(&self) -> u8 {
-        self.raw
-    }
-
-    pub fn is_zero(&self) -> bool {
+    pub fn zero(&self) -> bool {
         self.zero
     }
 
-    pub fn is_subtract(&self) -> bool {
+    pub fn subtract(&self) -> bool {
         self.subtract
     }
 
-    pub fn is_half_carry(&self) -> bool {
+    pub fn half_carry(&self) -> bool {
         self.half_carry
     }
 
-    pub fn is_carry(&self) -> bool {
+    pub fn carry(&self) -> bool {
         self.carry
     }
 }
@@ -264,16 +243,16 @@ mod test {
     fn test_flags() {
         let mut flags = Flags::new();
 
-        flags.set(Flag::Zero);
-        assert!(flags.is_zero());
+        flags.set(Flag::Zero, true);
+        assert!(flags.zero());
 
         flags.clear(Flag::Zero);
-        assert!(!flags.is_zero());
+        assert!(!flags.zero());
 
         flags.set_all();
-        assert!(flags.is_carry());
+        assert!(flags.carry());
 
         flags.clear_all();
-        assert!(!flags.is_carry());
+        assert!(!flags.carry());
     }
 }
