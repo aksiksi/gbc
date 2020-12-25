@@ -504,35 +504,35 @@ impl Instruction {
 
         // Safely attempt to extract the next arg as 8-bit and 16-bit immediates.
         // If we are at the end of the memory range, we will return 0.
-        let arg8 = if data.len() >= 2 { data[1] } else { 0 };
+        let arg8 = data.get(1).map(|x| *x);
         let arg16 = if data.len() >= 3 {
-            u16::from_le_bytes(data[1..3].try_into().unwrap())
+            Some(u16::from_le_bytes(data[1..3].try_into().unwrap()))
         } else {
-            0
+            None
         };
 
         let (inst, size, cycles) = match data[0] {
             0x00 => (Nop, 1, 4.into()),
 
             // Load
-            0x01 => (Ld(Arg::Reg16(Reg16::BC), Arg::Imm16(arg16)), 3, 12.into()),
-            0x11 => (Ld(Arg::Reg16(Reg16::DE), Arg::Imm16(arg16)), 3, 12.into()),
-            0x21 => (Ld(Arg::Reg16(Reg16::HL), Arg::Imm16(arg16)), 3, 12.into()),
-            0x31 => (Ld(Arg::Reg16(Reg16::SP), Arg::Imm16(arg16)), 3, 12.into()),
-            0x06 => (Ld(Arg::Reg8(Reg8::B), Arg::Imm8(arg8)), 2, 8.into()),
-            0x16 => (Ld(Arg::Reg8(Reg8::D), Arg::Imm8(arg8)), 2, 8.into()),
-            0x26 => (Ld(Arg::Reg8(Reg8::H), Arg::Imm8(arg8)), 2, 8.into()),
-            0x36 => (Ld(Arg::Mem(Reg16::HL), Arg::Imm8(arg8)), 2, 12.into()),
+            0x01 => (Ld(Arg::Reg16(Reg16::BC), Arg::Imm16(arg16.unwrap())), 3, 12.into()),
+            0x11 => (Ld(Arg::Reg16(Reg16::DE), Arg::Imm16(arg16.unwrap())), 3, 12.into()),
+            0x21 => (Ld(Arg::Reg16(Reg16::HL), Arg::Imm16(arg16.unwrap())), 3, 12.into()),
+            0x31 => (Ld(Arg::Reg16(Reg16::SP), Arg::Imm16(arg16.unwrap())), 3, 12.into()),
+            0x06 => (Ld(Arg::Reg8(Reg8::B), Arg::Imm8(arg8.unwrap())), 2, 8.into()),
+            0x16 => (Ld(Arg::Reg8(Reg8::D), Arg::Imm8(arg8.unwrap())), 2, 8.into()),
+            0x26 => (Ld(Arg::Reg8(Reg8::H), Arg::Imm8(arg8.unwrap())), 2, 8.into()),
+            0x36 => (Ld(Arg::Mem(Reg16::HL), Arg::Imm8(arg8.unwrap())), 2, 12.into()),
             0x0A => (Ld(Arg::Reg8(Reg8::A), Arg::Mem(Reg16::BC)), 1, 8.into()),
             0x1A => (Ld(Arg::Reg8(Reg8::A), Arg::Mem(Reg16::DE)), 1, 8.into()),
             0x2A => (LdiAMemHl, 1, 8.into()),
             0x3A => (LddAMemHl, 1, 8.into()),
-            0x0E => (Ld(Arg::Reg8(Reg8::C), Arg::Imm8(arg8)), 2, 8.into()),
-            0x1E => (Ld(Arg::Reg8(Reg8::E), Arg::Imm8(arg8)), 2, 8.into()),
-            0x2E => (Ld(Arg::Reg8(Reg8::L), Arg::Imm8(arg8)), 2, 8.into()),
-            0x3E => (Ld(Arg::Reg8(Reg8::A), Arg::Imm8(arg8)), 2, 8.into()),
-            0xE0 => (LdhMemImmA(arg8), 2, 12.into()),
-            0xF0 => (LdhA(arg8), 2, 12.into()),
+            0x0E => (Ld(Arg::Reg8(Reg8::C), Arg::Imm8(arg8.unwrap())), 2, 8.into()),
+            0x1E => (Ld(Arg::Reg8(Reg8::E), Arg::Imm8(arg8.unwrap())), 2, 8.into()),
+            0x2E => (Ld(Arg::Reg8(Reg8::L), Arg::Imm8(arg8.unwrap())), 2, 8.into()),
+            0x3E => (Ld(Arg::Reg8(Reg8::A), Arg::Imm8(arg8.unwrap())), 2, 8.into()),
+            0xE0 => (LdhMemImmA(arg8.unwrap()), 2, 12.into()),
+            0xF0 => (LdhA(arg8.unwrap()), 2, 12.into()),
 
             // Xor
             0xA8 => (Xor(Arg::Reg8(Reg8::B)), 1, 4.into()),
@@ -543,7 +543,7 @@ impl Instruction {
             0xAD => (Xor(Arg::Reg8(Reg8::L)), 1, 4.into()),
             0xAE => (Xor(Arg::MemHl), 1, 8.into()),
             0xAF => (Xor(Arg::Reg8(Reg8::A)), 1, 4.into()),
-            0xEE => (Xor(Arg::Imm8(arg8)), 2, 8.into()),
+            0xEE => (Xor(Arg::Imm8(arg8.unwrap())), 2, 8.into()),
 
             // Inc
             0x03 => (Inc(Arg::Reg16(Reg16::BC)), 1, 8.into()),
@@ -582,19 +582,19 @@ impl Instruction {
             0xBC => (Cp(Arg::Reg8(Reg8::H)), 1, 4.into()),
             0xBD => (Cp(Arg::Reg8(Reg8::L)), 1, 4.into()),
             0xBE => (Cp(Arg::MemHl), 1, 8.into()),
-            0xFE => (Cp(Arg::Imm8(arg8)), 2, 8.into()),
+            0xFE => (Cp(Arg::Imm8(arg8.unwrap())), 2, 8.into()),
 
             // Jump
             0x18 => {
-                let offset = arg8 as i8;
+                let offset = arg8.unwrap() as i8;
                 (Jr(offset, Cond::None), 2, Cycles(12, 8))
             }
             0x28 => {
-                let offset = arg8 as i8;
+                let offset = arg8.unwrap() as i8;
                 (Jr(offset, Cond::Zero), 2, Cycles(12, 8))
             }
             0xC3 => {
-                let addr = arg16;
+                let addr = arg16.unwrap();
                 (Jp(addr, Cond::None), 3, 16.into())
             }
 
