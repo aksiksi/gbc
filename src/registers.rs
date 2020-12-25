@@ -64,6 +64,18 @@ impl Flags {
         self.carry = true;
     }
 
+    /// Return flags as a raw 8-bit number
+    pub fn raw(&self) -> u8 {
+        let mut flags = 0u8;
+
+        if self.zero { flags |= 1 << 7; }
+        if self.subtract { flags |= 1 << 6; }
+        if self.half_carry { flags |= 1 << 5; }
+        if self.carry { flags |= 1 << 4; }
+
+        flags
+    }
+
     pub fn set(&mut self, flag: Flag, value: bool) {
         match flag {
             Flag::Zero => {
@@ -251,6 +263,7 @@ mod test {
 
         flags.set_all();
         assert!(flags.carry());
+        assert_eq!(flags.raw(), 0xF0);
 
         flags.clear_all();
         assert!(!flags.carry());

@@ -134,8 +134,8 @@ impl Cpu {
             Inc { dst } => self.inc(dst),
             Dec { dst } => self.dec(dst),
             Add { src } => self.add(src),
-            Sub { src } => self.sub(src),
-            Cp  { src } => self.cp(src),
+            Sub { src } => self.sub(src, true),
+            Cp  { src } => self.sub(src, false),
             Jp { addr, cond } => {
                 let ok = match cond {
                     Cond::None => true,
@@ -209,8 +209,8 @@ impl Cpu {
                 half_carry = ((src & 0xF) + (a & 0xF)) & 0x10 == 0x10;
                 a.overflowing_add(src)
             }
-            Arg::Mem(src) => {
-                let addr = self.registers.read(src);
+            Arg::MemHl => {
+                let addr = self.registers.read(Reg16::HL);
                 let val = self.memory.read(addr);
                 half_carry = ((val & 0xF) + (a & 0xF)) & 0x10 == 0x10;
                 a.overflowing_add(val)
@@ -226,7 +226,7 @@ impl Cpu {
         self.flags.set(Flag::Carry, carry);
     }
 
-    fn sub(&mut self, src: Arg) {
+    fn sub(&mut self, src: Arg, write: bool) {
         let a = self.registers.read(Reg8::A);
         let half_carry: bool;
 
@@ -240,8 +240,8 @@ impl Cpu {
                 half_carry = ((src & 0xF) + (a & 0xF)) & 0x10 == 0x10;
                 a.overflowing_sub(src)
             }
-            Arg::Mem(src) => {
-                let addr = self.registers.read(src);
+            Arg::MemHl => {
+                let addr = self.registers.read(Reg16::HL);
                 let val = self.memory.read(addr);
                 half_carry = ((val & 0xF) + (a & 0xF)) & 0x10 == 0x10;
                 a.overflowing_sub(val)
@@ -249,7 +249,10 @@ impl Cpu {
             _ => panic!("Unexpected src {:?}", src),
         };
 
-        self.registers.write(Reg8::A, result);
+        // Write back the result for non-CP
+        if write {
+            self.registers.write(Reg8::A, result);
+        }
 
         self.flags.set(Flag::Zero, result == 0);
         self.flags.set(Flag::Subtract, true);
@@ -338,26 +341,6 @@ impl Cpu {
         }
     }
 
-    fn cp(&mut self, src: Arg) { let a = self.registers.read(Reg8::A);
-
-        let other = match src {
-            Arg::Reg8(src) => self.registers.read(src),
-            Arg::Imm8(src) => src,
-            Arg::MemHl => {
-                let addr = self.registers.read(Reg16::HL);
-                self.memory.read(addr)
-            }
-            _ => panic!("Unexpected src: {:?}", src),
-        };
-
-        // Flags
-        if other == a {
-            self.flags.set(Flag::Zero, true);
-        } else if other > a {
-            self.flags.set(Flag::Carry, true);
-        }
-    }
-
     pub fn memory(&self) -> &MemoryBus {
         &self.memory
     }
@@ -433,5 +416,65 @@ mod test {
         assert_eq!(cpu.registers.read(Reg8::A), 0x2F);
         assert!(!cpu.flags.zero());
         assert!(cpu.flags.subtract());
+    }
+
+    #[test]
+    fn inc() {
+        let mut cpu = get_cpu();
+
+        cpu.registers.write(Reg8::A, 0xFF);
+
+        // Overflow
+        let inst = Instruction::Inc { dst: Reg8::A.into() };
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::A), 0);
+        assert!(cpu.flags.zero());
+        assert!(cpu.flags.half_carry());
+        assert!(!cpu.flags.subtract());
+    }
+
+    #[test]
+    fn dec() {
+        let mut cpu = get_cpu();
+
+        cpu.registers.write(Reg8::A, 0);
+
+        // Underflow
+        let inst = Instruction::Dec { dst: Reg8::A.into() };
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::A), 0xFF);
+        assert!(!cpu.flags.zero());
+        assert!(cpu.flags.half_carry());
+        assert!(cpu.flags.subtract());
+    }
+
+    #[test]
+    fn cp() {
+        let mut cpu = get_cpu();
+
+        cpu.registers.write(Reg8::A, 0x3C);
+        cpu.registers.write(Reg8::B, 0x2F);
+
+        let inst = Instruction::Cp { src: Reg8::B.into() };
+        cpu.execute(inst);
+        assert!(!cpu.flags.zero());
+        assert!(cpu.flags.subtract());
+        assert!(cpu.flags.half_carry());
+        assert!(!cpu.flags.carry());
+
+        let inst = Instruction::Cp { src: 0x3Cu8.into() };
+        cpu.execute(inst);
+        assert!(cpu.flags.zero());
+        assert!(cpu.flags.subtract());
+
+        let (addr, value) = (0xBEEF, 0x40u8);
+        cpu.memory.write(addr, value);
+        cpu.registers.write(Reg16::HL, addr);
+        let inst = Instruction::Cp { src: Arg::MemHl };
+        cpu.execute(inst);
+        assert!(!cpu.flags.zero());
+        assert!(cpu.flags.subtract());
+        assert!(!cpu.flags.half_carry());
+        assert!(cpu.flags.carry());
     }
 }
