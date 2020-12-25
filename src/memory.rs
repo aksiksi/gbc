@@ -374,7 +374,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_ram_operations() {
+    fn ram_operations() {
         let mut ram = Ram::new(true);
 
         ram.write(Ram::BASE_ADDR, 0x66u8);

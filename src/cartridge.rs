@@ -726,7 +726,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_valid_cartridge_header() {
+    fn parse_cartridge_header() {
         let sample_rom_path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("samples")
             .join("pokemon_gold.gbc");
@@ -748,7 +748,7 @@ mod test {
     }
 
     #[test]
-    fn test_rom_operations() {
+    fn rom_operations() {
         let mut rom = Rom::new(RomSize::_2M);
 
         rom.write(0u16, 0x66u8);

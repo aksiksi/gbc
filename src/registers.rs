@@ -227,7 +227,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_combined_regs() {
+    fn combined_regs() {
         let mut regs = RegisterFile::new();
 
         regs.write(Reg8::A, 0x10);
@@ -240,7 +240,7 @@ mod test {
     }
 
     #[test]
-    fn test_flags() {
+    fn flags() {
         let mut flags = Flags::new();
 
         flags.set(Flag::Zero, true);

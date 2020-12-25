@@ -134,6 +134,7 @@ impl Cpu {
             Inc { dst } => self.inc(dst),
             Dec { dst } => self.dec(dst),
             Add { src } => self.add(src),
+            Sub { src } => self.sub(src),
             Cp  { src } => self.cp(src),
             Jp { addr, cond } => {
                 let ok = match cond {
@@ -202,17 +203,17 @@ impl Cpu {
             Arg::Reg8(src) => {
                 let val = self.registers.read(src);
                 half_carry = ((val & 0xF) + (a & 0xF)) & 0x10 == 0x10;
-                val.overflowing_add(a)
+                a.overflowing_add(val)
             }
             Arg::Imm8(src) => {
                 half_carry = ((src & 0xF) + (a & 0xF)) & 0x10 == 0x10;
-                src.overflowing_add(a)
+                a.overflowing_add(src)
             }
             Arg::Mem(src) => {
                 let addr = self.registers.read(src);
                 let val = self.memory.read(addr);
                 half_carry = ((val & 0xF) + (a & 0xF)) & 0x10 == 0x10;
-                val.overflowing_add(a)
+                a.overflowing_add(val)
             }
             _ => panic!("Unexpected src {:?}", src),
         };
@@ -221,6 +222,37 @@ impl Cpu {
 
         self.flags.set(Flag::Zero, result == 0);
         self.flags.set(Flag::Subtract, false);
+        self.flags.set(Flag::HalfCarry, half_carry);
+        self.flags.set(Flag::Carry, carry);
+    }
+
+    fn sub(&mut self, src: Arg) {
+        let a = self.registers.read(Reg8::A);
+        let half_carry: bool;
+
+        let (result, carry) = match src {
+            Arg::Reg8(src) => {
+                let val = self.registers.read(src);
+                half_carry = ((val & 0xF) + (a & 0xF)) & 0x10 == 0x10;
+                a.overflowing_sub(val)
+            }
+            Arg::Imm8(src) => {
+                half_carry = ((src & 0xF) + (a & 0xF)) & 0x10 == 0x10;
+                a.overflowing_sub(src)
+            }
+            Arg::Mem(src) => {
+                let addr = self.registers.read(src);
+                let val = self.memory.read(addr);
+                half_carry = ((val & 0xF) + (a & 0xF)) & 0x10 == 0x10;
+                a.overflowing_sub(val)
+            }
+            _ => panic!("Unexpected src {:?}", src),
+        };
+
+        self.registers.write(Reg8::A, result);
+
+        self.flags.set(Flag::Zero, result == 0);
+        self.flags.set(Flag::Subtract, true);
         self.flags.set(Flag::HalfCarry, half_carry);
         self.flags.set(Flag::Carry, carry);
     }
@@ -340,13 +372,17 @@ mod test {
     use super::*;
     use crate::cartridge::{RomSize, RamSize};
 
-    #[test]
-    fn test_add() {
+    fn get_cpu() -> Cpu {
         let memory = MemoryBus::new(RomSize::_1M, RamSize::_32K);
-        let mut cpu = Cpu::new(memory);
+        Cpu::new(memory)
+    }
+
+    #[test]
+    fn add() {
+        let mut cpu = get_cpu();
 
         // Normal add
-        let inst = Instruction::Add { src: Arg::Imm8(0x10) };
+        let inst = Instruction::Add { src: 0x10u8.into() };
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::A), 0x10);
 
@@ -357,5 +393,45 @@ mod test {
         assert_eq!(cpu.registers.read(Reg8::A), 0x00);
         assert!(cpu.flags.zero());
         assert!(cpu.flags.carry());
+
+        // Half overflow
+        cpu.registers.write(Reg8::A, 0x3C);
+        let inst = Instruction::Add { src: 0xFFu8.into() };
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::A), 0x3B);
+        assert!(!cpu.flags.zero());
+        assert!(!cpu.flags.subtract());
+        assert!(cpu.flags.half_carry());
+        assert!(cpu.flags.carry());
+    }
+
+    #[test]
+    fn sub() {
+        let mut cpu = get_cpu();
+
+        cpu.registers.write(Reg8::A, 0x10);
+
+        // Normal sub
+        let inst = Instruction::Sub { src: 0x10u8.into() };
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::A), 0);
+        assert!(cpu.flags.zero());
+        assert!(cpu.flags.subtract());
+
+        // Underflow
+        let inst = Instruction::Sub { src: 0x10u8.into() };
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::A), 0xF0);
+        assert!(!cpu.flags.zero());
+        assert!(cpu.flags.subtract());
+        assert!(cpu.flags.carry());
+
+        // Half underflow
+        cpu.registers.write(Reg8::A, 0x3E);
+        let inst = Instruction::Sub { src: 0xFu8.into() };
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::A), 0x2F);
+        assert!(!cpu.flags.zero());
+        assert!(cpu.flags.subtract());
     }
 }

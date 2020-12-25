@@ -781,7 +781,7 @@ mod test {
     use Instruction::*;
 
     #[test]
-    fn test_decode_ld() {
+    fn decode_ld() {
         // Vector of (input instruction, expected decoded, size, cycle count)
         #[rustfmt::skip]
         let test_vectors: &[([u8; 3], Instruction, u8, Cycles)] = &[
