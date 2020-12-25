@@ -64,24 +64,37 @@ impl Cpu {
 
         match instruction {
             Nop => (),
-            Ld(dst, src) => match (dst, src) {
+            Halt => (),
+            Ld { dst, src } => match (dst, src) {
                 (Arg::Reg16(dst), Arg::Imm16(src)) => {
                     regs.write(dst, src);
                 }
                 (Arg::Reg8(dst), Arg::Imm8(src)) => {
                     regs.write(dst, src);
                 }
+                (Arg::Reg8(dst), Arg::Reg8(src)) => {
+                    regs.write(dst, regs.read(src));
+                }
+                (Arg::Reg8(dst), Arg::MemHl) => {
+                    let addr = regs.read(Reg16::HL);
+                    let value = memory.read(addr);
+                    regs.write(dst, value);
+                }
+                (Arg::MemHl, Arg::Reg8(src)) => {
+                    let addr = regs.read(Reg16::HL);
+                    memory.write(addr, regs.read(src));
+                }
                 _ => panic!("Unexpected dst and src: {:?}, {:?}", dst, src),
             },
-            LdhA(src) => {
-                let value = memory.read(0xFF00 + src as u16);
+            LdhA { offset } => {
+                let value = memory.read(0xFF00 + offset as u16);
                 regs.write(Reg8::A, value);
             }
-            LdhMemImmA(dst) => {
+            Ldh { offset } => {
                 let a = regs.read(Reg8::A);
-                memory.write(0xFF00 + dst as u16, a);
+                memory.write(0xFF00 + offset as u16, a);
             }
-            Xor(src) => {
+            Xor { src } => {
                 let a = regs.read(Reg8::A);
 
                 let result = match src {
@@ -109,7 +122,7 @@ impl Cpu {
                 flags.clear(Flag::Carry);
                 flags.clear(Flag::HalfCarry);
             }
-            Inc(dst) => match dst {
+            Inc { dst } => match dst {
                 Arg::Reg8(dst) => {
                     let curr = regs.read(dst);
                     regs.write(dst, curr.wrapping_add(1));
@@ -125,7 +138,7 @@ impl Cpu {
                 }
                 _ => panic!("Unexpected dst: {:?}", dst),
             },
-            Dec(dst) => {
+            Dec { dst } => {
                 // TODO: Flags
                 match dst {
                     Arg::Reg8(dst) => {
@@ -144,7 +157,7 @@ impl Cpu {
                     _ => panic!("Unexpected dst: {:?}", dst),
                 }
             }
-            Cp(src) => {
+            Cp { src } => {
                 let a = regs.read(Reg8::A);
 
                 let other = match src {
@@ -164,7 +177,7 @@ impl Cpu {
                     flags.set(Flag::Carry);
                 }
             }
-            Jp(addr, cond) => {
+            Jp { addr, cond } => {
                 let ok = match cond {
                     Cond::None => true,
                     Cond::NotZero if !flags.is_zero() => true,
@@ -178,7 +191,7 @@ impl Cpu {
                     *pc = addr;
                 }
             }
-            Jr(offset, cond) => {
+            Jr { offset, cond } => {
                 let ok = match cond {
                     Cond::None => true,
                     Cond::NotZero if !flags.is_zero() => true,

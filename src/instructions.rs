@@ -48,17 +48,7 @@ pub enum Instruction {
     ///
     /// * src: [Imm8](Arg::Imm8) or [Reg8](Arg::Reg8) or [Imm16](Arg::Imm16) or [Mem](Arg::Mem)
     /// * dst: [Reg8](Arg::Reg8) or [Reg16](Arg::Reg16) or [Mem](Arg::Mem)
-    Ld(Arg, Arg),
-
-    /// Load an 8-bit value into register [A](Reg8::A)
-    ///
-    /// * src: [Imm8](Arg::Imm8) or [Mem](Arg::Mem) or [MemImm](Arg::MemImm)
-    LdA(Arg),
-
-    /// Load A into `Arg`
-    ///
-    /// * dst: [Reg8](Arg::Reg8) or [Mem](Arg::Mem) or [MemImm](Arg::MemImm)
-    LdArgA(Arg),
+    Ld { dst: Arg, src: Arg },
 
     /// Load value at address (0xFF00 + C) into [A](Reg8::A)
     ///
@@ -81,173 +71,173 @@ pub enum Instruction {
     LdiMemHlA,
 
     /// Load value at address (0xFF00 + [Imm8](Arg::Imm8)) into [A](Reg8::A)
-    LdhA(u8),
+    LdhA { offset: u8 },
 
     /// Load [A](Reg8::A) into address (0xFF00 + [Imm8](Arg::Imm8))
-    LdhMemImmA(u8),
+    Ldh { offset: u8 },
 
     /// Load [HL](Reg16::HL) into SP
     LdSpHl,
 
     /// Load SP + Imm8i into [HL](Reg16::HL)
     ///
-    /// Flags:
+    /// ### Flags
     ///
     /// * Zero: reset
     /// * Subtract: reset
     /// * HalfCarry: set or reset
     /// * Carry: set or reset
-    LdHlSpImm8i(i8),
+    LdHlSpImm8i { offset: i8 },
 
-    /// Load SP into address ([MemImm](Arg::MemImm))
-    LdMemImmSp(u16),
+    /// Load SP into address `addr`
+    LdMemImmSp { addr: u16 },
 
     /// Push [Reg16](Arg::Reg16) (register pair) onto stack
-    PushReg16(Reg16),
+    PushReg16 { src: Reg16 },
 
     /// Pop 2 bytes off the stack into [Reg16](Arg::Reg16)
-    PopReg16(Reg16),
+    PopReg16 { dst: Reg16 },
 
     /// Add [Reg8](Arg::Reg8) or [Imm8](Arg::Imm8) or value at address ([Reg16](Arg::Reg16)) to [A](Reg8::A)
     ///
-    /// Flags:
+    /// ### Flags
     ///
     /// * Zero: set if result 0
     /// * Subtract: reset
     /// * HalfCarry: set if carry from bit 3
     /// * Carry: set if carry from bit 7
-    Add(Arg),
+    Add { src: Arg },
 
     /// Add carry flag **and** [Reg8](Arg::Reg8) or [Imm8](Arg::Imm8) or value at address ([Reg16](Arg::Reg16)) to [A](Reg8::A)
     ///
-    /// Flags:
+    /// ### Flags
     ///
     /// * Zero: set if result 0
     /// * Subtract: reset
     /// * HalfCarry: set if carry from bit 3
     /// * Carry: set if carry from bit 7
-    Adc(Arg),
+    Adc { src: Arg },
 
     /// Subtract [Reg8](Arg::Reg8) or [Imm8](Arg::Imm8) or value at address ([Reg16](Arg::Reg16)) from [A](Reg8::A)
     ///
-    /// Flags:
+    /// ### Flags
     ///
     /// * Zero: set if result 0
     /// * Subtract: set
     /// * HalfCarry: set if no borrow from bit 4
     /// * Carry: set if no borrow
-    Sub(Arg),
+    Sub { src: Arg },
 
     /// Subtract carry flag **and** [Reg8](Arg::Reg8) or [Imm8](Arg::Imm8) or value at address ([Reg16](Arg::Reg16)) from [A](Reg8::A)
     ///
-    /// Flags:
+    /// ### Flags
     ///
     /// * Zero: set if result 0
     /// * Subtract: set
     /// * HalfCarry: set if no borrow from bit 4
     /// * Carry: set if no borrow
-    Sbc(Arg),
+    Sbc { src: Arg },
 
     /// AND [Reg8](Arg::Reg8) or [Imm8](Arg::Imm8) or value at address ([Reg16](Arg::Reg16)) with [A](Reg8::A).
     ///
-    /// Flags:
+    /// ### Flags
     ///
     /// * Zero: set if result 0
     /// * Subtract: reset
     /// * HalfCarry: set
     /// * Carry: reset
-    And(Arg),
+    And { src: Arg },
 
     /// OR [Reg8](Arg::Reg8) or [Imm8](Arg::Imm8) or value at address ([Reg16](Arg::Reg16)) with [A](Reg8::A).
     ///
-    /// Flags:
+    /// ### Flags
     ///
     /// * Zero: set if result 0
     /// * Subtract: reset
     /// * HalfCarry: reset
     /// * Carry: reset
-    Or(Arg),
+    Or { src: Arg },
 
     /// XOR [Reg8](Arg::Reg8) or [Imm8](Arg::Imm8) or value at address ([HL](Reg16::HL)) with [A](Reg8::A).
     ///
-    /// Flags:
+    /// ### Flags
     ///
     /// * Zero: set if result 0
     /// * Subtract: reset
     /// * HalfCarry: reset
     /// * Carry: reset
-    Xor(Arg),
+    Xor { src: Arg },
 
     /// Compare [A](Reg8::A) with [Reg8](Arg::Reg8) or [Imm8](Arg::Imm8) or value at address ([HL](Reg16::HL))
     ///
     /// Note: This is equivalent to `SUB A, n`, but with results
     /// thrown away.
     ///
-    /// Flags:
+    /// ### Flags
     ///
     /// * Zero: set if result 0 (i.e., A == n)
     /// * Subtract: set
     /// * HalfCarry: set if no borrow from bit 4
     /// * Carry: set for no borrow (i.e., A < n)
-    Cp(Arg),
+    Cp { src: Arg },
 
     /// Increment [Reg8](Arg::Reg8) or [Reg16](Arg::Reg16) or value at address ([HL](Reg16::HL))
     ///
     /// **Note:** Reg16 variant does not affect flags
     ///
-    /// Flags:
+    /// ### Flags
     ///
     /// * Zero: set if result 0
     /// * Subtract: reset
     /// * HalfCarry: set if carry from bit 3
     /// * Carry: not affected
-    Inc(Arg),
+    Inc { dst: Arg },
 
     /// Decrement [Reg8](Arg::Reg8) or [Reg16](Arg::Reg16) or value at address ([HL](Reg16::HL))
     ///
     /// **Note:** Reg16 variant does not affect flags
     ///
-    /// Flags:
+    /// ### Flags
     ///
     /// * Zero: set if result 0
     /// * Subtract: set
     /// * HalfCarry: set if no borrow from bit 4
     /// * Carry: not affected
-    Dec(Arg),
+    Dec { dst: Arg },
 
     /// Add [Reg16](Arg::Reg16) to [HL](Reg16::HL).
     ///
-    /// Flags:
+    /// ### Flags
     ///
     /// * Zero: set if result 0
     /// * Subtract: reset
     /// * HalfCarry: set if carry from bit 11
     /// * Carry: set if carry from bit 15
-    AddHlReg16(Reg16),
+    AddHlReg16 { src: Reg16 },
 
     /// Add Imm8i to SP.
     ///
-    /// Flags:
+    /// ### Flags
     ///
     /// * Zero: reset
     /// * Subtract: reset
     /// * HalfCarry: set if carry from bit 11
     /// * Carry: set if carry from bit 15
-    AddSpImm8i(i8),
+    AddSpImm8i { offset: i8 },
 
     /// Swap upper & lower nibbles of [Reg8](Arg::Reg8) or value at memory address ([Reg16](Arg::Reg16))
     ///
-    /// Flags:
+    /// ### Flags
     ///
     /// * Zero: set if result 0
     /// * Subtract: reset
     /// * HalfCarry: reset
     /// * Carry: reset
-    Swap(Arg),
+    Swap { dst: Arg },
 
     /// Adjusts register [A](Reg8::A) to correct BCD representation.
     ///
-    /// Flags:
+    /// ### Flags
     ///
     /// * Zero: set if register A is 0
     /// * Subtract: not affected
@@ -257,7 +247,7 @@ pub enum Instruction {
 
     /// Complement the carry flag
     ///
-    /// Flags:
+    /// ### Flags
     ///
     /// * Zero: not affected
     /// * Subtract: reset
@@ -267,7 +257,7 @@ pub enum Instruction {
 
     /// Set the carry flag
     ///
-    /// Flags:
+    /// ### Flags
     ///
     /// * Zero: not affected
     /// * Subtract: reset
@@ -295,11 +285,11 @@ pub enum Instruction {
     /// Push current address to stack, then jump to address 0x0000 + n
     ///
     /// n must be one of: [0x00, 0x08, 0x10, 0x18, 0x20, 0x28, 0x30, 0x38]
-    Rst(u8),
+    Rst { offset: u8 },
 
     /// Rotate [A](Reg8::A) left. Place old bit 7 in carry flag.
     ///
-    /// Flags:
+    /// ### Flags
     ///
     /// * Zero: set if result 0
     /// * Subtract: reset
@@ -314,7 +304,7 @@ pub enum Instruction {
     ///       new bit 7 of A = bit 6 of A
     ///       ..etc
     ///
-    /// Flags:
+    /// ### Flags
     ///
     /// * Zero: set if result 0
     /// * Subtract: reset
@@ -324,7 +314,7 @@ pub enum Instruction {
 
     /// Rotate [A](Reg8::A) right. Place old bit 0 in carry flag.
     ///
-    /// Flags:
+    /// ### Flags
     ///
     /// * Zero: set if result 0
     /// * Subtract: reset
@@ -339,7 +329,7 @@ pub enum Instruction {
     ///       new bit 6 of A = bit 7 of A
     ///       ..etc
     ///
-    /// Flags:
+    /// ### Flags
     ///
     /// * Zero: set if result 0
     /// * Subtract: reset
@@ -349,119 +339,125 @@ pub enum Instruction {
 
     /// Rotate [Reg8](Arg::Reg8) or ([HL](Reg16::HL)) left. Place old bit 7 in carry flag.
     ///
-    /// Flags:
+    /// ### Flags
     ///
     /// * Zero: set if result 0
     /// * Subtract: reset
     /// * HalfCarry: reset
     /// * Carry: contains old bit 7
-    Rlc(Arg),
+    Rlc { dst: Arg },
 
     /// Rotate [Reg8](Arg::Reg8) or ([HL](Reg16::HL)) left through carry flag.
     ///
-    /// Flags:
+    /// ### Flags
     ///
     /// * Zero: set if result 0
     /// * Subtract: reset
     /// * HalfCarry: reset
     /// * Carry: contains old bit 7
-    Rl(Arg),
+    Rl { dst: Arg },
 
     /// Rotate [Reg8](Arg::Reg8) or ([HL](Reg16::HL)) right. Place old bit 0 in carry flag.
     ///
-    /// Flags:
+    /// ### Flags
     ///
     /// * Zero: set if result 0
     /// * Subtract: reset
     /// * HalfCarry: reset
     /// * Carry: contains old bit 0
-    Rrc(Arg),
+    Rrc { dst: Arg },
 
     /// Rotate [Reg8](Arg::Reg8) or ([HL](Reg16::HL)) right through carry flag.
     ///
-    /// Flags:
+    /// ### Flags
     ///
     /// * Zero: set if result 0
     /// * Subtract: reset
     /// * HalfCarry: reset
     /// * Carry: contains old bit 0
-    Rr(Arg),
+    Rr { dst: Arg },
 
     /// Shift [Reg8](Arg::Reg8) or ([HL](Reg16::HL)) left into carry.
     ///
-    /// Flags:
+    /// ### Flags
     ///
     /// * Zero: set if result 0
     /// * Subtract: reset
     /// * HalfCarry: reset
     /// * Carry: contains old bit 7
-    Sla(Arg),
+    Sla { dst: Arg },
 
     /// Shift [Reg8](Arg::Reg8) or ([HL](Reg16::HL)) right into carry.
     /// Note: MSB does not change.
     ///
-    /// Flags:
+    /// ### Flags
     ///
     /// * Zero: set if result 0
     /// * Subtract: reset
     /// * HalfCarry: reset
     /// * Carry: contains old bit 0
-    Sra(Arg),
+    Sra { dst: Arg },
 
     /// Shift [Reg8](Arg::Reg8) or ([HL](Reg16::HL)) right into carry.
     /// Note: MSB is set to 0.
     ///
-    /// Flags:
+    /// ### Flags
     ///
     /// * Zero: set if result 0
     /// * Subtract: reset
     /// * HalfCarry: reset
     /// * Carry: contains old bit 0
-    Srl(Arg),
+    Srl { dst: Arg },
 
     /// Test bit `b` in [Reg8](Arg::Reg8) or ([HL](Reg16::HL)).
     ///
-    /// Flags:
+    /// ### Flags
     ///
     /// * Zero: set if result 0
     /// * Subtract: reset
     /// * HalfCarry: set
     /// * Carry: not affected
-    Bit(Arg, u8),
+    Bit { dst: Arg, bit: u8},
 
     /// Set bit `b` in [Reg8](Arg::Reg8) or ([HL](Reg16::HL)).
     ///
     /// Flags: None
-    Set(Arg, u8),
+    Set { dst: Arg, bit: u8},
 
     /// Reset bit `b` in [Reg8](Arg::Reg8) or ([HL](Reg16::HL)).
     ///
     /// Flags: None
-    Res(Arg, u8),
+    Res { dst: Arg, bit: u8},
 
     /// Jump to address `Addr`
+    ///
     /// If `Cond` != `Cond::None`, jump has a condition.
-    Jp(u16, Cond),
+    Jp { addr: u16, cond: Cond },
 
     /// Jump to address ([HL](Reg16::HL))
+    ///
     /// If `Cond` != `Cond::None`, jump has a condition.
     JpHl,
 
     /// Add `n` to current address and jump to it
+    ///
     /// If `Cond` != `Cond::None`, jump has a condition.
-    Jr(i8, Cond),
+    Jr { offset: i8, cond: Cond },
 
     /// Push next instruction address to stack and jump to address.
+    ///
     /// If `Cond` != `Cond::None`, jump has a condition.
-    Call(u16, Cond),
+    Call { addr: u16, cond: Cond },
 
     /// Pop two bytes from stack & jump to the address.
     ///
-    /// NotZero: Pop two bytes from stack & jump to the address if Z flag is reset.
-    /// Zero: Pop two bytes from stack & jump to the address if Z flag is set.
-    /// NotCarry: Pop two bytes from stack & jump to the address if C flag is reset.
-    /// Carry: Pop two bytes from stack & jump to the address if C flag is set.
-    Ret(Cond),
+    /// ### Flags
+    ///
+    /// * NotZero: Pop two bytes from stack & jump to the address if Z flag is reset.
+    /// * Zero: Pop two bytes from stack & jump to the address if Z flag is set.
+    /// * NotCarry: Pop two bytes from stack & jump to the address if C flag is reset.
+    /// * Carry: Pop two bytes from stack & jump to the address if C flag is set.
+    Ret { cond: Cond },
 
     /// Pop two bytes from stack & jump to the address, **then** enable interrupts.
     RetI,
@@ -515,87 +511,151 @@ impl Instruction {
             0x00 => (Nop, 1, 4.into()),
 
             // Load
-            0x01 => (Ld(Arg::Reg16(Reg16::BC), Arg::Imm16(arg16.unwrap())), 3, 12.into()),
-            0x11 => (Ld(Arg::Reg16(Reg16::DE), Arg::Imm16(arg16.unwrap())), 3, 12.into()),
-            0x21 => (Ld(Arg::Reg16(Reg16::HL), Arg::Imm16(arg16.unwrap())), 3, 12.into()),
-            0x31 => (Ld(Arg::Reg16(Reg16::SP), Arg::Imm16(arg16.unwrap())), 3, 12.into()),
-            0x06 => (Ld(Arg::Reg8(Reg8::B), Arg::Imm8(arg8.unwrap())), 2, 8.into()),
-            0x16 => (Ld(Arg::Reg8(Reg8::D), Arg::Imm8(arg8.unwrap())), 2, 8.into()),
-            0x26 => (Ld(Arg::Reg8(Reg8::H), Arg::Imm8(arg8.unwrap())), 2, 8.into()),
-            0x36 => (Ld(Arg::Mem(Reg16::HL), Arg::Imm8(arg8.unwrap())), 2, 12.into()),
-            0x0A => (Ld(Arg::Reg8(Reg8::A), Arg::Mem(Reg16::BC)), 1, 8.into()),
-            0x1A => (Ld(Arg::Reg8(Reg8::A), Arg::Mem(Reg16::DE)), 1, 8.into()),
+            0x01 => (Ld { dst: Arg::Reg16(Reg16::BC), src: Arg::Imm16(arg16.unwrap()) }, 3, 12.into()),
+            0x11 => (Ld { dst: Arg::Reg16(Reg16::DE), src: Arg::Imm16(arg16.unwrap()) }, 3, 12.into()),
+            0x21 => (Ld { dst: Arg::Reg16(Reg16::HL), src: Arg::Imm16(arg16.unwrap()) }, 3, 12.into()),
+            0x31 => (Ld { dst: Arg::Reg16(Reg16::SP), src: Arg::Imm16(arg16.unwrap()) }, 3, 12.into()),
+            0x06 => (Ld { dst: Arg::Reg8(Reg8::B), src: Arg::Imm8(arg8.unwrap()) }, 2, 8.into()),
+            0x16 => (Ld { dst: Arg::Reg8(Reg8::D), src: Arg::Imm8(arg8.unwrap()) }, 2, 8.into()),
+            0x26 => (Ld { dst: Arg::Reg8(Reg8::H), src: Arg::Imm8(arg8.unwrap()) }, 2, 8.into()),
+            0x36 => (Ld { dst: Arg::Mem(Reg16::HL), src: Arg::Imm8(arg8.unwrap()) }, 2, 12.into()),
+            0x0A => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::Mem(Reg16::BC) }, 1, 8.into()),
+            0x1A => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::Mem(Reg16::DE) }, 1, 8.into()),
             0x2A => (LdiAMemHl, 1, 8.into()),
             0x3A => (LddAMemHl, 1, 8.into()),
-            0x0E => (Ld(Arg::Reg8(Reg8::C), Arg::Imm8(arg8.unwrap())), 2, 8.into()),
-            0x1E => (Ld(Arg::Reg8(Reg8::E), Arg::Imm8(arg8.unwrap())), 2, 8.into()),
-            0x2E => (Ld(Arg::Reg8(Reg8::L), Arg::Imm8(arg8.unwrap())), 2, 8.into()),
-            0x3E => (Ld(Arg::Reg8(Reg8::A), Arg::Imm8(arg8.unwrap())), 2, 8.into()),
-            0xE0 => (LdhMemImmA(arg8.unwrap()), 2, 12.into()),
-            0xF0 => (LdhA(arg8.unwrap()), 2, 12.into()),
+            0x0E => (Ld { dst: Arg::Reg8(Reg8::C), src: Arg::Imm8(arg8.unwrap()) }, 2, 8.into()),
+            0x1E => (Ld { dst: Arg::Reg8(Reg8::E), src: Arg::Imm8(arg8.unwrap()) }, 2, 8.into()),
+            0x2E => (Ld { dst: Arg::Reg8(Reg8::L), src: Arg::Imm8(arg8.unwrap()) }, 2, 8.into()),
+            0x3E => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::Imm8(arg8.unwrap()) }, 2, 8.into()),
+            0x40 => (Ld { dst: Arg::Reg8(Reg8::B), src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
+            0x50 => (Ld { dst: Arg::Reg8(Reg8::D), src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
+            0x60 => (Ld { dst: Arg::Reg8(Reg8::H), src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
+            0x70 => (Ld { dst: Arg::MemHl, src: Arg::Reg8(Reg8::B) }, 1, 8.into()),
+            0x41 => (Ld { dst: Arg::Reg8(Reg8::B), src: Arg::Reg8(Reg8::C) }, 1, 4.into()),
+            0x51 => (Ld { dst: Arg::Reg8(Reg8::D), src: Arg::Reg8(Reg8::C) }, 1, 4.into()),
+            0x61 => (Ld { dst: Arg::Reg8(Reg8::H), src: Arg::Reg8(Reg8::C) }, 1, 4.into()),
+            0x71 => (Ld { dst: Arg::MemHl, src: Arg::Reg8(Reg8::C) }, 1, 8.into()),
+            0x42 => (Ld { dst: Arg::Reg8(Reg8::B), src: Arg::Reg8(Reg8::D) }, 1, 4.into()),
+            0x52 => (Ld { dst: Arg::Reg8(Reg8::D), src: Arg::Reg8(Reg8::D) }, 1, 4.into()),
+            0x62 => (Ld { dst: Arg::Reg8(Reg8::H), src: Arg::Reg8(Reg8::D) }, 1, 4.into()),
+            0x72 => (Ld { dst: Arg::MemHl, src: Arg::Reg8(Reg8::D) }, 1, 8.into()),
+            0x43 => (Ld { dst: Arg::Reg8(Reg8::B), src: Arg::Reg8(Reg8::E) }, 1, 4.into()),
+            0x53 => (Ld { dst: Arg::Reg8(Reg8::D), src: Arg::Reg8(Reg8::E) }, 1, 4.into()),
+            0x63 => (Ld { dst: Arg::Reg8(Reg8::H), src: Arg::Reg8(Reg8::E) }, 1, 4.into()),
+            0x73 => (Ld { dst: Arg::MemHl, src: Arg::Reg8(Reg8::E) }, 1, 8.into()),
+            0x44 => (Ld { dst: Arg::Reg8(Reg8::B), src: Arg::Reg8(Reg8::H) }, 1, 4.into()),
+            0x54 => (Ld { dst: Arg::Reg8(Reg8::D), src: Arg::Reg8(Reg8::H) }, 1, 4.into()),
+            0x64 => (Ld { dst: Arg::Reg8(Reg8::H), src: Arg::Reg8(Reg8::H) }, 1, 4.into()),
+            0x74 => (Ld { dst: Arg::MemHl, src: Arg::Reg8(Reg8::H) }, 1, 8.into()),
+            0x45 => (Ld { dst: Arg::Reg8(Reg8::B), src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
+            0x55 => (Ld { dst: Arg::Reg8(Reg8::D), src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
+            0x65 => (Ld { dst: Arg::Reg8(Reg8::H), src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
+            0x75 => (Ld { dst: Arg::MemHl, src: Arg::Reg8(Reg8::L) }, 1, 8.into()),
+            0x46 => (Ld { dst: Arg::Reg8(Reg8::B), src: Arg::MemHl }, 1, 8.into()),
+            0x56 => (Ld { dst: Arg::Reg8(Reg8::D), src: Arg::MemHl }, 1, 8.into()),
+            0x66 => (Ld { dst: Arg::Reg8(Reg8::H), src: Arg::MemHl }, 1, 8.into()),
+            0x76 => (Halt, 1, 4.into()),
+            0x47 => (Ld { dst: Arg::Reg8(Reg8::B), src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
+            0x57 => (Ld { dst: Arg::Reg8(Reg8::D), src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
+            0x67 => (Ld { dst: Arg::Reg8(Reg8::H), src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
+            0x77 => (Ld { dst: Arg::MemHl, src: Arg::Reg8(Reg8::A) }, 1, 8.into()),
+            0x48 => (Ld { dst: Arg::Reg8(Reg8::C), src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
+            0x58 => (Ld { dst: Arg::Reg8(Reg8::E), src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
+            0x68 => (Ld { dst: Arg::Reg8(Reg8::L), src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
+            0x78 => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
+            0x49 => (Ld { dst: Arg::Reg8(Reg8::C), src: Arg::Reg8(Reg8::C) }, 1, 4.into()),
+            0x59 => (Ld { dst: Arg::Reg8(Reg8::E), src: Arg::Reg8(Reg8::C) }, 1, 4.into()),
+            0x69 => (Ld { dst: Arg::Reg8(Reg8::L), src: Arg::Reg8(Reg8::C) }, 1, 4.into()),
+            0x79 => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::Reg8(Reg8::C) }, 1, 4.into()),
+            0x4A => (Ld { dst: Arg::Reg8(Reg8::C), src: Arg::Reg8(Reg8::D) }, 1, 4.into()),
+            0x5A => (Ld { dst: Arg::Reg8(Reg8::E), src: Arg::Reg8(Reg8::D) }, 1, 4.into()),
+            0x6A => (Ld { dst: Arg::Reg8(Reg8::L), src: Arg::Reg8(Reg8::D) }, 1, 4.into()),
+            0x7A => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::Reg8(Reg8::D) }, 1, 4.into()),
+            0x4B => (Ld { dst: Arg::Reg8(Reg8::C), src: Arg::Reg8(Reg8::E) }, 1, 4.into()),
+            0x5B => (Ld { dst: Arg::Reg8(Reg8::E), src: Arg::Reg8(Reg8::E) }, 1, 4.into()),
+            0x6B => (Ld { dst: Arg::Reg8(Reg8::L), src: Arg::Reg8(Reg8::E) }, 1, 4.into()),
+            0x7B => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::Reg8(Reg8::E) }, 1, 4.into()),
+            0x4C => (Ld { dst: Arg::Reg8(Reg8::C), src: Arg::Reg8(Reg8::H) }, 1, 4.into()),
+            0x5C => (Ld { dst: Arg::Reg8(Reg8::E), src: Arg::Reg8(Reg8::H) }, 1, 4.into()),
+            0x6C => (Ld { dst: Arg::Reg8(Reg8::L), src: Arg::Reg8(Reg8::H) }, 1, 4.into()),
+            0x7C => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::Reg8(Reg8::H) }, 1, 4.into()),
+            0x4D => (Ld { dst: Arg::Reg8(Reg8::C), src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
+            0x5D => (Ld { dst: Arg::Reg8(Reg8::E), src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
+            0x6D => (Ld { dst: Arg::Reg8(Reg8::L), src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
+            0x7D => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
+            0x4E => (Ld { dst: Arg::Reg8(Reg8::C), src: Arg::MemHl }, 1, 8.into()),
+            0x5E => (Ld { dst: Arg::Reg8(Reg8::E), src: Arg::MemHl }, 1, 8.into()),
+            0x6E => (Ld { dst: Arg::Reg8(Reg8::L), src: Arg::MemHl }, 1, 8.into()),
+            0x7E => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::MemHl }, 1, 8.into()),
+            0x4F => (Ld { dst: Arg::Reg8(Reg8::C), src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
+            0x5F => (Ld { dst: Arg::Reg8(Reg8::E), src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
+            0x6F => (Ld { dst: Arg::Reg8(Reg8::L), src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
+            0x7F => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
+            0xE0 => (Ldh { offset: arg8.unwrap() }, 2, 12.into()),
+            0xF0 => (LdhA { offset: arg8.unwrap() }, 2, 12.into()),
 
             // Xor
-            0xA8 => (Xor(Arg::Reg8(Reg8::B)), 1, 4.into()),
-            0xA9 => (Xor(Arg::Reg8(Reg8::C)), 1, 4.into()),
-            0xAA => (Xor(Arg::Reg8(Reg8::D)), 1, 4.into()),
-            0xAB => (Xor(Arg::Reg8(Reg8::E)), 1, 4.into()),
-            0xAC => (Xor(Arg::Reg8(Reg8::H)), 1, 4.into()),
-            0xAD => (Xor(Arg::Reg8(Reg8::L)), 1, 4.into()),
-            0xAE => (Xor(Arg::MemHl), 1, 8.into()),
-            0xAF => (Xor(Arg::Reg8(Reg8::A)), 1, 4.into()),
-            0xEE => (Xor(Arg::Imm8(arg8.unwrap())), 2, 8.into()),
+            0xA8 => (Xor { src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
+            0xA9 => (Xor { src: Arg::Reg8(Reg8::C) }, 1, 4.into()),
+            0xAA => (Xor { src: Arg::Reg8(Reg8::D) }, 1, 4.into()),
+            0xAB => (Xor { src: Arg::Reg8(Reg8::E) }, 1, 4.into()),
+            0xAC => (Xor { src: Arg::Reg8(Reg8::H) }, 1, 4.into()),
+            0xAD => (Xor { src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
+            0xAE => (Xor { src: Arg::MemHl }, 1, 8.into()),
+            0xAF => (Xor { src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
+            0xEE => (Xor { src: Arg::Imm8(arg8.unwrap()) }, 2, 8.into()),
 
             // Inc
-            0x03 => (Inc(Arg::Reg16(Reg16::BC)), 1, 8.into()),
-            0x13 => (Inc(Arg::Reg16(Reg16::DE)), 1, 8.into()),
-            0x23 => (Inc(Arg::Reg16(Reg16::HL)), 1, 8.into()),
-            0x33 => (Inc(Arg::Reg16(Reg16::SP)), 1, 8.into()),
-            0x04 => (Inc(Arg::Reg8(Reg8::B)), 1, 4.into()),
-            0x14 => (Inc(Arg::Reg8(Reg8::D)), 1, 4.into()),
-            0x24 => (Inc(Arg::Reg8(Reg8::H)), 1, 4.into()),
-            0x34 => (Inc(Arg::MemHl), 1, 12.into()),
-            0x0C => (Inc(Arg::Reg8(Reg8::C)), 1, 4.into()),
-            0x1C => (Inc(Arg::Reg8(Reg8::E)), 1, 4.into()),
-            0x2C => (Inc(Arg::Reg8(Reg8::L)), 1, 4.into()),
-            0x3C => (Inc(Arg::Reg8(Reg8::A)), 1, 4.into()),
+            0x03 => (Inc { dst: Arg::Reg16(Reg16::BC) }, 1, 8.into()),
+            0x13 => (Inc { dst: Arg::Reg16(Reg16::DE) }, 1, 8.into()),
+            0x23 => (Inc { dst: Arg::Reg16(Reg16::HL) }, 1, 8.into()),
+            0x33 => (Inc { dst: Arg::Reg16(Reg16::SP) }, 1, 8.into()),
+            0x04 => (Inc { dst: Arg::Reg8(Reg8::B) }, 1, 4.into()),
+            0x14 => (Inc { dst: Arg::Reg8(Reg8::D) }, 1, 4.into()),
+            0x24 => (Inc { dst: Arg::Reg8(Reg8::H) }, 1, 4.into()),
+            0x34 => (Inc { dst: Arg::MemHl }, 1, 12.into()),
+            0x0C => (Inc { dst: Arg::Reg8(Reg8::C) }, 1, 4.into()),
+            0x1C => (Inc { dst: Arg::Reg8(Reg8::E) }, 1, 4.into()),
+            0x2C => (Inc { dst: Arg::Reg8(Reg8::L) }, 1, 4.into()),
+            0x3C => (Inc { dst: Arg::Reg8(Reg8::A) }, 1, 4.into()),
 
             // Dec
-            0x05 => (Dec(Arg::Reg8(Reg8::B)), 1, 4.into()),
-            0x15 => (Dec(Arg::Reg8(Reg8::D)), 1, 4.into()),
-            0x25 => (Dec(Arg::Reg8(Reg8::H)), 1, 4.into()),
-            0x35 => (Dec(Arg::MemHl), 1, 12.into()),
-            0x0B => (Dec(Arg::Reg16(Reg16::BC)), 1, 8.into()),
-            0x1B => (Dec(Arg::Reg16(Reg16::DE)), 1, 8.into()),
-            0x2B => (Dec(Arg::Reg16(Reg16::HL)), 1, 8.into()),
-            0x3B => (Dec(Arg::Reg16(Reg16::SP)), 1, 8.into()),
-            0x0D => (Dec(Arg::Reg8(Reg8::C)), 1, 4.into()),
-            0x1D => (Dec(Arg::Reg8(Reg8::E)), 1, 4.into()),
-            0x2D => (Dec(Arg::Reg8(Reg8::L)), 1, 4.into()),
-            0x3D => (Dec(Arg::Reg8(Reg8::A)), 1, 4.into()),
+            0x05 => (Dec { dst: Arg::Reg8(Reg8::B) }, 1, 4.into()),
+            0x15 => (Dec { dst: Arg::Reg8(Reg8::D) }, 1, 4.into()),
+            0x25 => (Dec { dst: Arg::Reg8(Reg8::H) }, 1, 4.into()),
+            0x35 => (Dec { dst: Arg::MemHl }, 1, 12.into()),
+            0x0B => (Dec { dst: Arg::Reg16(Reg16::BC) }, 1, 8.into()),
+            0x1B => (Dec { dst: Arg::Reg16(Reg16::DE) }, 1, 8.into()),
+            0x2B => (Dec { dst: Arg::Reg16(Reg16::HL) }, 1, 8.into()),
+            0x3B => (Dec { dst: Arg::Reg16(Reg16::SP) }, 1, 8.into()),
+            0x0D => (Dec { dst: Arg::Reg8(Reg8::C) }, 1, 4.into()),
+            0x1D => (Dec { dst: Arg::Reg8(Reg8::E) }, 1, 4.into()),
+            0x2D => (Dec { dst: Arg::Reg8(Reg8::L) }, 1, 4.into()),
+            0x3D => (Dec { dst: Arg::Reg8(Reg8::A) }, 1, 4.into()),
 
             // Cp
-            0xBF => (Cp(Arg::Reg8(Reg8::A)), 1, 4.into()),
-            0xB8 => (Cp(Arg::Reg8(Reg8::B)), 1, 4.into()),
-            0xB9 => (Cp(Arg::Reg8(Reg8::C)), 1, 4.into()),
-            0xBA => (Cp(Arg::Reg8(Reg8::D)), 1, 4.into()),
-            0xBB => (Cp(Arg::Reg8(Reg8::E)), 1, 4.into()),
-            0xBC => (Cp(Arg::Reg8(Reg8::H)), 1, 4.into()),
-            0xBD => (Cp(Arg::Reg8(Reg8::L)), 1, 4.into()),
-            0xBE => (Cp(Arg::MemHl), 1, 8.into()),
-            0xFE => (Cp(Arg::Imm8(arg8.unwrap())), 2, 8.into()),
+            0xBF => (Cp { src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
+            0xB8 => (Cp { src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
+            0xB9 => (Cp { src: Arg::Reg8(Reg8::C) }, 1, 4.into()),
+            0xBA => (Cp { src: Arg::Reg8(Reg8::D) }, 1, 4.into()),
+            0xBB => (Cp { src: Arg::Reg8(Reg8::E) }, 1, 4.into()),
+            0xBC => (Cp { src: Arg::Reg8(Reg8::H) }, 1, 4.into()),
+            0xBD => (Cp { src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
+            0xBE => (Cp { src: Arg::MemHl }, 1, 8.into()),
+            0xFE => (Cp { src: Arg::Imm8(arg8.unwrap()) }, 2, 8.into()),
 
             // Jump
             0x18 => {
                 let offset = arg8.unwrap() as i8;
-                (Jr(offset, Cond::None), 2, Cycles(12, 8))
+                (Jr { offset, cond: Cond::None }, 2, Cycles(12, 8))
             }
             0x28 => {
                 let offset = arg8.unwrap() as i8;
-                (Jr(offset, Cond::Zero), 2, Cycles(12, 8))
+                (Jr { offset, cond: Cond::Zero }, 2, Cycles(12, 8))
             }
             0xC3 => {
                 let addr = arg16.unwrap();
-                (Jp(addr, Cond::None), 3, 16.into())
+                (Jp { addr, cond: Cond::None }, 3, 16.into())
             }
 
             other => panic!("Unknown instruction: {}", other),
@@ -615,28 +675,28 @@ mod test {
         // Vector of (input instruction, expected decoded, size, cycle count)
         #[rustfmt::skip]
         let test_vectors: &[([u8; 3], Instruction, u8, Cycles)] = &[
-            ([0x01, 0x34, 0x12], Ld(Arg::Reg16(Reg16::BC), Arg::Imm16(0x1234)), 3, 12.into()),
-            ([0x11, 0x34, 0x12], Ld(Arg::Reg16(Reg16::DE), Arg::Imm16(0x1234)), 3, 12.into()),
-            ([0x21, 0x34, 0x12], Ld(Arg::Reg16(Reg16::HL), Arg::Imm16(0x1234)), 3, 12.into()),
-            ([0x31, 0x34, 0x12], Ld(Arg::Reg16(Reg16::SP), Arg::Imm16(0x1234)), 3, 12.into()),
+            ([0x01, 0x34, 0x12], Ld { dst: Arg::Reg16(Reg16::BC), src: Arg::Imm16(0x1234) }, 3, 12.into()),
+            ([0x11, 0x34, 0x12], Ld { dst: Arg::Reg16(Reg16::DE), src: Arg::Imm16(0x1234) }, 3, 12.into()),
+            ([0x21, 0x34, 0x12], Ld { dst: Arg::Reg16(Reg16::HL), src: Arg::Imm16(0x1234) }, 3, 12.into()),
+            ([0x31, 0x34, 0x12], Ld { dst: Arg::Reg16(Reg16::SP), src: Arg::Imm16(0x1234) }, 3, 12.into()),
 
-            ([0x06, 0x34, 0x00], Ld(Arg::Reg8(Reg8::B),  Arg::Imm8(0x34)), 2, 8.into()),
-            ([0x16, 0x34, 0x00], Ld(Arg::Reg8(Reg8::D),  Arg::Imm8(0x34)), 2, 8.into()),
-            ([0x26, 0x34, 0x00], Ld(Arg::Reg8(Reg8::H),  Arg::Imm8(0x34)), 2, 8.into()),
-            ([0x36, 0x34, 0x00], Ld(Arg::Mem(Reg16::HL), Arg::Imm8(0x34)), 2, 12.into()),
+            ([0x06, 0x34, 0x00], Ld { dst: Arg::Reg8(Reg8::B),  src: Arg::Imm8(0x34) }, 2, 8.into()),
+            ([0x16, 0x34, 0x00], Ld { dst: Arg::Reg8(Reg8::D),  src: Arg::Imm8(0x34) }, 2, 8.into()),
+            ([0x26, 0x34, 0x00], Ld { dst: Arg::Reg8(Reg8::H),  src: Arg::Imm8(0x34) }, 2, 8.into()),
+            ([0x36, 0x34, 0x00], Ld { dst: Arg::Mem(Reg16::HL), src: Arg::Imm8(0x34) }, 2, 12.into()),
 
-            ([0x0A, 0x34, 0x00], Ld(Arg::Reg8(Reg8::A),  Arg::Mem(Reg16::BC)), 1, 8.into()),
-            ([0x1A, 0x34, 0x00], Ld(Arg::Reg8(Reg8::A),  Arg::Mem(Reg16::DE)), 1, 8.into()),
+            ([0x0A, 0x34, 0x00], Ld { dst: Arg::Reg8(Reg8::A),  src: Arg::Mem(Reg16::BC) }, 1, 8.into()),
+            ([0x1A, 0x34, 0x00], Ld { dst: Arg::Reg8(Reg8::A),  src: Arg::Mem(Reg16::DE) }, 1, 8.into()),
             ([0x2A, 0x34, 0x00], LdiAMemHl, 1, 8.into()),
             ([0x3A, 0x34, 0x00], LddAMemHl, 1, 8.into()),
 
-            ([0x0E, 0x34, 0x00], Ld(Arg::Reg8(Reg8::C),  Arg::Imm8(0x34)), 2, 8.into()),
-            ([0x1E, 0x34, 0x00], Ld(Arg::Reg8(Reg8::E),  Arg::Imm8(0x34)), 2, 8.into()),
-            ([0x2E, 0x34, 0x00], Ld(Arg::Reg8(Reg8::L),  Arg::Imm8(0x34)), 2, 8.into()),
-            ([0x3E, 0x34, 0x00], Ld(Arg::Reg8(Reg8::A),  Arg::Imm8(0x34)), 2, 8.into()),
+            ([0x0E, 0x34, 0x00], Ld { dst: Arg::Reg8(Reg8::C),  src: Arg::Imm8(0x34) }, 2, 8.into()),
+            ([0x1E, 0x34, 0x00], Ld { dst: Arg::Reg8(Reg8::E),  src: Arg::Imm8(0x34) }, 2, 8.into()),
+            ([0x2E, 0x34, 0x00], Ld { dst: Arg::Reg8(Reg8::L),  src: Arg::Imm8(0x34) }, 2, 8.into()),
+            ([0x3E, 0x34, 0x00], Ld { dst: Arg::Reg8(Reg8::A),  src: Arg::Imm8(0x34) }, 2, 8.into()),
 
-            ([0xE0, 0x34, 0x00], LdhMemImmA(0x34), 2, 12.into()),
-            ([0xF0, 0x34, 0x00], LdhA(0x34), 2, 12.into()),
+            ([0xE0, 0x34, 0x00], Ldh { offset: 0x34 }, 2, 12.into()),
+            ([0xF0, 0x34, 0x00], LdhA { offset: 0x34 }, 2, 12.into()),
         ];
 
         for (input, expected, expected_size, expected_cycles) in test_vectors {
