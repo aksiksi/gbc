@@ -141,7 +141,7 @@ impl Cpu {
             Dec { dst } => self.dec(dst),
             Add { src } => self.add(src),
             Sub { src } => self.sub(src, true),
-            Cp  { src } => self.sub(src, false),
+            Cp { src } => self.sub(src, false),
             Jp { addr, cond } => {
                 let ok = match cond {
                     Cond::None => true,
@@ -359,7 +359,7 @@ impl Cpu {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::cartridge::{RomSize, RamSize};
+    use crate::cartridge::{RamSize, RomSize};
 
     fn get_cpu() -> Cpu {
         let memory = MemoryBus::new(RomSize::_1M, RamSize::_32K);
@@ -377,7 +377,9 @@ mod test {
 
         // Overflow
         cpu.registers.write(Reg8::B, 0xF0);
-        let inst = Instruction::Add { src: Reg8::B.into() };
+        let inst = Instruction::Add {
+            src: Reg8::B.into(),
+        };
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::A), 0x00);
         assert!(cpu.flags.zero());
@@ -431,7 +433,9 @@ mod test {
         cpu.registers.write(Reg8::A, 0xFF);
 
         // Overflow
-        let inst = Instruction::Inc { dst: Reg8::A.into() };
+        let inst = Instruction::Inc {
+            dst: Reg8::A.into(),
+        };
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::A), 0);
         assert!(cpu.flags.zero());
@@ -446,7 +450,9 @@ mod test {
         cpu.registers.write(Reg8::A, 0);
 
         // Underflow
-        let inst = Instruction::Dec { dst: Reg8::A.into() };
+        let inst = Instruction::Dec {
+            dst: Reg8::A.into(),
+        };
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::A), 0xFF);
         assert!(!cpu.flags.zero());
@@ -461,7 +467,9 @@ mod test {
         cpu.registers.write(Reg8::A, 0x3C);
         cpu.registers.write(Reg8::B, 0x2F);
 
-        let inst = Instruction::Cp { src: Reg8::B.into() };
+        let inst = Instruction::Cp {
+            src: Reg8::B.into(),
+        };
         cpu.execute(inst);
         assert!(!cpu.flags.zero());
         assert!(cpu.flags.subtract());

@@ -61,7 +61,10 @@ impl Ram {
     /// Update the active RAM bank
     pub fn update_bank(&mut self, bank: u8) {
         match self {
-            Self::Banked { data: _, active_bank} => {
+            Self::Banked {
+                data: _,
+                active_bank,
+            } => {
                 *active_bank = bank;
             }
             _ => panic!("Received RAM bank change request on unbanked RAM"),
@@ -128,14 +131,14 @@ impl MemoryWrite<u16, u16> for Ram {
         match self {
             Self::Unbanked { data } => {
                 data[addr] = value[0];
-                data[addr+1] = value[1];
+                data[addr + 1] = value[1];
             }
             Self::Banked { data, active_bank } => {
                 match addr {
                     0x0000..=0x0FFF => {
                         // Write to the first bank
                         data[addr] = value[0];
-                        data[addr+1] = value[1];
+                        data[addr + 1] = value[1];
                     }
                     _ => {
                         // Write to the switchable bank
@@ -202,7 +205,10 @@ impl Vram {
     /// Update the active VRAM bank
     pub fn update_bank(&mut self, bank: u8) {
         match self {
-            Self::Banked { data: _, active_bank} => {
+            Self::Banked {
+                data: _,
+                active_bank,
+            } => {
                 *active_bank = bank;
             }
             _ => panic!("Received VRAM bank change request on unbanked VRAM"),
@@ -321,36 +327,16 @@ impl MemoryRead<u16, u8> for Io {
         let idx = (addr - Self::BASE_ADDR) as usize;
 
         match addr {
-            0xFF00..=0xFF02 => {
-                self.port0[idx]
-            }
-            0xFF04..=0xFF07 => {
-                self.port1[idx]
-            }
-            0xFF10..=0xFF26 => {
-                self.sound[idx]
-            }
-            0xFF30..=0xFF3F => {
-                self.waveform_ram[idx]
-            }
-            0xFF40..=0xFF4B => {
-                self.lcd[idx]
-            }
-            Self::VRAM_BANK_SELECT_ADDR => {
-                self.vram_bank
-            }
-            0xFF50 => {
-                self.disable_boot_rom
-            }
-            0xFF51..=0xFF55 => {
-                self.hdma[idx]
-            }
-            0xFF68..=0xFF69 => {
-                self.bcp[idx]
-            }
-            Self::WRAM_BANK_SELECT_ADDR => {
-                self.wram_bank
-            }
+            0xFF00..=0xFF02 => self.port0[idx],
+            0xFF04..=0xFF07 => self.port1[idx],
+            0xFF10..=0xFF26 => self.sound[idx],
+            0xFF30..=0xFF3F => self.waveform_ram[idx],
+            0xFF40..=0xFF4B => self.lcd[idx],
+            Self::VRAM_BANK_SELECT_ADDR => self.vram_bank,
+            0xFF50 => self.disable_boot_rom,
+            0xFF51..=0xFF55 => self.hdma[idx],
+            0xFF68..=0xFF69 => self.bcp[idx],
+            Self::WRAM_BANK_SELECT_ADDR => self.wram_bank,
             _ => panic!("Invalid write to address {}", addr),
         }
     }
@@ -537,7 +523,7 @@ impl MemoryWrite<u16, u16> for MemoryBus {
                 let addr = addr as usize - 0xFF80;
                 let value = value.to_le_bytes();
                 self.high_ram[addr] = value[0];
-                self.high_ram[addr+1] = value[1];
+                self.high_ram[addr + 1] = value[1];
             }
             _ => panic!("Unable to write to address: {:?}", addr),
         }

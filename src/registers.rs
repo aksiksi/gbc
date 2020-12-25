@@ -68,10 +68,18 @@ impl Flags {
     pub fn raw(&self) -> u8 {
         let mut flags = 0u8;
 
-        if self.zero { flags |= 1 << 7; }
-        if self.subtract { flags |= 1 << 6; }
-        if self.half_carry { flags |= 1 << 5; }
-        if self.carry { flags |= 1 << 4; }
+        if self.zero {
+            flags |= 1 << 7;
+        }
+        if self.subtract {
+            flags |= 1 << 6;
+        }
+        if self.half_carry {
+            flags |= 1 << 5;
+        }
+        if self.carry {
+            flags |= 1 << 4;
+        }
 
         flags
     }

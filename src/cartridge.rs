@@ -168,7 +168,7 @@ impl MemoryWrite<u16, u16> for Ram {
         match self {
             Self::Unbanked { data, .. } => {
                 data[addr] = value[0];
-                data[addr+1] = value[1];
+                data[addr + 1] = value[1];
             }
             Self::Banked {
                 data, active_bank, ..
@@ -180,7 +180,6 @@ impl MemoryWrite<u16, u16> for Ram {
         }
     }
 }
-
 
 impl std::fmt::Debug for Ram {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
