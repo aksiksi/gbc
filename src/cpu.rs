@@ -56,197 +56,92 @@ impl Cpu {
     pub fn execute(&mut self, instruction: Instruction) {
         use Instruction::*;
 
-        let flags = &mut self.flags;
-        let memory = &mut self.memory;
-        let regs = &mut self.registers;
-
-        let pc = &mut regs.PC;
+        let pc = &mut self.registers.PC;
 
         match instruction {
             Nop => (),
             Halt => (),
             Ld { dst, src } => match (dst, src) {
                 (Arg::Reg16(dst), Arg::Imm16(src)) => {
-                    regs.write(dst, src);
+                    self.registers.write(dst, src);
                 }
                 (Arg::Reg8(dst), Arg::Imm8(src)) => {
-                    regs.write(dst, src);
+                    self.registers.write(dst, src);
                 }
                 (Arg::Reg8(dst), Arg::Reg8(src)) => {
-                    regs.write(dst, regs.read(src));
+                    self.registers.write(dst, self.registers.read(src));
                 }
                 (Arg::Reg8(dst), Arg::Mem(src)) => {
-                    let addr = regs.read(src);
-                    let value = memory.read(addr);
-                    regs.write(dst, value);
+                    let addr = self.registers.read(src);
+                    let value = self.memory.read(addr);
+                    self.registers.write(dst, value);
                 }
                 (Arg::Mem(dst), Arg::Reg8(src)) => {
-                    let addr = regs.read(dst);
-                    memory.write(addr, regs.read(src));
+                    let addr = self.registers.read(dst);
+                    self.memory.write(addr, self.registers.read(src));
                 }
                 (Arg::MemImm(dst), Arg::Reg8(src)) => {
-                    memory.write(dst, regs.read(src));
+                    self.memory.write(dst, self.registers.read(src));
                 }
                 (Arg::MemImm(dst), Arg::Reg16(src)) => {
-                    memory.write(dst, regs.read(src));
+                    self.memory.write(dst, self.registers.read(src));
                 }
                 (Arg::Reg8(dst), Arg::MemImm(src)) => {
-                    let value = memory.read(src);
-                    regs.write(dst, value);
+                    let value = self.memory.read(src);
+                    self.registers.write(dst, value);
                 }
                 _ => panic!("Unexpected dst and src: {:?}, {:?}", dst, src),
             },
             LdMemCA => {
-                let addr = 0xFF00 + regs.read(Reg8::C) as u16;
-                memory.write(addr, regs.read(Reg8::A));
+                let addr = 0xFF00 + self.registers.read(Reg8::C) as u16;
+                self.memory.write(addr, self.registers.read(Reg8::A));
             }
             LdAMemC => {
-                let addr = 0xFF00 + regs.read(Reg8::C) as u16;
-                regs.write(Reg8::A, memory.read(addr));
+                let addr = 0xFF00 + self.registers.read(Reg8::C) as u16;
+                self.registers.write(Reg8::A, self.memory.read(addr));
             }
             LdiAMemHl => {
-                let addr = regs.read(Reg16::HL);
-                let value = memory.read(addr);
-                regs.write(Reg8::A, value);
-                regs.write(Reg16::HL, addr.wrapping_add(1));
+                let addr = self.registers.read(Reg16::HL);
+                let value = self.memory.read(addr);
+                self.registers.write(Reg8::A, value);
+                self.registers.write(Reg16::HL, addr.wrapping_add(1));
             }
             LdiMemHlA => {
-                let addr = regs.read(Reg16::HL);
-                memory.write(addr, regs.read(Reg8::A));
-                regs.write(Reg16::HL, addr.wrapping_add(1));
+                let addr = self.registers.read(Reg16::HL);
+                self.memory.write(addr, self.registers.read(Reg8::A));
+                self.registers.write(Reg16::HL, addr.wrapping_add(1));
             }
             LddAMemHl => {
-                let addr = regs.read(Reg16::HL);
-                let value = memory.read(addr);
-                regs.write(Reg8::A, value);
-                regs.write(Reg16::HL, addr.wrapping_sub(1));
+                let addr = self.registers.read(Reg16::HL);
+                let value = self.memory.read(addr);
+                self.registers.write(Reg8::A, value);
+                self.registers.write(Reg16::HL, addr.wrapping_sub(1));
             }
             LddMemHlA => {
-                let addr = regs.read(Reg16::HL);
-                memory.write(addr, regs.read(Reg8::A));
-                regs.write(Reg16::HL, addr.wrapping_sub(1));
+                let addr = self.registers.read(Reg16::HL);
+                self.memory.write(addr, self.registers.read(Reg8::A));
+                self.registers.write(Reg16::HL, addr.wrapping_sub(1));
             }
             LdhA { offset } => {
-                let value = memory.read(0xFF00 + offset as u16);
-                regs.write(Reg8::A, value);
+                let value = self.memory.read(0xFF00 + offset as u16);
+                self.registers.write(Reg8::A, value);
             }
             Ldh { offset } => {
-                let a = regs.read(Reg8::A);
-                memory.write(0xFF00 + offset as u16, a);
+                let a = self.registers.read(Reg8::A);
+                self.memory.write(0xFF00 + offset as u16, a);
             }
-            Xor { src } => {
-                let a = regs.read(Reg8::A);
-
-                let result = match src {
-                    Arg::Reg8(src) => {
-                        let curr = regs.read(src);
-                        a ^ curr
-                    }
-                    Arg::Imm8(src) => a ^ src,
-                    Arg::MemHl => {
-                        let addr = regs.read(Reg16::HL);
-                        let curr = memory.read(addr);
-                        a ^ curr
-                    }
-                    _ => panic!("Unexpected src: {:?}", src),
-                };
-
-                regs.write(Reg8::A, result);
-
-                // Flags
-                flags.set(Flag::Zero, result == 0);
-                flags.clear(Flag::Subtract);
-                flags.clear(Flag::Carry);
-                flags.clear(Flag::HalfCarry);
-            }
-            Inc { dst } => match dst {
-                Arg::Reg8(dst) => {
-                    let curr = regs.read(dst);
-                    regs.write(dst, curr.wrapping_add(1));
-                }
-                Arg::Reg16(dst) => {
-                    let curr = regs.read(dst);
-                    regs.write(dst, curr.wrapping_add(1));
-                }
-                Arg::MemHl => {
-                    let addr = regs.read(Reg16::HL);
-                    let curr = memory.read(addr);
-                    memory.write(addr, curr.wrapping_add(1));
-                }
-                _ => panic!("Unexpected dst: {:?}", dst),
-            },
-            Dec { dst } => {
-                let mut update_flags = true;
-                let mut half_carry = false;
-                let mut carry = false;
-
-                let result = match dst {
-                    Arg::Reg8(dst) => {
-                        // If lower nibble == 0, set the half-carry bit
-                        half_carry = regs.read(dst) & 0x0F == 0;
-
-                        // If value is 0, set the carry flag
-                        carry = regs.read(dst) == 0;
-
-                        let result = regs.read(dst).wrapping_sub(1);
-                        regs.write(dst, result);
-                        result as u16
-                    }
-                    Arg::Reg16(dst) => {
-                        update_flags = false; // 16-bit variant does not touch flags
-                        let result = regs.read(dst).wrapping_sub(1);
-                        regs.write(dst, result);
-                        result
-                    }
-                    Arg::MemHl => {
-                        let addr = regs.read(Reg16::HL);
-                        let curr = memory.read(addr);
-
-                        // If lower nibble == 0, set the half-carry bit
-                        half_carry = curr & 0xFF == 0;
-                        carry = curr == 0;
-
-                        let result = curr.wrapping_sub(1);
-                        memory.write(addr, result);
-                        result as u16
-                    }
-                    _ => panic!("Unexpected dst: {:?}", dst),
-                };
-
-                if update_flags {
-                    flags.set(Flag::Zero, result == 0);
-                    flags.set(Flag::Subtract, true);
-                    flags.set(Flag::HalfCarry, half_carry);
-                    flags.set(Flag::Carry, carry);
-                }
-            }
-            Cp { src } => {
-                let a = regs.read(Reg8::A);
-
-                let other = match src {
-                    Arg::Reg8(src) => regs.read(src),
-                    Arg::Imm8(src) => src,
-                    Arg::MemHl => {
-                        let addr = regs.read(Reg16::HL);
-                        memory.read(addr)
-                    }
-                    _ => panic!("Unexpected src: {:?}", src),
-                };
-
-                // Flags
-                if other == a {
-                    flags.set(Flag::Zero, true);
-                } else if other > a {
-                    flags.set(Flag::Carry, true);
-                }
-            }
+            Xor { src } => self.xor(src),
+            Inc { dst } => self.inc(dst),
+            Dec { dst } => self.dec(dst),
+            Add { src } => self.add(src),
+            Cp  { src } => self.cp(src),
             Jp { addr, cond } => {
                 let ok = match cond {
                     Cond::None => true,
-                    Cond::NotZero if !flags.zero() => true,
-                    Cond::Zero if flags.zero() => true,
-                    Cond::NotCarry if !flags.carry() => true,
-                    Cond::Carry if flags.carry() => true,
+                    Cond::NotZero if !self.flags.zero() => true,
+                    Cond::Zero if self.flags.zero() => true,
+                    Cond::NotCarry if !self.flags.carry() => true,
+                    Cond::Carry if self.flags.carry() => true,
                     _ => false,
                 };
 
@@ -257,10 +152,10 @@ impl Cpu {
             Jr { offset, cond } => {
                 let ok = match cond {
                     Cond::None => true,
-                    Cond::NotZero if !flags.zero() => true,
-                    Cond::Zero if flags.zero() => true,
-                    Cond::NotCarry if !flags.carry() => true,
-                    Cond::Carry if flags.carry() => true,
+                    Cond::NotZero if !self.flags.zero() => true,
+                    Cond::Zero if self.flags.zero() => true,
+                    Cond::NotCarry if !self.flags.carry() => true,
+                    Cond::Carry if self.flags.carry() => true,
                     _ => false,
                 };
 
@@ -273,11 +168,194 @@ impl Cpu {
         }
     }
 
+    fn xor(&mut self, src: Arg) {
+        let a = self.registers.read(Reg8::A);
+
+        let result = match src {
+            Arg::Reg8(src) => {
+                let curr = self.registers.read(src);
+                a ^ curr
+            }
+            Arg::Imm8(src) => a ^ src,
+            Arg::MemHl => {
+                let addr = self.registers.read(Reg16::HL);
+                let curr = self.memory.read(addr);
+                a ^ curr
+            }
+            _ => panic!("Unexpected src: {:?}", src),
+        };
+
+        self.registers.write(Reg8::A, result);
+
+        // Flags
+        self.flags.set(Flag::Zero, result == 0);
+        self.flags.clear(Flag::Subtract);
+        self.flags.clear(Flag::Carry);
+        self.flags.clear(Flag::HalfCarry);
+    }
+
+    fn add(&mut self, src: Arg) {
+        let a = self.registers.read(Reg8::A);
+        let half_carry: bool;
+
+        let (result, carry) = match src {
+            Arg::Reg8(src) => {
+                let val = self.registers.read(src);
+                half_carry = ((val & 0xF) + (a & 0xF)) & 0x10 == 0x10;
+                val.overflowing_add(a)
+            }
+            Arg::Imm8(src) => {
+                half_carry = ((src & 0xF) + (a & 0xF)) & 0x10 == 0x10;
+                src.overflowing_add(a)
+            }
+            Arg::Mem(src) => {
+                let addr = self.registers.read(src);
+                let val = self.memory.read(addr);
+                half_carry = ((val & 0xF) + (a & 0xF)) & 0x10 == 0x10;
+                val.overflowing_add(a)
+            }
+            _ => panic!("Unexpected src {:?}", src),
+        };
+
+        self.registers.write(Reg8::A, result);
+
+        self.flags.set(Flag::Zero, result == 0);
+        self.flags.set(Flag::Subtract, false);
+        self.flags.set(Flag::HalfCarry, half_carry);
+        self.flags.set(Flag::Carry, carry);
+    }
+
+    /// Increment instruction
+    fn inc(&mut self, dst: Arg) {
+        let half_carry: bool;
+
+        let result = match dst {
+            Arg::Reg8(dst) => {
+                let curr = self.registers.read(dst);
+                let result = curr.wrapping_add(1);
+                half_carry = ((curr & 0x0F) + 1) & 0x10 == 0x10;
+                self.registers.write(dst, result);
+                result as u16
+            }
+            Arg::Reg16(dst) => {
+                let curr = self.registers.read(dst);
+                let result = curr.wrapping_add(1);
+                half_carry = ((curr & 0x00FF) + 1) & 0x0100 == 0x0100;
+                self.registers.write(dst, result);
+                result
+            }
+            Arg::MemHl => {
+                let addr = self.registers.read(Reg16::HL);
+                let curr = self.memory.read(addr);
+                let result = curr.wrapping_add(1);
+                half_carry = ((curr & 0x0F) + 1) & 0x10 == 0x10;
+                self.memory.write(addr, result);
+                result as u16
+            }
+            _ => panic!("Unexpected dst: {:?}", dst),
+        };
+
+        self.flags.set(Flag::Zero, result == 0);
+        self.flags.set(Flag::Subtract, false);
+        self.flags.set(Flag::HalfCarry, half_carry);
+    }
+
+    /// Decrement instruction
+    fn dec(&mut self, dst: Arg) {
+        let mut update_flags = true;
+        let mut half_carry = false;
+
+        let (result, carry) = match dst {
+            Arg::Reg8(dst) => {
+                let curr = self.registers.read(dst);
+
+                // If lower nibble == 0, set the half-carry bit
+                half_carry = curr & 0x0F == 0;
+
+                let (result, borrow) = curr.overflowing_sub(1);
+                self.registers.write(dst, result);
+
+                (result as u16, borrow)
+            }
+            Arg::Reg16(dst) => {
+                update_flags = false; // 16-bit variant does not touch flags
+                let result = self.registers.read(dst).wrapping_sub(1);
+                self.registers.write(dst, result);
+                (result, false)
+            }
+            Arg::MemHl => {
+                let addr = self.registers.read(Reg16::HL);
+                let curr = self.memory.read(addr);
+
+                // If lower nibble == 0, set the half-carry bit
+                half_carry = curr & 0xFF == 0;
+
+                let (result, borrow) = curr.overflowing_sub(1);
+                self.memory.write(addr, result);
+
+                (result as u16, borrow)
+            }
+            _ => panic!("Unexpected dst: {:?}", dst),
+        };
+
+        if update_flags {
+            self.flags.set(Flag::Zero, result == 0);
+            self.flags.set(Flag::Subtract, true);
+            self.flags.set(Flag::HalfCarry, half_carry);
+            self.flags.set(Flag::Carry, carry);
+        }
+    }
+
+    fn cp(&mut self, src: Arg) { let a = self.registers.read(Reg8::A);
+
+        let other = match src {
+            Arg::Reg8(src) => self.registers.read(src),
+            Arg::Imm8(src) => src,
+            Arg::MemHl => {
+                let addr = self.registers.read(Reg16::HL);
+                self.memory.read(addr)
+            }
+            _ => panic!("Unexpected src: {:?}", src),
+        };
+
+        // Flags
+        if other == a {
+            self.flags.set(Flag::Zero, true);
+        } else if other > a {
+            self.flags.set(Flag::Carry, true);
+        }
+    }
+
     pub fn memory(&self) -> &MemoryBus {
         &self.memory
     }
 
     pub fn reset(&mut self) {
         unimplemented!()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::cartridge::{RomSize, RamSize};
+
+    #[test]
+    fn test_add() {
+        let memory = MemoryBus::new(RomSize::_1M, RamSize::_32K);
+        let mut cpu = Cpu::new(memory);
+
+        // Normal add
+        let inst = Instruction::Add { src: Arg::Imm8(0x10) };
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::A), 0x10);
+
+        // Overflow
+        cpu.registers.write(Reg8::B, 0xF0);
+        let inst = Instruction::Add { src: Reg8::B.into() };
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::A), 0x00);
+        assert!(cpu.flags.zero());
+        assert!(cpu.flags.carry());
     }
 }

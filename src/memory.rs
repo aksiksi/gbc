@@ -1,4 +1,4 @@
-use crate::cartridge::{Cartridge, Ram as CartridgeRam, Rom};
+use crate::cartridge::{Cartridge, Ram as CartridgeRam, RamSize, Rom, RomSize};
 use crate::error::Result;
 
 /// Generic traits that provide access to some memory.
@@ -265,6 +265,17 @@ pub struct MemoryBus {
 }
 
 impl MemoryBus {
+    pub fn new(rom_size: RomSize, ram_size: RamSize) -> Self {
+        Self {
+            rom: Rom::new(rom_size),
+            vram: Vram::new(true),
+            cartridge_ram: CartridgeRam::new(ram_size),
+            ram: Ram::new(true),
+            high_ram: [0u8; 0x80],
+            int_enable_reg: 0,
+        }
+    }
+
     pub fn from_cartridge(cartridge: &mut Cartridge) -> Result<Self> {
         Ok(Self {
             rom: cartridge.build_rom()?,

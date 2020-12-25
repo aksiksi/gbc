@@ -30,6 +30,30 @@ pub enum Arg {
     MemHl,
 }
 
+impl From<u8> for Arg {
+    fn from(n: u8) -> Self {
+        Self::Imm8(n)
+    }
+}
+
+impl From<i8> for Arg {
+    fn from(n: i8) -> Self {
+        Self::Imm8i(n)
+    }
+}
+
+impl From<Reg8> for Arg {
+    fn from(r: Reg8) -> Self {
+        Self::Reg8(r)
+    }
+}
+
+impl From<Reg16> for Arg {
+    fn from(r: Reg16) -> Self {
+        Self::Reg16(r)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Cond {
     None,
@@ -501,8 +525,8 @@ impl Instruction {
     /// at least a single byte (opcode).
     ///
     /// In all cases, we will attempt to extract an argument from the following
-    /// 2 bytes. If we are at the end of a memory region, we will silently fail
-    /// and return 0 for the arg.
+    /// 2 bytes. If we are at the end of a memory region, we will return `None` for the
+    /// args.
     ///
     /// Returns: instruction, instruction size, cycle count
     pub fn decode(data: &[u8]) -> (Self, u8, Cycles) {
@@ -522,9 +546,9 @@ impl Instruction {
             0x10 => (Stop, 2, 4.into()),
 
             // Load
-            0x08 => (Ld { dst: Arg::MemImm(arg16.unwrap()), src: Arg::Reg16(Reg16::SP) }, 3, 20.into()),
-            0x02 => (Ld { dst: Arg::Mem(Reg16::BC), src: Arg::Reg8(Reg8::A) }, 1, 8.into()),
-            0x12 => (Ld { dst: Arg::Mem(Reg16::DE), src: Arg::Reg8(Reg8::A) }, 1, 8.into()),
+            0x08 => (Ld { dst: Arg::MemImm(arg16.unwrap()), src: Reg16::SP.into() }, 3, 20.into()),
+            0x02 => (Ld { dst: Arg::Mem(Reg16::BC), src: Reg8::A.into() }, 1, 8.into()),
+            0x12 => (Ld { dst: Arg::Mem(Reg16::DE), src: Reg8::A.into() }, 1, 8.into()),
             0x0A => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::Mem(Reg16::BC)}, 1, 8.into()),
             0x1A => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::Mem(Reg16::DE)}, 1, 8.into()),
             0x01 => (Ld { dst: Arg::Reg16(Reg16::BC), src: Arg::Imm16(arg16.unwrap()) }, 3, 12.into()),
