@@ -117,10 +117,10 @@ pub enum Instruction {
     LdMemImmSp { addr: u16 },
 
     /// Push [Reg16](Arg::Reg16) (register pair) onto stack
-    PushReg16 { src: Reg16 },
+    Push { src: Reg16 },
 
     /// Pop 2 bytes off the stack into [Reg16](Arg::Reg16)
-    PopReg16 { dst: Reg16 },
+    Pop { dst: Reg16 },
 
     /// Add [Reg8](Arg::Reg8) or [Imm8](Arg::Imm8) or value at address ([Reg16](Arg::Reg16)) to [A](Reg8::A)
     ///
@@ -691,6 +691,7 @@ impl Instruction {
             0x85 => (Add { src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
             0x86 => (Add { src: Arg::MemHl }, 1, 8.into()),
             0x87 => (Add { src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
+            0xC6 => (Add { src: arg8.unwrap().into() }, 2, 8.into()),
             0x88 => (Adc { src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
             0x89 => (Adc { src: Arg::Reg8(Reg8::C) }, 1, 4.into()),
             0x8A => (Adc { src: Arg::Reg8(Reg8::D) }, 1, 4.into()),
@@ -699,6 +700,7 @@ impl Instruction {
             0x8D => (Adc { src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
             0x8E => (Adc { src: Arg::MemHl }, 1, 8.into()),
             0x8F => (Adc { src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
+            0xCE => (Adc { src: arg8.unwrap().into() }, 2, 8.into()),
 
             // Sub
             0x90 => (Sub { src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
@@ -760,13 +762,36 @@ impl Instruction {
             0xBE => (Cp { src: Arg::MemHl }, 1, 8.into()),
             0xFE => (Cp { src: Arg::Imm8(arg8.unwrap()) }, 2, 8.into()),
 
+            // Push/pop
+            0xC1 => (Pop  { dst: Reg16::BC.into() }, 1, 12.into()),
+            0xD1 => (Pop  { dst: Reg16::DE.into() }, 1, 12.into()),
+            0xE1 => (Pop  { dst: Reg16::HL.into() }, 1, 12.into()),
+            0xF1 => (Pop  { dst: Reg16::AF.into() }, 1, 12.into()),
+            0xC5 => (Push { src: Reg16::BC.into() }, 1, 16.into()),
+            0xD5 => (Push { src: Reg16::DE.into() }, 1, 16.into()),
+            0xE5 => (Push { src: Reg16::HL.into() }, 1, 16.into()),
+            0xF5 => (Push { src: Reg16::AF.into() }, 1, 16.into()),
+
             // Jump
             0x18 => (Jr { offset: arg8.unwrap() as i8, cond: Cond::None }, 2, Cycles(12, 8)),
             0x20 => (Jr { offset: arg8.unwrap() as i8, cond: Cond::NotZero }, 2, Cycles(12, 8)),
             0x28 => (Jr { offset: arg8.unwrap() as i8, cond: Cond::Zero }, 2, Cycles(12, 8)),
             0x30 => (Jr { offset: arg8.unwrap() as i8, cond: Cond::NotCarry }, 2, Cycles(12, 8)),
             0x38 => (Jr { offset: arg8.unwrap() as i8, cond: Cond::Carry }, 2, Cycles(12, 8)),
+            0xC2 => (Jp { addr: arg16.unwrap(), cond: Cond::NotZero }, 3, Cycles(16, 12)),
+            0xCA => (Jp { addr: arg16.unwrap(), cond: Cond::Zero }, 3, Cycles(16, 12)),
+            0xD2 => (Jp { addr: arg16.unwrap(), cond: Cond::NotCarry }, 3, Cycles(16, 12)),
+            0xDA => (Jp { addr: arg16.unwrap(), cond: Cond::Carry }, 3, Cycles(16, 12)),
             0xC3 => (Jp { addr: arg16.unwrap(), cond: Cond::None }, 3, 16.into()),
+            0xE9 => (JpHl, 1, 4.into()),
+
+            // Ret
+            0xC0 => (Ret { cond: Cond::NotZero }, 1, Cycles(20, 8)),
+            0xC8 => (Ret { cond: Cond::Zero }, 1, Cycles(20, 8)),
+            0xC9 => (Ret { cond: Cond::None }, 1, 16.into()),
+            0xD0 => (Ret { cond: Cond::NotCarry }, 1, Cycles(20, 8)),
+            0xD8 => (Ret { cond: Cond::Carry }, 1, Cycles(20, 8)),
+            0xD9 => (RetI, 1, 16.into()),
 
             // Misc
             0xF3 => (Di, 1, 4.into()),

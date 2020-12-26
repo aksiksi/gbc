@@ -2,6 +2,13 @@ use crate::instructions::{Arg, Cond, Instruction};
 use crate::memory::{MemoryBus, MemoryRange, MemoryRead, MemoryWrite};
 use crate::registers::{Flag, Flags, Reg16, Reg8, RegisterFile, RegisterOps};
 
+#[derive(Clone, Copy)]
+enum Op {
+    And,
+    Or,
+    Xor,
+}
+
 #[derive(Debug)]
 pub struct Cpu {
     pub registers: RegisterFile,
@@ -136,11 +143,16 @@ impl Cpu {
                 let a = self.registers.read(Reg8::A);
                 self.memory.write(0xFF00 + offset as u16, a);
             }
-            Xor { src } => self.xor(src),
             Inc { dst } => self.inc(dst),
             Dec { dst } => self.dec(dst),
             Add { src } => self.add(src),
+            Adc { src } => self.adc(src),
+            AddHlReg16 { src } => self.add_hl(src),
             Sub { src } => self.sub(src, true),
+            Sbc { src } => self.sbc(src),
+            And { src } => self.logical(src, Op::And),
+            Or { src } => self.logical(src, Op::Or),
+            Xor { src } => self.logical(src, Op::Xor),
             Cp { src } => self.sub(src, false),
             Jp { addr, cond } => {
                 let ok = match cond {
@@ -175,53 +187,57 @@ impl Cpu {
         }
     }
 
-    fn xor(&mut self, src: Arg) {
-        let a = self.registers.read(Reg8::A);
-
-        let result = match src {
-            Arg::Reg8(src) => {
-                let curr = self.registers.read(src);
-                a ^ curr
-            }
-            Arg::Imm8(src) => a ^ src,
-            Arg::MemHl => {
-                let addr = self.registers.read(Reg16::HL);
-                let curr = self.memory.read(addr);
-                a ^ curr
-            }
-            _ => panic!("Unexpected src: {:?}", src),
-        };
-
-        self.registers.write(Reg8::A, result);
-
-        // Flags
-        self.flags.set(Flag::Zero, result == 0);
-        self.flags.clear(Flag::Subtract);
-        self.flags.clear(Flag::Carry);
-        self.flags.clear(Flag::HalfCarry);
-    }
-
     fn add(&mut self, src: Arg) {
         let a = self.registers.read(Reg8::A);
-        let half_carry: bool;
 
-        let (result, carry) = match src {
-            Arg::Reg8(src) => {
-                let val = self.registers.read(src);
-                half_carry = ((val & 0xF) + (a & 0xF)) & 0x10 == 0x10;
-                a.overflowing_add(val)
-            }
-            Arg::Imm8(src) => {
-                half_carry = ((src & 0xF) + (a & 0xF)) & 0x10 == 0x10;
-                a.overflowing_add(src)
-            }
+        let val = match src {
+            Arg::Reg8(src) => self.registers.read(src),
+            Arg::Imm8(src) => src,
             Arg::MemHl => {
                 let addr = self.registers.read(Reg16::HL);
                 let val = self.memory.read(addr);
-                half_carry = ((val & 0xF) + (a & 0xF)) & 0x10 == 0x10;
-                a.overflowing_add(val)
+                val
             }
             _ => panic!("Unexpected src {:?}", src),
+        };
+
+        let half_carry = ((val & 0xF) + (a & 0xF)) & 0x10 == 0x10;
+        let (result, carry) = a.overflowing_add(val);
+
+        self.registers.write(Reg8::A, result);
+
+        self.flags.set(Flag::Zero, result == 0);
+        self.flags.set(Flag::Subtract, false);
+        self.flags.set(Flag::HalfCarry, half_carry);
+        self.flags.set(Flag::Carry, carry);
+    }
+
+    /// ADD with carry
+    fn adc(&mut self, src: Arg) {
+        let a = self.registers.read(Reg8::A);
+
+        let val = match src {
+            Arg::Reg8(src) => self.registers.read(src),
+            Arg::Imm8(src) => src,
+            Arg::MemHl => {
+                let addr = self.registers.read(Reg16::HL);
+                let val = self.memory.read(addr);
+                val
+            }
+            _ => panic!("Unexpected src {:?}", src),
+        };
+
+        let curr_carry = if self.flags.carry() { 1u8 } else { 0u8 };
+
+        // Compute half-carry based on the current value of the carry flag
+        let half_carry = ((val & 0xF) + (a & 0xF) + curr_carry) & 0x10 == 0x10;
+
+        let (result, carry) = match a.overflowing_add(val) {
+            // If the first add overflows, propagate the carry flag
+            (result, true) => (result.wrapping_add(1), true),
+
+            // If the first add does not overflow, try another overflowing_add
+            (result, false) => result.overflowing_add(1),
         };
 
         self.registers.write(Reg8::A, result);
@@ -232,28 +248,41 @@ impl Cpu {
         self.flags.set(Flag::Carry, carry);
     }
 
-    fn sub(&mut self, src: Arg, write: bool) {
-        let a = self.registers.read(Reg8::A);
+    /// 16-bit version of ADD for HL
+    fn add_hl(&mut self, src: Reg16) {
+        let hl = self.registers.read(Reg16::HL);
         let half_carry: bool;
 
-        let (result, carry) = match src {
-            Arg::Reg8(src) => {
-                let val = self.registers.read(src);
-                half_carry = ((val & 0xF) + (a & 0xF)) & 0x10 == 0x10;
-                a.overflowing_sub(val)
-            }
-            Arg::Imm8(src) => {
-                half_carry = ((src & 0xF) + (a & 0xF)) & 0x10 == 0x10;
-                a.overflowing_sub(src)
-            }
+        let (result, carry) = {
+            let val = self.registers.read(src);
+            half_carry = ((val & 0x00FF) + (hl & 0x00FF)) & 0x0100 == 0x0100;
+            hl.overflowing_add(val)
+        };
+
+        self.registers.write(Reg16::HL, result);
+
+        self.flags.set(Flag::Zero, result == 0);
+        self.flags.set(Flag::Subtract, false);
+        self.flags.set(Flag::HalfCarry, half_carry);
+        self.flags.set(Flag::Carry, carry);
+    }
+
+    fn sub(&mut self, src: Arg, write: bool) {
+        let a = self.registers.read(Reg8::A);
+
+        let val = match src {
+            Arg::Reg8(src) => self.registers.read(src),
+            Arg::Imm8(src) => src,
             Arg::MemHl => {
                 let addr = self.registers.read(Reg16::HL);
                 let val = self.memory.read(addr);
-                half_carry = ((val & 0xF) + (a & 0xF)) & 0x10 == 0x10;
-                a.overflowing_sub(val)
+                val
             }
             _ => panic!("Unexpected src {:?}", src),
         };
+
+        let half_carry = ((val & 0xF) + (a & 0xF)) & 0x10 == 0x10;
+        let (result, carry) = a.overflowing_sub(val);
 
         // Write back the result for non-CP
         if write {
@@ -264,6 +293,75 @@ impl Cpu {
         self.flags.set(Flag::Subtract, true);
         self.flags.set(Flag::HalfCarry, half_carry);
         self.flags.set(Flag::Carry, carry);
+    }
+
+    /// SUB with carry
+    fn sbc(&mut self, src: Arg) {
+        let a = self.registers.read(Reg8::A);
+
+        let val = match src {
+            Arg::Reg8(src) => self.registers.read(src),
+            Arg::Imm8(src) => src,
+            Arg::MemHl => {
+                let addr = self.registers.read(Reg16::HL);
+                let val = self.memory.read(addr);
+                val
+            }
+            _ => panic!("Unexpected src {:?}", src),
+        };
+
+        let curr_carry = if self.flags.carry() { 1u8 } else { 0u8 };
+
+        // Compute half-carry based on the current value of the carry flag
+        let half_carry = ((val & 0xF) + (a & 0xF) + curr_carry) & 0x10 == 0x10;
+
+        let (result, carry) = match a.overflowing_sub(val) {
+            // If the first sub overflows, propagate the carry flag
+            (result, true) => (result.wrapping_sub(1), true),
+
+            // If the first sub does not overflow, try another overflowing_sub
+            (result, false) => result.overflowing_sub(1),
+        };
+
+        self.registers.write(Reg8::A, result);
+
+        self.flags.set(Flag::Zero, result == 0);
+        self.flags.set(Flag::Subtract, true);
+        self.flags.set(Flag::HalfCarry, half_carry);
+        self.flags.set(Flag::Carry, carry);
+    }
+
+    fn logical(&mut self, src: Arg, op: Op) {
+        let a = self.registers.read(Reg8::A);
+
+        let val = match src {
+            Arg::Reg8(src) => self.registers.read(src),
+            Arg::Imm8(src) => src,
+            Arg::MemHl => {
+                let addr = self.registers.read(Reg16::HL);
+                let val = self.memory.read(addr);
+                val
+            }
+            _ => panic!("Unexpected src {:?}", src),
+        };
+
+        let result = match op {
+            Op::And => a & val,
+            Op::Or => a | val,
+            Op::Xor => a ^ val,
+        };
+
+        self.registers.write(Reg8::A, result);
+
+        self.flags.set(Flag::Zero, result == 0);
+        self.flags.set(Flag::Subtract, false);
+        self.flags.set(Flag::Carry, false);
+
+        if let Op::And = op {
+            self.flags.set(Flag::HalfCarry, true);
+        } else {
+            self.flags.set(Flag::HalfCarry, false);
+        }
     }
 
     /// Increment instruction
@@ -397,6 +495,57 @@ mod test {
     }
 
     #[test]
+    fn add_hl() {
+        let mut cpu = get_cpu();
+
+        cpu.registers.write(Reg8::A, 0);
+        cpu.registers.write(Reg16::DE, 0x1234);
+
+        let inst = Instruction::AddHlReg16 { src: Reg16::DE };
+
+        // Normal add
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg16::HL), 0x1234);
+        assert!(!cpu.flags.zero());
+        assert!(!cpu.flags.subtract());
+        assert!(!cpu.flags.half_carry());
+        assert!(!cpu.flags.carry());
+
+        // Overflow
+        cpu.registers.write(Reg16::DE, 0xEDCC);
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg16::HL), 0x0);
+        assert!(cpu.flags.zero());
+        assert!(!cpu.flags.subtract());
+        assert!(cpu.flags.half_carry());
+        assert!(cpu.flags.carry());
+    }
+
+    #[test]
+    fn adc() {
+        let mut cpu = get_cpu();
+
+        // Normal add
+        let inst = Instruction::Adc { src: 0x10u8.into() };
+        cpu.flags.set(Flag::Carry, true);
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::A), 0x11);
+        assert!(!cpu.flags.zero());
+        assert!(!cpu.flags.carry());
+
+        // Overflow
+        let inst = Instruction::Adc { src: Reg8::B.into() };
+        cpu.flags.set(Flag::Carry, true);
+        cpu.registers.write(Reg8::A, 0xE1);
+        cpu.registers.write(Reg8::B, 0x1E);
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::A), 0x00);
+        assert!(cpu.flags.zero());
+        assert!(cpu.flags.half_carry());
+        assert!(cpu.flags.carry());
+    }
+
+    #[test]
     fn sub() {
         let mut cpu = get_cpu();
 
@@ -424,6 +573,61 @@ mod test {
         assert_eq!(cpu.registers.read(Reg8::A), 0x2F);
         assert!(!cpu.flags.zero());
         assert!(cpu.flags.subtract());
+    }
+
+    #[test]
+    fn sbc() {
+        let mut cpu = get_cpu();
+
+        // Normal sub
+        let inst = Instruction::Sbc { src: 0x09u8.into() };
+        cpu.registers.write(Reg8::A, 0x0A);
+        cpu.flags.set(Flag::Carry, true);
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::A), 0x00);
+        assert!(cpu.flags.zero());
+        assert!(!cpu.flags.carry());
+
+        // Overflow
+        let inst = Instruction::Sbc { src: Reg8::B.into() };
+        cpu.flags.set(Flag::Carry, true);
+        cpu.registers.write(Reg8::A, 0x3B);
+        cpu.registers.write(Reg8::B, 0x4F);
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::A), 0xEB);
+        assert!(!cpu.flags.zero());
+        assert!(cpu.flags.subtract());
+        assert!(cpu.flags.half_carry());
+        assert!(cpu.flags.carry());
+    }
+
+    #[test]
+    fn logical() {
+        let mut cpu = get_cpu();
+
+        // AND
+        let inst = Instruction::And { src: 0x02u8.into() };
+        cpu.registers.write(Reg8::A, 0x0A);
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::A), 0x02);
+        assert!(!cpu.flags.zero());
+        assert!(cpu.flags.half_carry());
+
+        // OR
+        let inst = Instruction::Or { src: 0xF0u8.into() };
+        cpu.registers.write(Reg8::A, 0x0A);
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::A), 0xFA);
+        assert!(!cpu.flags.zero());
+        assert!(!cpu.flags.half_carry());
+
+        // XOR
+        let inst = Instruction::Xor { src: 0xFFu8.into() };
+        cpu.registers.write(Reg8::A, 0x0F);
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::A), 0xF0);
+        assert!(!cpu.flags.zero());
+        assert!(!cpu.flags.half_carry());
     }
 
     #[test]
