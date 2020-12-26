@@ -215,6 +215,11 @@ impl Cpu {
 
                 // TODO: Enable interrupts
             }
+            Rst { offset } => {
+                // Push current PC onto stack, then jump to offset
+                self.push(self.registers.PC);
+                self.registers.PC = 0x0000 + offset as u16;
+            }
             Jp { addr, cond } | Call { addr, cond } => {
                 // If this is a CALL, push the *next* PC to the stack
                 if let Call { .. } = instruction {
@@ -850,6 +855,7 @@ mod test {
         cpu.execute(inst);
         assert_eq!(cpu.registers.PC, 0x1234);
 
+        // CALL, then RET
         let inst = Instruction::Call { addr: 0x1234, cond: Cond::None };
         cpu.registers.write(Reg16::PC, 0xFF00);
         cpu.registers.write(Reg16::SP, 0x1000);
@@ -861,6 +867,15 @@ mod test {
         cpu.execute(inst);
         assert_eq!(cpu.registers.PC, 0xFF03); // Next PC pushed during CALL
         assert_eq!(cpu.registers.SP, 0x1000);
+
+        // RST
+        let inst = Instruction::Rst { offset: 0x10 };
+        cpu.registers.write(Reg16::PC, 0xFF00);
+        cpu.registers.write(Reg16::SP, 0x1000);
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.PC, 0x0010);
+        assert_eq!(cpu.registers.SP, 0x0FFE);
+        assert_eq!(cpu.pop(), 0xFF00);
     }
 
     #[test]
