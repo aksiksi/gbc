@@ -98,7 +98,7 @@ impl Ram {
     }
 
     /// Handle a bank change request
-    fn update_bank(&mut self, _addr: u16, _value: u8) {
+    pub fn update_bank(&mut self, _addr: u16, _value: u8) {
         unimplemented!()
     }
 }
@@ -324,7 +324,7 @@ impl Rom {
     }
 
     /// Handle a bank change request
-    fn update_bank(&mut self, _addr: u16, _value: u8) {
+    pub fn update_bank(&mut self, _addr: u16, _value: u8) {
         unimplemented!()
     }
 }
@@ -476,7 +476,7 @@ pub enum CartridgeType {
 }
 
 impl CartridgeType {
-    fn is_none(&self) -> bool {
+    pub fn is_none(&self) -> bool {
         use CartridgeType::*;
         match self {
             Rom | RomRam | RomRamBattery => true,
@@ -484,7 +484,7 @@ impl CartridgeType {
         }
     }
 
-    fn is_mbc1(&self) -> bool {
+    pub fn is_mbc1(&self) -> bool {
         use CartridgeType::*;
         match self {
             Mbc1 | Mbc1Ram | Mbc1RamBattery => true,
@@ -492,7 +492,7 @@ impl CartridgeType {
         }
     }
 
-    fn is_mbc2(&self) -> bool {
+    pub fn is_mbc2(&self) -> bool {
         use CartridgeType::*;
         match self {
             Mbc2 | Mbc2Battery => true,
@@ -500,7 +500,7 @@ impl CartridgeType {
         }
     }
 
-    fn is_mbc3(&self) -> bool {
+    pub fn is_mbc3(&self) -> bool {
         use CartridgeType::*;
         match self {
             Mbc3 | Mbc3Ram | Mbc3RamBattery | Mbc3TimerBattery | Mbc3TimerRamBattery => true,
@@ -508,7 +508,7 @@ impl CartridgeType {
         }
     }
 
-    fn is_mbc4(&self) -> bool {
+    pub fn is_mbc4(&self) -> bool {
         use CartridgeType::*;
         match self {
             Mbc4 | Mbc4Ram | Mbc4RamBattery => true,
@@ -516,7 +516,7 @@ impl CartridgeType {
         }
     }
 
-    fn is_mbc5(&self) -> bool {
+    pub fn is_mbc5(&self) -> bool {
         use CartridgeType::*;
         match self {
             Mbc5 | Mbc5Ram | Mbc5RamBattery | Mbc5Rumble | Mbc5RumbleRam | Mbc5RumbleRamBattery => {

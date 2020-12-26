@@ -4,6 +4,13 @@ version = "0.1.0"
 authors = ["Assil Ksiksi <cyph0nik@gmail.com>"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "gbc"
+path = "src/gbc/lib.rs"
+
+[[bin]]
+name = "gbc"
+path = "src/main.rs"
+test = false
 
 [dependencies]
