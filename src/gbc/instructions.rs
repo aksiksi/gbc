@@ -448,17 +448,17 @@ pub enum Instruction {
     /// * Subtract: reset
     /// * HalfCarry: set
     /// * Carry: not affected
-    Bit { dst: Arg, bit: u8},
+    Bit { dst: Arg, bit: u8 },
 
     /// Set bit `b` in [Reg8](Arg::Reg8) or ([HL](Reg16::HL)).
     ///
     /// Flags: None
-    Set { dst: Arg, bit: u8},
+    Set { dst: Arg, bit: u8 },
 
     /// Reset bit `b` in [Reg8](Arg::Reg8) or ([HL](Reg16::HL)).
     ///
     /// Flags: None
-    Res { dst: Arg, bit: u8},
+    Res { dst: Arg, bit: u8 },
 
     /// Jump to address `Addr`
     ///
@@ -539,6 +539,9 @@ impl Instruction {
         let (inst, size, cycles) = match data[0] {
             0x00 => (Nop, 1, 4.into()),
             0x10 => (Stop, 2, 4.into()),
+
+            // CB-prefixed instructions are decoded in a seperate function
+            0xCB => Self::decode_cb(data[1]),
 
             // Load
             0x08 => (Ld { dst: Arg::MemImm(arg16.unwrap()), src: Reg16::SP.into() }, 3, 20.into()),
@@ -811,92 +814,162 @@ impl Instruction {
             0xF3 => (Di, 1, 4.into()),
             0xFB => (Ei, 1, 4.into()),
 
-            // CB-prefixed instructions
-            0xCB => {
-                match data[1] {
-                    // Rotate
-                    0x00 => (Rlc { dst: Reg8::B.into() }, 2, 8.into()),
-                    0x01 => (Rlc { dst: Reg8::C.into() }, 2, 8.into()),
-                    0x02 => (Rlc { dst: Reg8::D.into() }, 2, 8.into()),
-                    0x03 => (Rlc { dst: Reg8::E.into() }, 2, 8.into()),
-                    0x04 => (Rlc { dst: Reg8::H.into() }, 2, 8.into()),
-                    0x05 => (Rlc { dst: Reg8::L.into() }, 2, 8.into()),
-                    0x06 => (Rlc { dst: Arg::MemHl }, 2, 16.into()),
-                    0x07 => (Rlc { dst: Reg8::A.into() }, 2, 8.into()),
-                    0x08 => (Rrc { dst: Reg8::B.into() }, 2, 8.into()),
-                    0x09 => (Rrc { dst: Reg8::C.into() }, 2, 8.into()),
-                    0x0A => (Rrc { dst: Reg8::D.into() }, 2, 8.into()),
-                    0x0B => (Rrc { dst: Reg8::E.into() }, 2, 8.into()),
-                    0x0C => (Rrc { dst: Reg8::H.into() }, 2, 8.into()),
-                    0x0D => (Rrc { dst: Reg8::L.into() }, 2, 8.into()),
-                    0x0E => (Rrc { dst: Arg::MemHl }, 2, 16.into()),
-                    0x0F => (Rrc { dst: Reg8::A.into() }, 2, 8.into()),
-                    0x10 => (Rl { dst: Reg8::B.into() }, 2, 8.into()),
-                    0x11 => (Rl { dst: Reg8::C.into() }, 2, 8.into()),
-                    0x12 => (Rl { dst: Reg8::D.into() }, 2, 8.into()),
-                    0x13 => (Rl { dst: Reg8::E.into() }, 2, 8.into()),
-                    0x14 => (Rl { dst: Reg8::H.into() }, 2, 8.into()),
-                    0x15 => (Rl { dst: Reg8::L.into() }, 2, 8.into()),
-                    0x16 => (Rl { dst: Arg::MemHl }, 2, 16.into()),
-                    0x17 => (Rl { dst: Reg8::A.into() }, 2, 8.into()),
-                    0x18 => (Rr { dst: Reg8::B.into() }, 2, 8.into()),
-                    0x19 => (Rr { dst: Reg8::C.into() }, 2, 8.into()),
-                    0x1A => (Rr { dst: Reg8::D.into() }, 2, 8.into()),
-                    0x1B => (Rr { dst: Reg8::E.into() }, 2, 8.into()),
-                    0x1C => (Rr { dst: Reg8::H.into() }, 2, 8.into()),
-                    0x1D => (Rr { dst: Reg8::L.into() }, 2, 8.into()),
-                    0x1E => (Rr { dst: Arg::MemHl }, 2, 16.into()),
-                    0x1F => (Rr { dst: Reg8::A.into() }, 2, 8.into()),
-
-                    // Shift
-                    0x20 => (Sla { dst: Reg8::B.into() }, 2, 8.into()),
-                    0x21 => (Sla { dst: Reg8::C.into() }, 2, 8.into()),
-                    0x22 => (Sla { dst: Reg8::D.into() }, 2, 8.into()),
-                    0x23 => (Sla { dst: Reg8::E.into() }, 2, 8.into()),
-                    0x24 => (Sla { dst: Reg8::H.into() }, 2, 8.into()),
-                    0x25 => (Sla { dst: Reg8::L.into() }, 2, 8.into()),
-                    0x26 => (Sla { dst: Arg::MemHl }, 2, 16.into()),
-                    0x27 => (Sla { dst: Reg8::A.into() }, 2, 8.into()),
-                    0x28 => (Sra { dst: Reg8::B.into() }, 2, 8.into()),
-                    0x29 => (Sra { dst: Reg8::C.into() }, 2, 8.into()),
-                    0x2A => (Sra { dst: Reg8::D.into() }, 2, 8.into()),
-                    0x2B => (Sra { dst: Reg8::E.into() }, 2, 8.into()),
-                    0x2C => (Sra { dst: Reg8::H.into() }, 2, 8.into()),
-                    0x2D => (Sra { dst: Reg8::L.into() }, 2, 8.into()),
-                    0x2E => (Sra { dst: Arg::MemHl }, 2, 16.into()),
-                    0x2F => (Sra { dst: Reg8::A.into() }, 2, 8.into()),
-                    0x38 => (Srl { dst: Reg8::B.into() }, 2, 8.into()),
-                    0x39 => (Srl { dst: Reg8::C.into() }, 2, 8.into()),
-                    0x3A => (Srl { dst: Reg8::D.into() }, 2, 8.into()),
-                    0x3B => (Srl { dst: Reg8::E.into() }, 2, 8.into()),
-                    0x3C => (Srl { dst: Reg8::H.into() }, 2, 8.into()),
-                    0x3D => (Srl { dst: Reg8::L.into() }, 2, 8.into()),
-                    0x3E => (Srl { dst: Arg::MemHl }, 2, 16.into()),
-                    0x3F => (Srl { dst: Reg8::A.into() }, 2, 8.into()),
-
-                    // Swap
-                    0x30 => (Swap { dst: Reg8::B.into() }, 2, 8.into()),
-                    0x31 => (Swap { dst: Reg8::C.into() }, 2, 8.into()),
-                    0x32 => (Swap { dst: Reg8::D.into() }, 2, 8.into()),
-                    0x33 => (Swap { dst: Reg8::E.into() }, 2, 8.into()),
-                    0x34 => (Swap { dst: Reg8::H.into() }, 2, 8.into()),
-                    0x35 => (Swap { dst: Reg8::L.into() }, 2, 8.into()),
-                    0x36 => (Swap { dst: Arg::MemHl }, 2, 16.into()),
-                    0x37 => (Swap { dst: Reg8::A.into() }, 2, 8.into()),
-
-                    // Bit
-                    0x40..=0x7F => {
-                        // TODO: handle them
-                        unimplemented!()
-                    }
-                    other => panic!("Unknown CB instruction: {}", other),
-                }
-            }
-
             other => panic!("Unknown instruction: {}", other),
         };
 
         (inst, size, cycles)
+    }
+
+    /// Decode a single CB-prefixed instruction
+    fn decode_cb(opcode: u8) -> (Instruction, u8, Cycles) {
+        use Instruction::*;
+
+        match opcode {
+            // Rotate
+            0x00 => (Rlc { dst: Reg8::B.into() }, 2, 8.into()),
+            0x01 => (Rlc { dst: Reg8::C.into() }, 2, 8.into()),
+            0x02 => (Rlc { dst: Reg8::D.into() }, 2, 8.into()),
+            0x03 => (Rlc { dst: Reg8::E.into() }, 2, 8.into()),
+            0x04 => (Rlc { dst: Reg8::H.into() }, 2, 8.into()),
+            0x05 => (Rlc { dst: Reg8::L.into() }, 2, 8.into()),
+            0x06 => (Rlc { dst: Arg::MemHl }, 2, 16.into()),
+            0x07 => (Rlc { dst: Reg8::A.into() }, 2, 8.into()),
+            0x08 => (Rrc { dst: Reg8::B.into() }, 2, 8.into()),
+            0x09 => (Rrc { dst: Reg8::C.into() }, 2, 8.into()),
+            0x0A => (Rrc { dst: Reg8::D.into() }, 2, 8.into()),
+            0x0B => (Rrc { dst: Reg8::E.into() }, 2, 8.into()),
+            0x0C => (Rrc { dst: Reg8::H.into() }, 2, 8.into()),
+            0x0D => (Rrc { dst: Reg8::L.into() }, 2, 8.into()),
+            0x0E => (Rrc { dst: Arg::MemHl }, 2, 16.into()),
+            0x0F => (Rrc { dst: Reg8::A.into() }, 2, 8.into()),
+            0x10 => (Rl { dst: Reg8::B.into() }, 2, 8.into()),
+            0x11 => (Rl { dst: Reg8::C.into() }, 2, 8.into()),
+            0x12 => (Rl { dst: Reg8::D.into() }, 2, 8.into()),
+            0x13 => (Rl { dst: Reg8::E.into() }, 2, 8.into()),
+            0x14 => (Rl { dst: Reg8::H.into() }, 2, 8.into()),
+            0x15 => (Rl { dst: Reg8::L.into() }, 2, 8.into()),
+            0x16 => (Rl { dst: Arg::MemHl }, 2, 16.into()),
+            0x17 => (Rl { dst: Reg8::A.into() }, 2, 8.into()),
+            0x18 => (Rr { dst: Reg8::B.into() }, 2, 8.into()),
+            0x19 => (Rr { dst: Reg8::C.into() }, 2, 8.into()),
+            0x1A => (Rr { dst: Reg8::D.into() }, 2, 8.into()),
+            0x1B => (Rr { dst: Reg8::E.into() }, 2, 8.into()),
+            0x1C => (Rr { dst: Reg8::H.into() }, 2, 8.into()),
+            0x1D => (Rr { dst: Reg8::L.into() }, 2, 8.into()),
+            0x1E => (Rr { dst: Arg::MemHl }, 2, 16.into()),
+            0x1F => (Rr { dst: Reg8::A.into() }, 2, 8.into()),
+
+            // Shift
+            0x20 => (Sla { dst: Reg8::B.into() }, 2, 8.into()),
+            0x21 => (Sla { dst: Reg8::C.into() }, 2, 8.into()),
+            0x22 => (Sla { dst: Reg8::D.into() }, 2, 8.into()),
+            0x23 => (Sla { dst: Reg8::E.into() }, 2, 8.into()),
+            0x24 => (Sla { dst: Reg8::H.into() }, 2, 8.into()),
+            0x25 => (Sla { dst: Reg8::L.into() }, 2, 8.into()),
+            0x26 => (Sla { dst: Arg::MemHl }, 2, 16.into()),
+            0x27 => (Sla { dst: Reg8::A.into() }, 2, 8.into()),
+            0x28 => (Sra { dst: Reg8::B.into() }, 2, 8.into()),
+            0x29 => (Sra { dst: Reg8::C.into() }, 2, 8.into()),
+            0x2A => (Sra { dst: Reg8::D.into() }, 2, 8.into()),
+            0x2B => (Sra { dst: Reg8::E.into() }, 2, 8.into()),
+            0x2C => (Sra { dst: Reg8::H.into() }, 2, 8.into()),
+            0x2D => (Sra { dst: Reg8::L.into() }, 2, 8.into()),
+            0x2E => (Sra { dst: Arg::MemHl }, 2, 16.into()),
+            0x2F => (Sra { dst: Reg8::A.into() }, 2, 8.into()),
+            0x38 => (Srl { dst: Reg8::B.into() }, 2, 8.into()),
+            0x39 => (Srl { dst: Reg8::C.into() }, 2, 8.into()),
+            0x3A => (Srl { dst: Reg8::D.into() }, 2, 8.into()),
+            0x3B => (Srl { dst: Reg8::E.into() }, 2, 8.into()),
+            0x3C => (Srl { dst: Reg8::H.into() }, 2, 8.into()),
+            0x3D => (Srl { dst: Reg8::L.into() }, 2, 8.into()),
+            0x3E => (Srl { dst: Arg::MemHl }, 2, 16.into()),
+            0x3F => (Srl { dst: Reg8::A.into() }, 2, 8.into()),
+
+            // Swap
+            0x30 => (Swap { dst: Reg8::B.into() }, 2, 8.into()),
+            0x31 => (Swap { dst: Reg8::C.into() }, 2, 8.into()),
+            0x32 => (Swap { dst: Reg8::D.into() }, 2, 8.into()),
+            0x33 => (Swap { dst: Reg8::E.into() }, 2, 8.into()),
+            0x34 => (Swap { dst: Reg8::H.into() }, 2, 8.into()),
+            0x35 => (Swap { dst: Reg8::L.into() }, 2, 8.into()),
+            0x36 => (Swap { dst: Arg::MemHl }, 2, 16.into()),
+            0x37 => (Swap { dst: Reg8::A.into() }, 2, 8.into()),
+
+            // Bit
+            0x40..=0x7F => {
+                let (dst, bit) = Self::decode_cb_helper(0x40, opcode);
+                let cycles = match dst {
+                    Arg::MemHl => 16.into(),
+                    _ => 8.into(),
+                };
+
+
+                (Bit { dst, bit }, 2, cycles)
+            }
+
+            // Res
+            0x80..=0xBF => {
+                let (dst, bit) = Self::decode_cb_helper(0x80, opcode);
+                let cycles = match dst {
+                    Arg::MemHl => 16.into(),
+                    _ => 8.into(),
+                };
+
+                (Res { dst, bit }, 2, cycles)
+            }
+
+            // Set
+            0xC0..=0xFF => {
+                let (dst, bit) = Self::decode_cb_helper(0xC0, opcode);
+                let cycles = match dst {
+                    Arg::MemHl => 16.into(),
+                    _ => 8.into(),
+                };
+
+                (Set { dst, bit }, 2, cycles)
+            }
+        }
+    }
+
+    /// Helper function for the repetitive CB opcodes.
+    ///
+    /// Returns the dst `Arg` and value required.
+    #[inline]
+    fn decode_cb_helper(first_opcode: u8, opcode: u8) -> (Arg, u8) {
+        let first_upper = first_opcode >> 4;
+
+        let upper = opcode >> 4;
+        let lower = opcode & 0x0F;
+
+        // Figure out the dst operand based on the lower
+        // nibble of the opcode
+        let arg = if lower < 0x8 {
+            lower
+        } else {
+            lower - 0x8
+        };
+
+        let dst: Arg = match arg {
+            0 => Reg8::B.into(),
+            1 => Reg8::C.into(),
+            2 => Reg8::D.into(),
+            3 => Reg8::E.into(),
+            4 => Reg8::H.into(),
+            5 => Reg8::L.into(),
+            6 => Arg::MemHl,
+            7 => Reg8::A.into(),
+            _ => unreachable!(),
+        };
+
+        // Figure out the bit position based on the upper
+        // nibble of the opcode
+        let bit = if lower < 0x8 {
+            2 * (upper - first_upper)
+        } else {
+            2 * (upper - first_upper) + 1
+        };
+
+        (dst, bit)
     }
 }
 
@@ -932,6 +1005,48 @@ mod test {
 
             ([0xE0, 0x34, 0x00], Ldh { offset: 0x34 }, 2, 12.into()),
             ([0xF0, 0x34, 0x00], LdhA { offset: 0x34 }, 2, 12.into()),
+        ];
+
+        for (input, expected, expected_size, expected_cycles) in test_vectors {
+            let (inst, size, cycles) = Instruction::decode(&input[..]);
+            assert_eq!(expected, &inst);
+            assert_eq!(expected_size, &size);
+            assert_eq!(expected_cycles, &cycles);
+        }
+    }
+
+    #[test]
+    fn decode_cb_instructions() {
+        // Vector of (input instruction, expected decoded, size, cycle count)
+        #[rustfmt::skip]
+        let test_vectors: &[([u8; 2], Instruction, u8, Cycles)] = &[
+            // Rotate, Shift, Swap
+            ([0xCB, 0x01], Instruction::Rlc { dst: Reg8::C.into() }, 2, 8.into()),
+            ([0xCB, 0x0D], Instruction::Rrc { dst: Reg8::L.into() }, 2, 8.into()),
+            ([0xCB, 0x16], Instruction::Rl { dst: Arg::MemHl }, 2, 16.into()),
+            ([0xCB, 0x1B], Instruction::Rr { dst: Reg8::E.into() }, 2, 8.into()),
+            ([0xCB, 0x25], Instruction::Sla { dst: Reg8::L.into() }, 2, 8.into()),
+            ([0xCB, 0x2E], Instruction::Sra { dst: Arg::MemHl }, 2, 16.into()),
+            ([0xCB, 0x31], Instruction::Swap { dst: Reg8::C.into() }, 2, 8.into()),
+            ([0xCB, 0x3C], Instruction::Srl { dst: Reg8::H.into() }, 2, 8.into()),
+
+            // Bit
+            ([0xCB, 0x46], Instruction::Bit { dst: Arg::MemHl, bit: 0 }, 2, 16.into()),
+            ([0xCB, 0x4B], Instruction::Bit { dst: Reg8::E.into(), bit: 1 }, 2, 8.into()),
+            ([0xCB, 0x53], Instruction::Bit { dst: Reg8::E.into(), bit: 2 }, 2, 8.into()),
+            ([0xCB, 0x69], Instruction::Bit { dst: Reg8::C.into(), bit: 5 }, 2, 8.into()),
+
+            // Res
+            ([0xCB, 0x86], Instruction::Res { dst: Arg::MemHl, bit: 0 }, 2, 16.into()),
+            ([0xCB, 0x8B], Instruction::Res { dst: Reg8::E.into(), bit: 1 }, 2, 8.into()),
+            ([0xCB, 0x93], Instruction::Res { dst: Reg8::E.into(), bit: 2 }, 2, 8.into()),
+            ([0xCB, 0xA9], Instruction::Res { dst: Reg8::C.into(), bit: 5 }, 2, 8.into()),
+
+            // Set
+            ([0xCB, 0xC6], Instruction::Set { dst: Arg::MemHl, bit: 0 }, 2, 16.into()),
+            ([0xCB, 0xCB], Instruction::Set { dst: Reg8::E.into(), bit: 1 }, 2, 8.into()),
+            ([0xCB, 0xD3], Instruction::Set { dst: Reg8::E.into(), bit: 2 }, 2, 8.into()),
+            ([0xCB, 0xE9], Instruction::Set { dst: Reg8::C.into(), bit: 5 }, 2, 8.into()),
         ];
 
         for (input, expected, expected_size, expected_cycles) in test_vectors {
