@@ -469,8 +469,6 @@ pub enum Instruction {
     Jp { addr: u16, cond: Cond },
 
     /// Jump to address ([HL](Reg16::HL))
-    ///
-    /// If `Cond` != `Cond::None`, jump has a condition.
     JpHl,
 
     /// Add `n` to current address and jump to it

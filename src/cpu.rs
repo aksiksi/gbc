@@ -63,8 +63,6 @@ impl Cpu {
     pub fn execute(&mut self, instruction: Instruction) {
         use Instruction::*;
 
-        let pc = &mut self.registers.PC;
-
         match instruction {
             Nop => (),
             Halt => (),
@@ -155,29 +153,33 @@ impl Cpu {
             Xor { src } => self.logical(src, Op::Xor),
             Cp { src } => self.sub(src, false),
             Pop { dst } => {
-                // Increment SP
-                self.registers.SP += 2;
-
-                let lower = self.memory.read(self.registers.SP);
-                let upper = self.memory.read(self.registers.SP - 1);
-                let value = (upper as u16) << 8 | lower as u16;
-
+                let value = self.pop();
                 self.registers.write(dst, value);
             }
             Push { src } => {
-                let sp = self.registers.SP;
                 let value = self.registers.read(src);
-                let lower = value as u8;
-                let upper = (value >> 8) as u8;
+                self.push(value);
+            }
+            Ret { cond } => {
+                let addr = self.pop();
+                let ok = match cond {
+                    Cond::None => true,
+                    Cond::NotZero if !self.flags.zero() => true,
+                    Cond::Zero if self.flags.zero() => true,
+                    Cond::NotCarry if !self.flags.carry() => true,
+                    Cond::Carry if self.flags.carry() => true,
+                    _ => false,
+                };
 
-                // Write upper and lower bytes seperately to the stack.
-                // We cannot use the `MemoryWrite` trait because it assumes
-                // that memory addresses increase instead of decrease.
-                self.memory.write(sp, lower);
-                self.memory.write(sp-1, upper);
+                if ok {
+                    self.registers.PC = addr;
+                }
+            }
+            RetI => {
+                let addr = self.pop();
+                self.registers.PC = addr;
 
-                // Decrement SP
-                self.registers.SP -= 2;
+                // TODO: Enable interrupts
             }
             Jp { addr, cond } => {
                 let ok = match cond {
@@ -190,8 +192,12 @@ impl Cpu {
                 };
 
                 if ok {
-                    *pc = addr;
+                    self.registers.PC = addr;
                 }
+            }
+            JpHl => {
+                let addr = self.registers.read(Reg16::HL);
+                self.registers.PC = addr;
             }
             Jr { offset, cond } => {
                 let ok = match cond {
@@ -205,11 +211,39 @@ impl Cpu {
 
                 if ok {
                     // Numeric casts from signed to unsigned will sign extend
-                    *pc = pc.wrapping_add(offset as u16);
+                    let offset = offset as u16;
+                    self.registers.PC = self.registers.PC.wrapping_add(offset);
                 }
             }
             other => panic!("Cannot execute instruction: {:?}", other),
         }
+    }
+
+    /// Helper that pops 2 bytes off the stack
+    fn pop(&mut self) -> u16 {
+        // Increment SP
+        self.registers.SP += 2;
+
+        let lower = self.memory.read(self.registers.SP);
+        let upper = self.memory.read(self.registers.SP - 1);
+        let value = (upper as u16) << 8 | lower as u16;
+
+        value
+    }
+
+    /// Helper that pushes 2 bytes to the stack
+    fn push(&mut self, value: u16) {
+        let lower = value as u8;
+        let upper = (value >> 8) as u8;
+
+        // Write upper and lower bytes seperately to the stack.
+        // We cannot use the `MemoryWrite` trait because it assumes
+        // that memory addresses increase instead of decrease.
+        self.memory.write(self.registers.SP, lower);
+        self.memory.write(self.registers.SP-1, upper);
+
+        // Decrement SP
+        self.registers.SP -= 2;
     }
 
     fn add(&mut self, src: Arg) {
@@ -741,5 +775,49 @@ mod test {
         cpu.execute(inst);
         assert_eq!(cpu.registers.SP, 0xFFFE);
         assert_eq!(cpu.registers.read(Reg16::AF), 0x1234);
+    }
+
+    #[test]
+    fn jumps() {
+        let mut cpu = get_cpu();
+
+        let inst = Instruction::Jp { addr: 0x2345, cond: Cond::None };
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.PC, 0x2345);
+
+        let inst = Instruction::Jp { addr: 0x1234, cond: Cond::Zero };
+        cpu.flags.set(Flag::Zero, true);
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.PC, 0x1234);
+
+        let inst = Instruction::Jr { offset: -0x34, cond: Cond::None };
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.PC, 0x1200);
+
+        let inst = Instruction::Jr { offset: 1, cond: Cond::NotCarry };
+        cpu.registers.write(Reg16::PC, 0xFFFF);
+        cpu.flags.set(Flag::Carry, false);
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.PC, 0x0);
+
+        let inst = Instruction::JpHl;
+        cpu.registers.write(Reg16::HL, 0x1234);
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.PC, 0x1234);
+    }
+
+    #[test]
+    fn ret() {
+        let mut cpu = get_cpu();
+
+        let inst = Instruction::Ret { cond: Cond::None };
+        cpu.push(0x1234);
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.PC, 0x1234);
+
+        let inst = Instruction::RetI;
+        cpu.push(0x1234);
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.PC, 0x1234);
     }
 }
