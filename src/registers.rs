@@ -224,19 +224,19 @@ impl RegisterOps<Reg16, u16> for RegisterFile {
     fn write(&mut self, reg: Reg16, value: u16) {
         match reg {
             Reg16::AF => {
-                self.A = (value & 0xFF) as u8;
+                self.A = value as u8;
                 self.F = (value >> 8) as u8;
             }
             Reg16::BC => {
-                self.B = (value & 0xFF) as u8;
+                self.B = value as u8;
                 self.C = (value >> 8) as u8;
             }
             Reg16::DE => {
-                self.D = (value & 0xFF) as u8;
+                self.D = value as u8;
                 self.E = (value >> 8) as u8;
             }
             Reg16::HL => {
-                self.H = (value & 0xFF) as u8;
+                self.H = value as u8;
                 self.L = (value >> 8) as u8;
             }
             Reg16::PC => self.PC = value,

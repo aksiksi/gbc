@@ -100,9 +100,6 @@ pub enum Instruction {
     /// Load [A](Reg8::A) into address (0xFF00 + [Imm8](Arg::Imm8))
     Ldh { offset: u8 },
 
-    /// Load [HL](Reg16::HL) into SP
-    LdSpHl,
-
     /// Load SP + Imm8i into [HL](Reg16::HL)
     ///
     /// ### Flags
@@ -635,6 +632,8 @@ impl Instruction {
             0xF2 => (LdAMemC, 2, 8.into()),
             0xEA => (Ld { dst: Arg::MemImm(arg16.unwrap()), src: Arg::Reg8(Reg8::A) }, 3, 16.into()),
             0xFA => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::MemImm(arg16.unwrap()) }, 3, 16.into()),
+            0xF8 => (LdHlSpImm8i { offset: arg8.unwrap() as i8 }, 2, 12.into()),
+            0xF9 => (Ld { dst: Reg16::SP.into(), src: Reg16::SP.into() }, 1, 8.into()),
 
             // Misc
             0x27 => (Daa, 1, 4.into()),
@@ -782,6 +781,13 @@ impl Instruction {
             0xDA => (Jp { addr: arg16.unwrap(), cond: Cond::Carry }, 3, Cycles(16, 12)),
             0xC3 => (Jp { addr: arg16.unwrap(), cond: Cond::None }, 3, 16.into()),
             0xE9 => (JpHl, 1, 4.into()),
+
+            // Call
+            0xC4 => (Call { addr: arg16.unwrap(), cond: Cond::NotZero }, 3, Cycles(24, 12)),
+            0xD4 => (Call { addr: arg16.unwrap(), cond: Cond::NotCarry }, 3, Cycles(24, 12)),
+            0xCC => (Call { addr: arg16.unwrap(), cond: Cond::Zero }, 3, Cycles(24, 12)),
+            0xCD => (Call { addr: arg16.unwrap(), cond: Cond::None }, 3, 24.into()),
+            0xDC => (Call { addr: arg16.unwrap(), cond: Cond::Carry }, 3, Cycles(24, 12)),
 
             // Ret
             0xC0 => (Ret { cond: Cond::NotZero }, 1, Cycles(20, 8)),

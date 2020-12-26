@@ -2,11 +2,33 @@ use crate::instructions::{Arg, Cond, Instruction};
 use crate::memory::{MemoryBus, MemoryRange, MemoryRead, MemoryWrite};
 use crate::registers::{Flag, Flags, Reg16, Reg8, RegisterFile, RegisterOps};
 
+/// Types of logical operations
+///
+/// This allows us to use a single method for all supported
+/// logical operations.
 #[derive(Clone, Copy)]
-enum Op {
+enum LogicalOp {
     And,
     Or,
     Xor,
+}
+
+/// Small trait that abstracts computation of half-carry
+/// between two numbers
+trait HalfCarry<T> {
+    fn half_carry(&self, other: T) -> bool;
+}
+
+impl HalfCarry<u8> for u8 {
+    fn half_carry(&self, other: u8) -> bool {
+        ((self & 0xF) + (other & 0xF)) & 0x10 == 0x10
+    }
+}
+
+impl HalfCarry<u16> for u16 {
+    fn half_carry(&self, other: u16) -> bool {
+        ((self & 0x00FF) + (other & 0x00FF)) & 0x100 == 0x100
+    }
 }
 
 #[derive(Debug)]
@@ -141,6 +163,18 @@ impl Cpu {
                 let a = self.registers.read(Reg8::A);
                 self.memory.write(0xFF00 + offset as u16, a);
             }
+            LdHlSpImm8i { offset } => {
+                let offset = offset as u16;
+                let val = self.registers.read(Reg16::SP);
+                let half_carry = val.half_carry(offset);
+                let (result, carry) = val.overflowing_add(offset);
+                self.registers.write(Reg16::HL, result);
+
+                self.flags.set(Flag::Zero, false);
+                self.flags.set(Flag::Subtract, false);
+                self.flags.set(Flag::HalfCarry, half_carry);
+                self.flags.set(Flag::Carry, carry);
+            }
             Inc { dst } => self.inc(dst),
             Dec { dst } => self.dec(dst),
             Add { src } => self.add(src),
@@ -148,9 +182,9 @@ impl Cpu {
             AddHlReg16 { src } => self.add_hl(src),
             Sub { src } => self.sub(src, true),
             Sbc { src } => self.sbc(src),
-            And { src } => self.logical(src, Op::And),
-            Or { src } => self.logical(src, Op::Or),
-            Xor { src } => self.logical(src, Op::Xor),
+            And { src } => self.logical(src, LogicalOp::And),
+            Or { src } => self.logical(src, LogicalOp::Or),
+            Xor { src } => self.logical(src, LogicalOp::Xor),
             Cp { src } => self.sub(src, false),
             Pop { dst } => {
                 let value = self.pop();
@@ -181,7 +215,14 @@ impl Cpu {
 
                 // TODO: Enable interrupts
             }
-            Jp { addr, cond } => {
+            Jp { addr, cond } | Call { addr, cond } => {
+                // If this is a CALL, push the *next* PC to the stack
+                if let Call { .. } = instruction {
+                    // CALL is always 3 bytes long
+                    let next = self.registers.PC + 3;
+                    self.push(next);
+                }
+
                 let ok = match cond {
                     Cond::None => true,
                     Cond::NotZero if !self.flags.zero() => true,
@@ -260,7 +301,7 @@ impl Cpu {
             _ => panic!("Unexpected src {:?}", src),
         };
 
-        let half_carry = ((val & 0xF) + (a & 0xF)) & 0x10 == 0x10;
+        let half_carry = a.half_carry(val);
         let (result, carry) = a.overflowing_add(val);
 
         self.registers.write(Reg8::A, result);
@@ -340,7 +381,7 @@ impl Cpu {
             _ => panic!("Unexpected src {:?}", src),
         };
 
-        let half_carry = ((val & 0xF) + (a & 0xF)) & 0x10 == 0x10;
+        let half_carry = a.half_carry(val);
         let (result, carry) = a.overflowing_sub(val);
 
         // Write back the result for non-CP
@@ -390,7 +431,7 @@ impl Cpu {
         self.flags.set(Flag::Carry, carry);
     }
 
-    fn logical(&mut self, src: Arg, op: Op) {
+    fn logical(&mut self, src: Arg, op: LogicalOp) {
         let a = self.registers.read(Reg8::A);
 
         let val = match src {
@@ -405,9 +446,9 @@ impl Cpu {
         };
 
         let result = match op {
-            Op::And => a & val,
-            Op::Or => a | val,
-            Op::Xor => a ^ val,
+            LogicalOp::And => a & val,
+            LogicalOp::Or => a | val,
+            LogicalOp::Xor => a ^ val,
         };
 
         self.registers.write(Reg8::A, result);
@@ -416,7 +457,7 @@ impl Cpu {
         self.flags.set(Flag::Subtract, false);
         self.flags.set(Flag::Carry, false);
 
-        if let Op::And = op {
+        if let LogicalOp::And = op {
             self.flags.set(Flag::HalfCarry, true);
         } else {
             self.flags.set(Flag::HalfCarry, false);
@@ -425,20 +466,22 @@ impl Cpu {
 
     /// Increment instruction
     fn inc(&mut self, dst: Arg) {
+        let mut update_flags = true;
         let half_carry: bool;
 
         let result = match dst {
             Arg::Reg8(dst) => {
                 let curr = self.registers.read(dst);
                 let result = curr.wrapping_add(1);
-                half_carry = ((curr & 0x0F) + 1) & 0x10 == 0x10;
+                half_carry = curr.half_carry(1);
                 self.registers.write(dst, result);
                 result as u16
             }
             Arg::Reg16(dst) => {
                 let curr = self.registers.read(dst);
                 let result = curr.wrapping_add(1);
-                half_carry = ((curr & 0x00FF) + 1) & 0x0100 == 0x0100;
+                half_carry = false;
+                update_flags = false;
                 self.registers.write(dst, result);
                 result
             }
@@ -446,16 +489,18 @@ impl Cpu {
                 let addr = self.registers.read(Reg16::HL);
                 let curr = self.memory.read(addr);
                 let result = curr.wrapping_add(1);
-                half_carry = ((curr & 0x0F) + 1) & 0x10 == 0x10;
+                half_carry = curr.half_carry(1);
                 self.memory.write(addr, result);
                 result as u16
             }
             _ => panic!("Unexpected dst: {:?}", dst),
         };
 
-        self.flags.set(Flag::Zero, result == 0);
-        self.flags.set(Flag::Subtract, false);
-        self.flags.set(Flag::HalfCarry, half_carry);
+        if update_flags {
+            self.flags.set(Flag::Zero, result == 0);
+            self.flags.set(Flag::Subtract, false);
+            self.flags.set(Flag::HalfCarry, half_carry);
+        }
     }
 
     /// Decrement instruction
@@ -804,6 +849,18 @@ mod test {
         cpu.registers.write(Reg16::HL, 0x1234);
         cpu.execute(inst);
         assert_eq!(cpu.registers.PC, 0x1234);
+
+        let inst = Instruction::Call { addr: 0x1234, cond: Cond::None };
+        cpu.registers.write(Reg16::PC, 0xFF00);
+        cpu.registers.write(Reg16::SP, 0x1000);
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.PC, 0x1234);
+        assert_eq!(cpu.registers.SP, 0x0FFE);
+
+        let inst = Instruction::Ret { cond: Cond::None };
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.PC, 0xFF03); // Next PC pushed during CALL
+        assert_eq!(cpu.registers.SP, 0x1000);
     }
 
     #[test]
