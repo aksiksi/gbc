@@ -1,5 +1,6 @@
 use crate::cartridge::{Cartridge, Ram as CartridgeRam, RamSize, Rom, RomSize};
 use crate::error::Result;
+use crate::joypad::Joypad;
 
 /// Generic traits that provide access to some memory.
 ///
@@ -267,10 +268,10 @@ impl std::fmt::Debug for Vram {
 }
 
 /// Memory-mapped I/O registers and buffers
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Io {
-    /// Range: 0xFF00 - 0xFF02
-    port0: [u8; 3],
+    /// Joypad register: 0xFF00
+    joypad: Joypad,
 
     /// Range: 0xFF04 - 0xFF07
     port1: [u8; 3],
@@ -307,7 +308,18 @@ impl Io {
     pub const WRAM_BANK_SELECT_ADDR: u16 = 0xFF70;
 
     pub fn new() -> Self {
-        Default::default()
+        Self {
+            joypad: Joypad::new(),
+            port1: [0; 3],
+            sound: [0; 23],
+            waveform_ram: [0; 16],
+            lcd: [0; 12],
+            vram_bank: 0,
+            disable_boot_rom: 0,
+            hdma: [0; 4],
+            bcp: [0; 2],
+            wram_bank: 0,
+        }
     }
 
     /// Returns currently selected VRAM bank
@@ -319,6 +331,11 @@ impl Io {
     pub fn wram_bank(&self) -> u8 {
         self.wram_bank
     }
+
+    /// Return a reference to the joypad
+    pub fn joypad(&mut self) -> &mut Joypad {
+        &mut self.joypad
+    }
 }
 
 impl MemoryRead<u16, u8> for Io {
@@ -327,7 +344,7 @@ impl MemoryRead<u16, u8> for Io {
         let idx = (addr - Self::BASE_ADDR) as usize;
 
         match addr {
-            0xFF00..=0xFF02 => self.port0[idx],
+            0xFF00 => self.joypad.read(),
             0xFF04..=0xFF07 => self.port1[idx],
             0xFF10..=0xFF26 => self.sound[idx],
             0xFF30..=0xFF3F => self.waveform_ram[idx],
@@ -348,9 +365,7 @@ impl MemoryWrite<u16, u8> for Io {
         let idx = (addr - Self::BASE_ADDR) as usize;
 
         match addr {
-            0xFF00..=0xFF02 => {
-                self.port0[idx] = value;
-            }
+            0xFF00 => self.joypad.write(value),
             0xFF04..=0xFF07 => {
                 self.port1[idx] = value;
             }
@@ -437,6 +452,11 @@ impl MemoryBus {
 
     pub fn rom(&self) -> &Rom {
         &self.rom
+    }
+
+    /// Return a reference to the joypad
+    pub fn joypad(&mut self) -> &mut Joypad {
+        self.io.joypad()
     }
 }
 

@@ -3,8 +3,8 @@
 use gbc::{Gameboy, Result};
 
 fn main() -> Result<()> {
-    let mut gameboy = Gameboy::new("samples/pokemon_gold.gbc")?;
-    let cpu = &mut gameboy.cpu;
+    let mut gameboy = Gameboy::init("samples/pokemon_gold.gbc")?;
+    let cpu = gameboy.cpu();
 
     cpu.step();
     cpu.step();
