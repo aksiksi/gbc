@@ -318,56 +318,6 @@ pub enum Instruction {
     /// n must be one of: [0x00, 0x08, 0x10, 0x18, 0x20, 0x28, 0x30, 0x38]
     Rst { offset: u8 },
 
-    /// Rotate [A](Reg8::A) left. Place old bit 7 in carry flag.
-    ///
-    /// ### Flags
-    ///
-    /// * Zero: set if result 0
-    /// * Subtract: reset
-    /// * HalfCarry: reset
-    /// * Carry: contains old bit 7
-    Rlca,
-
-    /// Rotate [A](Reg8::A) left through carry flag.
-    ///
-    /// e.g., new bit 0 of A = carry flag
-    ///       new carry flag = bit 7 of A
-    ///       new bit 7 of A = bit 6 of A
-    ///       ..etc
-    ///
-    /// ### Flags
-    ///
-    /// * Zero: set if result 0
-    /// * Subtract: reset
-    /// * HalfCarry: reset
-    /// * Carry: contains old bit 7
-    Rla,
-
-    /// Rotate [A](Reg8::A) right. Place old bit 0 in carry flag.
-    ///
-    /// ### Flags
-    ///
-    /// * Zero: set if result 0
-    /// * Subtract: reset
-    /// * HalfCarry: reset
-    /// * Carry: contains old bit 0
-    Rrca,
-
-    /// Rotate [A](Reg8::A) right through carry flag.
-    ///
-    /// e.g., new bit 7 of A = carry flag
-    ///       new carry flag = bit 0 of A
-    ///       new bit 6 of A = bit 7 of A
-    ///       ..etc
-    ///
-    /// ### Flags
-    ///
-    /// * Zero: set if result 0
-    /// * Subtract: reset
-    /// * HalfCarry: reset
-    /// * Carry: contains old bit 0
-    Rra,
-
     /// Rotate [Reg8](Arg::Reg8) or ([HL](Reg16::HL)) left. Place old bit 7 in carry flag.
     ///
     /// ### Flags
@@ -379,6 +329,11 @@ pub enum Instruction {
     Rlc { dst: Arg },
 
     /// Rotate [Reg8](Arg::Reg8) or ([HL](Reg16::HL)) left through carry flag.
+    ///
+    /// e.g., new bit 0 of A = carry flag
+    ///       new carry flag = bit 7 of A
+    ///       new bit 7 of A = bit 6 of A
+    ///       ..etc
     ///
     /// ### Flags
     ///
@@ -400,6 +355,10 @@ pub enum Instruction {
 
     /// Rotate [Reg8](Arg::Reg8) or ([HL](Reg16::HL)) right through carry flag.
     ///
+    /// e.g., new bit 7 of A = carry flag
+    ///       new carry flag = bit 0 of A
+    ///       new bit 6 of A = bit 7 of A
+    ///
     /// ### Flags
     ///
     /// * Zero: set if result 0
@@ -419,6 +378,7 @@ pub enum Instruction {
     Sla { dst: Arg },
 
     /// Shift [Reg8](Arg::Reg8) or ([HL](Reg16::HL)) right into carry.
+    ///
     /// Note: MSB does not change.
     ///
     /// ### Flags
@@ -430,6 +390,7 @@ pub enum Instruction {
     Sra { dst: Arg },
 
     /// Shift [Reg8](Arg::Reg8) or ([HL](Reg16::HL)) right into carry.
+    ///
     /// Note: MSB is set to 0.
     ///
     /// ### Flags
@@ -645,10 +606,10 @@ impl Instruction {
             0x3F => (Ccf, 1, 4.into()),
 
             // Rotate
-            0x07 => (Rlca, 1, 4.into()),
-            0x17 => (Rla, 1, 4.into()),
-            0x0F => (Rrca, 1, 4.into()),
-            0x1F => (Rra, 1, 4.into()),
+            0x07 => (Rlc { dst: Reg8::A.into() }, 1, 4.into()),
+            0x17 => (Rl { dst: Reg8::A.into() }, 1, 4.into()),
+            0x0F => (Rrc { dst: Reg8::A.into() }, 1, 4.into()),
+            0x1F => (Rr { dst: Reg8::A.into() }, 1, 4.into()),
 
             // Inc
             0x03 => (Inc { dst: Arg::Reg16(Reg16::BC) }, 1, 8.into()),

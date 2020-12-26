@@ -261,8 +261,131 @@ impl Cpu {
                     self.registers.PC = self.registers.PC.wrapping_add(offset);
                 }
             }
+
+            // Rotate variants
+            Rlc { dst } => self.rotate(dst, true, false),
+            Rl { dst } => self.rotate(dst, true, true),
+            Rrc { dst } => self.rotate(dst, false, false),
+            Rr { dst } => self.rotate(dst, false, true),
+
+            // Shift variants
+            Sla { dst } => self.shift(dst, true, false),
+            Sra { dst } => self.shift(dst, false, true),
+            Srl { dst } => self.shift(dst, false, false),
+
             other => panic!("Cannot execute instruction: {:?}", other),
         }
+    }
+
+    /// Handle rotate instructions
+    fn rotate(&mut self, dst: Arg, left: bool, through: bool) {
+        let curr = match dst {
+            Arg::Reg8(dst) => {
+                self.registers.read(dst)
+            }
+            Arg::MemHl => {
+                let addr = self.registers.read(Reg16::HL);
+                self.memory.read(addr)
+            }
+            _ => unreachable!(),
+        };
+
+        let prev_carry = self.flags.carry();
+        let carry;
+        let mut value;
+
+        if left {
+            carry = curr & (1 << 7) != 0;
+            value = curr.rotate_left(1);
+
+            if through {
+                // Set bit 0 to old carry
+                if prev_carry {
+                    value |= 1 << 0;
+                } else {
+                    value &= !(1 << 0);
+                }
+            }
+        } else {
+            carry = curr & (1 << 0) != 0;
+            value = curr.rotate_right(1);
+
+            if through {
+                if prev_carry {
+                    value |= 1 << 7;
+                } else {
+                    value &= !(1 << 7);
+                }
+            }
+        }
+
+        // Write back the result
+        match dst {
+            Arg::Reg8(dst) => {
+                self.registers.write(dst, value)
+            }
+            Arg::MemHl => {
+                let addr = self.registers.read(Reg16::HL);
+                self.memory.write(addr, value);
+            }
+            _ => unreachable!(),
+        }
+
+        // Flags
+        self.flags.set(Flag::Zero, value == 0);
+        self.flags.set(Flag::Subtract, false);
+        self.flags.set(Flag::HalfCarry, false);
+        self.flags.set(Flag::Carry, carry);
+    }
+
+    /// Handle shift instructions
+    fn shift(&mut self, dst: Arg, left: bool, arithmetic: bool) {
+        let curr = match dst {
+            Arg::Reg8(dst) => {
+                self.registers.read(dst)
+            }
+            Arg::MemHl => {
+                let addr = self.registers.read(Reg16::HL);
+                self.memory.read(addr)
+            }
+            _ => unreachable!(),
+        };
+
+        let carry;
+        let value;
+
+        if left {
+            carry = curr & (1 << 7) != 0;
+            value = curr.wrapping_shl(1);
+        } else {
+            carry = curr & (1 << 0) != 0;
+
+            if arithmetic {
+                // In case of arithmetic right shift, cast to i8 before shifting,
+                // then cast back. This takes care of the MSB.
+                value = (curr as i8).wrapping_shr(1) as u8;
+            } else {
+                value = curr.wrapping_shr(1);
+            }
+        }
+
+        // Write back the result
+        match dst {
+            Arg::Reg8(dst) => {
+                self.registers.write(dst, value)
+            }
+            Arg::MemHl => {
+                let addr = self.registers.read(Reg16::HL);
+                self.memory.write(addr, value);
+            }
+            _ => unreachable!(),
+        }
+
+        // Flags
+        self.flags.set(Flag::Zero, value == 0);
+        self.flags.set(Flag::Subtract, false);
+        self.flags.set(Flag::HalfCarry, false);
+        self.flags.set(Flag::Carry, carry);
     }
 
     /// Helper that pops 2 bytes off the stack
@@ -891,5 +1014,85 @@ mod test {
         cpu.push(0x1234);
         cpu.execute(inst);
         assert_eq!(cpu.registers.PC, 0x1234);
+    }
+
+    #[test]
+    fn rotate_shift_swap() {
+        let mut cpu = get_cpu();
+
+        let inst = Instruction::Rlc { dst: Reg8::B.into() };
+        cpu.registers.write(Reg8::B, 0x85);
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::B), 0x0B);
+        assert!(!cpu.flags.zero());
+        assert!(!cpu.flags.subtract());
+        assert!(!cpu.flags.half_carry());
+        assert!(cpu.flags.carry());
+
+        let inst = Instruction::Rl { dst: Reg8::L.into() };
+        cpu.flags.clear(Flag::Carry);
+        cpu.registers.write(Reg8::L, 0x80);
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::L), 0);
+        assert!(cpu.flags.zero());
+        assert!(!cpu.flags.subtract());
+        assert!(!cpu.flags.half_carry());
+        assert!(cpu.flags.carry());
+
+        let inst = Instruction::Rrc { dst: Reg8::C.into() };
+        cpu.flags.clear(Flag::Carry);
+        cpu.registers.write(Reg8::C, 0x1);
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::C), 0x80);
+        assert!(!cpu.flags.zero());
+        assert!(!cpu.flags.subtract());
+        assert!(!cpu.flags.half_carry());
+        assert!(cpu.flags.carry());
+
+        let inst = Instruction::Rr { dst: Reg8::A.into() };
+        cpu.flags.clear(Flag::Carry);
+        cpu.registers.write(Reg8::A, 0x1);
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::A), 0);
+        assert!(cpu.flags.zero());
+        assert!(!cpu.flags.subtract());
+        assert!(!cpu.flags.half_carry());
+        assert!(cpu.flags.carry());
+
+        let inst = Instruction::Sla { dst: Reg8::D.into() };
+        cpu.registers.write(Reg8::D, 0x80);
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::D), 0);
+        assert!(cpu.flags.zero());
+        assert!(!cpu.flags.subtract());
+        assert!(!cpu.flags.half_carry());
+        assert!(cpu.flags.carry());
+
+        let inst = Instruction::Sra { dst: Reg8::A.into() };
+        cpu.registers.write(Reg8::A, 0x8A);
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::A), 0xC5);
+        assert!(!cpu.flags.zero());
+        assert!(!cpu.flags.subtract());
+        assert!(!cpu.flags.half_carry());
+        assert!(!cpu.flags.carry());
+
+        cpu.registers.write(Reg8::A, 0x1);
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::A), 0);
+        assert!(cpu.flags.zero());
+        assert!(!cpu.flags.subtract());
+        assert!(!cpu.flags.half_carry());
+        assert!(cpu.flags.carry());
+
+        let inst = Instruction::Srl { dst: Reg8::A.into() };
+        cpu.flags.clear(Flag::Carry);
+        cpu.registers.write(Reg8::A, 0xFF);
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::A), 0x7F);
+        assert!(!cpu.flags.zero());
+        assert!(!cpu.flags.subtract());
+        assert!(!cpu.flags.half_carry());
+        assert!(cpu.flags.carry());
     }
 }
