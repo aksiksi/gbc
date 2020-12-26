@@ -160,18 +160,21 @@ pub struct RegisterFile {
 impl RegisterFile {
     /// Returns a new register file
     ///
-    /// * PC is initialized to 0x100 on boot
+    /// * Registers are initialized to some values on boot
     /// * SP is initialized to 0xFFFE on boot
+    /// * PC is initialized to 0x100 on boot (once internal ROM completes)
+    ///
+    /// TODO: do we want to mimic the internal ROM?
     pub fn new() -> Self {
         Self {
-            A: 0,
-            F: 0,
-            B: 0,
-            C: 0,
-            D: 0,
-            E: 0,
-            H: 0,
-            L: 0,
+            A: 0xB0,
+            F: 0x01,
+            B: 0x13,
+            C: 0x00,
+            D: 0xD8,
+            E: 0x00,
+            H: 0x4D,
+            L: 0x01,
             PC: 0x0100,
             SP: 0xFFFE,
         }

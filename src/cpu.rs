@@ -154,6 +154,31 @@ impl Cpu {
             Or { src } => self.logical(src, Op::Or),
             Xor { src } => self.logical(src, Op::Xor),
             Cp { src } => self.sub(src, false),
+            Pop { dst } => {
+                // Increment SP
+                self.registers.SP += 2;
+
+                let lower = self.memory.read(self.registers.SP);
+                let upper = self.memory.read(self.registers.SP - 1);
+                let value = (upper as u16) << 8 | lower as u16;
+
+                self.registers.write(dst, value);
+            }
+            Push { src } => {
+                let sp = self.registers.SP;
+                let value = self.registers.read(src);
+                let lower = value as u8;
+                let upper = (value >> 8) as u8;
+
+                // Write upper and lower bytes seperately to the stack.
+                // We cannot use the `MemoryWrite` trait because it assumes
+                // that memory addresses increase instead of decrease.
+                self.memory.write(sp, lower);
+                self.memory.write(sp-1, upper);
+
+                // Decrement SP
+                self.registers.SP -= 2;
+            }
             Jp { addr, cond } => {
                 let ok = match cond {
                     Cond::None => true,
@@ -468,6 +493,8 @@ mod test {
     fn add() {
         let mut cpu = get_cpu();
 
+        cpu.registers.write(Reg8::A, 0);
+
         // Normal add
         let inst = Instruction::Add { src: 0x10u8.into() };
         cpu.execute(inst);
@@ -499,6 +526,7 @@ mod test {
         let mut cpu = get_cpu();
 
         cpu.registers.write(Reg8::A, 0);
+        cpu.registers.write(Reg16::HL, 0);
         cpu.registers.write(Reg16::DE, 0x1234);
 
         let inst = Instruction::AddHlReg16 { src: Reg16::DE };
@@ -524,6 +552,8 @@ mod test {
     #[test]
     fn adc() {
         let mut cpu = get_cpu();
+
+        cpu.registers.write(Reg8::A, 0);
 
         // Normal add
         let inst = Instruction::Adc { src: 0x10u8.into() };
@@ -694,5 +724,22 @@ mod test {
         assert!(cpu.flags.subtract());
         assert!(!cpu.flags.half_carry());
         assert!(cpu.flags.carry());
+    }
+
+    #[test]
+    fn push_and_pop() {
+        let mut cpu = get_cpu();
+
+        cpu.registers.write(Reg16::SP, 0xFFFE);
+        cpu.registers.write(Reg16::HL, 0x1234);
+
+        let inst = Instruction::Push { src: Reg16::HL.into() };
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.SP, 0xFFFC);
+
+        let inst = Instruction::Pop { dst: Reg16::AF.into() };
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.SP, 0xFFFE);
+        assert_eq!(cpu.registers.read(Reg16::AF), 0x1234);
     }
 }
