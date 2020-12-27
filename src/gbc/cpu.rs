@@ -273,6 +273,26 @@ impl Cpu {
             Sra { dst } => self.shift(dst, false, true),
             Srl { dst } => self.shift(dst, false, false),
 
+            // Bit manipulation instructions
+            Bit { dst, bit } => {
+                let value = match dst {
+                    Arg::Reg8(dst) => self.registers.read(dst),
+                    Arg::MemHl => {
+                        let addr = self.registers.read(Reg16::HL);
+                        self.memory.read(addr)
+                    }
+                    _ => unreachable!("Unexpected dst: {:?}", dst),
+                };
+
+                let result = value & (1 << bit);
+
+                self.flags.set(Flag::Zero, result == 0);
+                self.flags.set(Flag::Subtract, false);
+                self.flags.set(Flag::HalfCarry, true);
+            }
+            Set { dst, bit } => self.set(dst, bit, false),
+            Res { dst, bit } => self.set(dst, bit, true),
+
             other => panic!("Cannot execute instruction: {:?}", other),
         }
     }
@@ -674,6 +694,35 @@ impl Cpu {
             self.flags.set(Flag::Subtract, true);
             self.flags.set(Flag::HalfCarry, half_carry);
             self.flags.set(Flag::Carry, carry);
+        }
+    }
+
+    /// Set and Res instructions
+    fn set(&mut self, dst: Arg, bit: u8, reset: bool) {
+        let value = match dst {
+            Arg::Reg8(dst) => self.registers.read(dst),
+            Arg::MemHl => {
+                let addr = self.registers.read(Reg16::HL);
+                self.memory.read(addr)
+            }
+            _ => unreachable!("Unexpected dst: {:?}", dst),
+        };
+
+        let result;
+
+        if !reset {
+            result = value | (1 << bit);
+        } else {
+            result = value & !(1 << bit);
+        }
+
+        match dst {
+            Arg::Reg8(dst) => self.registers.write(dst, result),
+            Arg::MemHl => {
+                let addr = self.registers.read(Reg16::HL);
+                self.memory.write(addr, result);
+            }
+            _ => unreachable!("Unexpected dst: {:?}", dst),
         }
     }
 
@@ -1094,5 +1143,27 @@ mod test {
         assert!(!cpu.flags.subtract());
         assert!(!cpu.flags.half_carry());
         assert!(cpu.flags.carry());
+    }
+
+    #[test]
+    fn bit() {
+        let mut cpu = get_cpu();
+
+        let inst = Instruction::Bit { dst: Reg8::B.into(), bit: 2 };
+        cpu.registers.write(Reg8::B, 0x4);
+        cpu.execute(inst);
+        assert!(!cpu.flags.zero());
+        assert!(!cpu.flags.subtract());
+        assert!(cpu.flags.half_carry());
+
+        let inst = Instruction::Set { dst: Reg8::B.into(), bit: 3 };
+        cpu.registers.write(Reg8::B, 0x7);
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::B), 0xF);
+
+        let inst = Instruction::Res { dst: Reg8::B.into(), bit: 3 };
+        cpu.registers.write(Reg8::B, 0xF);
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::B), 0x7);
     }
 }
