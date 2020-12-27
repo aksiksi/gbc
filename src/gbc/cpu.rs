@@ -46,6 +46,18 @@ impl Cpu {
         }
     }
 
+    /// Current cycle time, in ns
+    ///
+    /// This value is fetched based on the current value in
+    /// the speed I/O register.
+    pub fn cycle_time(&self) -> u64 {
+        if self.memory.io().speed() {
+            500
+        } else {
+            1000
+        }
+    }
+
     /// Executes the next instruction and returns the number of cycles it
     /// took to complete.
     pub fn step(&mut self) -> u8 {
@@ -83,7 +95,7 @@ impl Cpu {
         use Instruction::*;
 
         match instruction {
-            Nop => todo!(),
+            Nop => (),
             Halt => todo!(),
             Stop => todo!(),
             Di => {

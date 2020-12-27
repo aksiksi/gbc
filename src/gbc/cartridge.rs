@@ -740,6 +740,8 @@ impl Cartridge {
     }
 }
 
+// TODO: Clean this up perhaps?
+// RTC functions are missing, and it does not handle ROM bank_0 switching
 impl MemoryWrite<u16, u8> for Cartridge {
     /// Handle ROM and RAM bank changes as well as regular writes to cartridge RAM
     #[inline]

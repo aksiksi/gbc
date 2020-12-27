@@ -285,6 +285,9 @@ pub struct Io {
     /// Range: 0xFF40 - 0xFF4B
     lcd: [u8; 12],
 
+    // KEY1: 0xFF4D
+    prep_speed_switch: u8,
+
     /// Range: 0xFF4F
     vram_bank: u8,
 
@@ -314,6 +317,7 @@ impl Io {
             sound: [0; 23],
             waveform_ram: [0; 16],
             lcd: [0; 12],
+            prep_speed_switch: 0,
             vram_bank: 0,
             disable_boot_rom: 0,
             hdma: [0; 4],
@@ -330,6 +334,17 @@ impl Io {
     /// Returns currently selected WRAM bank
     pub fn wram_bank(&self) -> u8 {
         self.wram_bank
+    }
+
+    /// Returns current CGB speed
+    ///
+    /// `false`: regular, `true`: double
+    pub fn speed(&self) -> bool {
+        if self.prep_speed_switch & (1 << 7) != 0 {
+            true
+        } else {
+            false
+        }
     }
 
     /// Return a reference to the joypad
@@ -349,6 +364,7 @@ impl MemoryRead<u16, u8> for Io {
             0xFF10..=0xFF26 => self.sound[idx],
             0xFF30..=0xFF3F => self.waveform_ram[idx],
             0xFF40..=0xFF4B => self.lcd[idx],
+            0xFF4D => self.prep_speed_switch,
             Self::VRAM_BANK_SELECT_ADDR => self.vram_bank,
             0xFF50 => self.disable_boot_rom,
             0xFF51..=0xFF55 => self.hdma[idx],
@@ -378,6 +394,15 @@ impl MemoryWrite<u16, u8> for Io {
             0xFF40..=0xFF4B => {
                 self.lcd[idx] = value;
             }
+            0xFF4D => {
+                // Switch speed immediately
+                // TODO: See if this needs to happen after a STOP?
+                if value & 0x1 != 0 {
+                    self.prep_speed_switch = 1 << 7;
+                } else {
+                    self.prep_speed_switch = 0;
+                }
+            }
             Self::VRAM_BANK_SELECT_ADDR => {
                 self.vram_bank = value;
             }
@@ -401,22 +426,22 @@ impl MemoryWrite<u16, u8> for Io {
 /// 64K memory map for the GBC
 #[derive(Debug)]
 pub struct MemoryBus {
-    /// ROM:      0x0000 - 0x7FFF
-    /// Cart RAM: 0xA000 - 0xBFFF
+    /// ROM:       0x0000 - 0x7FFF
+    /// Cart RAM:  0xA000 - 0xBFFF
     cartridge: Cartridge,
 
-    /// 0x8000 - 0x9FFF
+    /// Video RAM: 0x8000 - 0x9FFF
     vram: Vram,
 
-    /// 0xC000 - 0xDFFF
+    /// Work RAM:  0xC000 - 0xDFFF
     ram: Ram,
 
     // ..ignored
 
-    // 0xFF00 - 0xFF7F
+    // I/O:        0xFF00 - 0xFF7F
     io: Io,
 
-    /// 0xFF80 - 0xFFFE
+    /// High RAM:  0xFF80 - 0xFFFE
     high_ram: [u8; 0x80],
 
     /// 0xFFFF
@@ -453,6 +478,11 @@ impl MemoryBus {
     /// Return a reference to the joypad
     pub fn joypad(&mut self) -> &mut Joypad {
         self.io.joypad()
+    }
+
+    /// Return a reference to the I/O memory space
+    pub fn io(&self) -> &Io {
+        &self.io
     }
 }
 
