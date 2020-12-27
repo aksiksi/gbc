@@ -4,7 +4,7 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 use crate::error::{Error, Result};
-use crate::memory::{MemoryRange, MemoryRead, MemoryWrite};
+use crate::memory::{MemoryRead, MemoryWrite};
 
 // Cartridge RAM size
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -129,12 +129,37 @@ impl MemoryRead<u16, u8> for Ram {
     }
 }
 
-impl MemoryRange<u16, u8> for Ram {
+impl std::ops::Index<std::ops::Range<u16>> for Ram {
+    type Output = [u8];
+
     /// Return a slice of memory corresponding to the given range.
     ///
     /// Note: This internally handles both banked and unbanked cartridge RAM.
     #[inline]
-    fn range(&self, range: std::ops::RangeFrom<u16>) -> &[u8] {
+    fn index(&self, range: std::ops::Range<u16>) -> &Self::Output {
+        let start = (range.start - Self::BASE_ADDR) as usize;
+        let end = (range.end - Self::BASE_ADDR) as usize;
+
+        match self {
+            Self::Unbanked { data, .. } => &data[start..end],
+            Self::Banked {
+                data, active_bank, ..
+            } => {
+                let bank_offset = *active_bank as usize * Self::BANK_SIZE;
+                &data[bank_offset + start..bank_offset + end]
+            }
+        }
+    }
+}
+
+impl std::ops::Index<std::ops::RangeFrom<u16>> for Ram {
+    type Output = [u8];
+
+    /// Return a slice of memory corresponding to the given range.
+    ///
+    /// Note: This internally handles both banked and unbanked cartridge RAM.
+    #[inline]
+    fn index(&self, range: std::ops::RangeFrom<u16>) -> &Self::Output {
         let start = (range.start - Self::BASE_ADDR) as usize;
 
         match self {
@@ -388,13 +413,38 @@ impl MemoryRead<u16, u16> for Rom {
     }
 }
 
-impl MemoryRange<u16, u8> for Rom {
+impl std::ops::Index<std::ops::Range<u16>> for Rom {
+    type Output = [u8];
+
     /// Returns a slice of bytes from the ROM bank corresponding to
     /// the given `start` address.
     ///
     /// Note that this does not handle cross-bank slices.
     #[inline]
-    fn range(&self, range: std::ops::RangeFrom<u16>) -> &[u8] {
+    fn index(&self, range: std::ops::Range<u16>) -> &Self::Output {
+        let start = range.start;
+        let end = range.end as usize;
+
+        match start {
+            0x0000..=0x3FFF => {
+                // Bank 0 (static)
+                &self.bank0[start as usize..end]
+            }
+            0x4000..=0x7FFF => {
+                // Bank 1 (dynamic)
+                let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
+                &self.bank1[bank_offset + start as usize..bank_offset + end]
+            }
+            _ => unreachable!("Range start is larger than allowed: {}", start),
+        }
+    }
+}
+
+impl std::ops::Index<std::ops::RangeFrom<u16>> for Rom {
+    type Output = [u8];
+
+    #[inline]
+    fn index(&self, range: std::ops::RangeFrom<u16>) -> &Self::Output {
         let start = range.start;
 
         match start {

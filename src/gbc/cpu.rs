@@ -1,5 +1,5 @@
 use crate::instructions::{Arg, Cond, Instruction};
-use crate::memory::{MemoryBus, MemoryRange, MemoryRead, MemoryWrite};
+use crate::memory::{MemoryBus, MemoryRead, MemoryWrite};
 use crate::registers::{Flag, Reg16, Reg8, RegisterFile, RegisterOps};
 
 /// Types of logical operations
@@ -35,6 +35,7 @@ impl HalfCarry<u16> for u16 {
 pub struct Cpu {
     pub registers: RegisterFile,
     pub memory: MemoryBus,
+    pub interrupts_enabled: bool,
 }
 
 impl Cpu {
@@ -43,6 +44,7 @@ impl Cpu {
         Self {
             registers,
             memory,
+            interrupts_enabled: false,
         }
     }
 
@@ -69,7 +71,7 @@ impl Cpu {
         // Note that the slice is unbounded: it ends at the end of the relevant memory/bank.
         // For example, if the current PC is in ROM bank 0, `data` will contain a slice
         // from PC to the end of ROM bank 0.
-        let data = self.memory.range(pc..);
+        let data = &self.memory[pc..];
 
         // Decode the instruction
         let (inst, size, cycles) = Instruction::decode(data);
@@ -99,12 +101,10 @@ impl Cpu {
             Halt => todo!(),
             Stop => todo!(),
             Di => {
-                // TODO: Disable interrupts
-                todo!()
+                self.interrupts_enabled = false;
             }
             Ei => {
-                // TODO: Enable interrupts
-                todo!()
+                self.interrupts_enabled = true;
             }
 
             // Load

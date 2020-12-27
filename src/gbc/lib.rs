@@ -39,7 +39,7 @@ impl Gameboy {
 
             // Figure out the number of cycles we can execute in a single frame
             // let num_cycles = Self::FRAME_DURATION / self.cpu.cycle_time();
-            let num_cycles = 6;
+            let num_cycles = 60;
 
             // Execute next instruction
             let mut cycle = 0;

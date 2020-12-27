@@ -10,13 +10,6 @@ pub trait MemoryRead<A, V> {
     fn read(&self, addr: A) -> V;
 }
 
-pub trait MemoryRange<A, V> {
-    /// Returns a read-only slice of an address range.
-    ///
-    /// Primarily used for instruction decoding.
-    fn range(&self, range: std::ops::RangeFrom<A>) -> &[V];
-}
-
 pub trait MemoryWrite<A, V> {
     /// Write a single value to an address.
     fn write(&mut self, addr: A, value: V);
@@ -508,14 +501,38 @@ impl MemoryRead<u16, u8> for MemoryBus {
     }
 }
 
-impl MemoryRange<u16, u8> for MemoryBus {
+impl std::ops::Index<std::ops::Range<u16>> for MemoryBus {
+    type Output = [u8];
+
     /// Return a range of bytes from the relevant memory.
-    fn range(&self, range: std::ops::RangeFrom<u16>) -> &[u8] {
+    fn index(&self, range: std::ops::Range<u16>) -> &Self::Output {
         match range.start {
-            Rom::BASE_ADDR..=Rom::LAST_ADDR => self.cartridge.rom.range(range),
+            Rom::BASE_ADDR..=Rom::LAST_ADDR => &self.cartridge.rom[range],
             // 0x8000..=0x9FFF => self.vram.read(addr),
             CartridgeRam::BASE_ADDR..=CartridgeRam::LAST_ADDR => {
-                self.cartridge.ram.as_ref().unwrap().range(range)
+                &self.cartridge.ram.as_ref().unwrap()[range]
+            }
+            // 0xC000..=0xDFFF => self.ram.read(addr),
+            0xFF80..=0xFFFE => {
+                let start = range.start as usize - 0xFF80;
+                let end = range.end as usize - 0xFF80;
+                &self.high_ram[start..end]
+            }
+            _ => panic!("Unable to handle range: {:?}", range),
+        }
+    }
+}
+
+impl std::ops::Index<std::ops::RangeFrom<u16>> for MemoryBus {
+    type Output = [u8];
+
+    /// Return a range of bytes from the relevant memory.
+    fn index(&self, range: std::ops::RangeFrom<u16>) -> &Self::Output {
+        match range.start {
+            Rom::BASE_ADDR..=Rom::LAST_ADDR => &self.cartridge.rom[range],
+            // 0x8000..=0x9FFF => self.vram.read(addr),
+            CartridgeRam::BASE_ADDR..=CartridgeRam::LAST_ADDR => {
+                &self.cartridge.ram.as_ref().unwrap()[range]
             }
             // 0xC000..=0xDFFF => self.ram.read(addr),
             0xFF80..=0xFFFE => {
