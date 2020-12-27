@@ -1,17 +1,16 @@
 use std::path::Path;
 
-mod cartridge;
-mod cpu;
-mod error;
-mod instructions;
-mod joypad;
-mod memory;
-mod registers;
+pub mod cartridge;
+pub mod cpu;
+pub mod error;
+pub mod instructions;
+pub mod joypad;
+pub mod memory;
+pub mod registers;
 
 pub use cpu::Cpu;
 use cartridge::Cartridge;
 pub use error::{Error, Result};
-use memory::MemoryBus;
 
 /// Gameboy
 pub struct Gameboy {
@@ -20,8 +19,8 @@ pub struct Gameboy {
 
 impl Gameboy {
     pub fn init<P: AsRef<Path>>(rom_path: P) -> Result<Self> {
-        let mut cartridge = Cartridge::from_file(rom_path).unwrap();
-        let memory = MemoryBus::from_cartridge(&mut cartridge)?;
+        let cartridge = Cartridge::from_file(rom_path).unwrap();
+        let memory = memory::MemoryBus::from_cartridge(cartridge)?;
         let cpu = Cpu::new(memory);
 
         Ok(Self {

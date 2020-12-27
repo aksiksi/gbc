@@ -125,7 +125,7 @@ impl Cpu {
                     let value = self.memory.read(src);
                     self.registers.write(dst, value);
                 }
-                _ => panic!("Unexpected dst and src: {:?}, {:?}", dst, src),
+                _ => unreachable!("Unexpected dst and src: {:?}, {:?}", dst, src),
             },
             LdMemCA => {
                 let addr = 0xFF00 + self.registers.read(Reg8::C) as u16;
@@ -738,7 +738,7 @@ impl Cpu {
 
                 (result as u16, borrow)
             }
-            _ => panic!("Unexpected dst: {:?}", dst),
+            _ => unreachable!("Unexpected dst: {:?}", dst),
         };
 
         if update_flags {
@@ -790,10 +790,9 @@ impl Cpu {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::cartridge::{RamSize, RomSize};
 
     fn get_cpu() -> Cpu {
-        let memory = MemoryBus::new(RomSize::_1M, RamSize::_32K);
+        let memory = MemoryBus::new();
         Cpu::new(memory)
     }
 
@@ -1082,23 +1081,23 @@ mod test {
         // CALL, then RET
         let inst = Instruction::Call { addr: 0x1234, cond: Cond::None };
         cpu.registers.write(Reg16::PC, 0xFF00);
-        cpu.registers.write(Reg16::SP, 0x1000);
+        cpu.registers.write(Reg16::SP, 0xFFFE);
         cpu.execute(inst);
         assert_eq!(cpu.registers.PC, 0x1234);
-        assert_eq!(cpu.registers.SP, 0x0FFE);
+        assert_eq!(cpu.registers.SP, 0xFFFC);
 
         let inst = Instruction::Ret { cond: Cond::None };
         cpu.execute(inst);
         assert_eq!(cpu.registers.PC, 0xFF03); // Next PC pushed during CALL
-        assert_eq!(cpu.registers.SP, 0x1000);
+        assert_eq!(cpu.registers.SP, 0xFFFE);
 
         // RST
         let inst = Instruction::Rst { offset: 0x10 };
         cpu.registers.write(Reg16::PC, 0xFF00);
-        cpu.registers.write(Reg16::SP, 0x1000);
+        cpu.registers.write(Reg16::SP, 0xFFFE);
         cpu.execute(inst);
         assert_eq!(cpu.registers.PC, 0x0010);
-        assert_eq!(cpu.registers.SP, 0x0FFE);
+        assert_eq!(cpu.registers.SP, 0xFFFC);
         assert_eq!(cpu.pop(), 0xFF00);
     }
 
