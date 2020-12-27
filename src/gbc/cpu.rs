@@ -1,6 +1,6 @@
 use crate::instructions::{Arg, Cond, Instruction};
 use crate::memory::{MemoryBus, MemoryRange, MemoryRead, MemoryWrite};
-use crate::registers::{Flag, Flags, Reg16, Reg8, RegisterFile, RegisterOps};
+use crate::registers::{Flag, Reg16, Reg8, RegisterFile, RegisterOps};
 
 /// Types of logical operations
 ///
@@ -34,17 +34,14 @@ impl HalfCarry<u16> for u16 {
 #[derive(Debug)]
 pub struct Cpu {
     pub registers: RegisterFile,
-    pub flags: Flags,
     pub memory: MemoryBus,
 }
 
 impl Cpu {
     pub fn new(memory: MemoryBus) -> Self {
         let registers = RegisterFile::new();
-        let flags = Flags::new();
         Self {
             registers,
-            flags,
             memory,
         }
     }
@@ -86,13 +83,16 @@ impl Cpu {
         use Instruction::*;
 
         match instruction {
-            Nop => (),
-            Halt => (),
+            Nop => todo!(),
+            Halt => todo!(),
+            Stop => todo!(),
             Di => {
                 // TODO: Disable interrupts
+                todo!()
             }
             Ei => {
                 // TODO: Enable interrupts
+                todo!()
             }
 
             // Load
@@ -165,18 +165,27 @@ impl Cpu {
                 let a = self.registers.read(Reg8::A);
                 self.memory.write(0xFF00 + offset as u16, a);
             }
-            LdHlSpImm8i { offset } => {
+
+            LdHlSpImm8i { offset } | AddSpImm8i { offset } => {
                 let offset = offset as u16;
                 let val = self.registers.read(Reg16::SP);
                 let half_carry = val.half_carry(offset);
                 let (result, carry) = val.overflowing_add(offset);
-                self.registers.write(Reg16::HL, result);
 
-                self.flags.set(Flag::Zero, false);
-                self.flags.set(Flag::Subtract, false);
-                self.flags.set(Flag::HalfCarry, half_carry);
-                self.flags.set(Flag::Carry, carry);
+                // Destination register is the only difference between these
+                // two instructions
+                if let LdHlSpImm8i { .. } = instruction {
+                    self.registers.write(Reg16::HL, result);
+                } else {
+                    self.registers.write(Reg16::SP, result);
+                }
+
+                self.registers.set(Flag::Zero, false);
+                self.registers.set(Flag::Subtract, false);
+                self.registers.set(Flag::HalfCarry, half_carry);
+                self.registers.set(Flag::Carry, carry);
             }
+
             Inc { dst } => self.inc(dst),
             Dec { dst } => self.dec(dst),
             Add { src } => self.add(src),
@@ -200,10 +209,10 @@ impl Cpu {
                 let addr = self.pop();
                 let ok = match cond {
                     Cond::None => true,
-                    Cond::NotZero if !self.flags.zero() => true,
-                    Cond::Zero if self.flags.zero() => true,
-                    Cond::NotCarry if !self.flags.carry() => true,
-                    Cond::Carry if self.flags.carry() => true,
+                    Cond::NotZero if !self.registers.zero() => true,
+                    Cond::Zero if self.registers.zero() => true,
+                    Cond::NotCarry if !self.registers.carry() => true,
+                    Cond::Carry if self.registers.carry() => true,
                     _ => false,
                 };
 
@@ -232,10 +241,10 @@ impl Cpu {
 
                 let ok = match cond {
                     Cond::None => true,
-                    Cond::NotZero if !self.flags.zero() => true,
-                    Cond::Zero if self.flags.zero() => true,
-                    Cond::NotCarry if !self.flags.carry() => true,
-                    Cond::Carry if self.flags.carry() => true,
+                    Cond::NotZero if !self.registers.zero() => true,
+                    Cond::Zero if self.registers.zero() => true,
+                    Cond::NotCarry if !self.registers.carry() => true,
+                    Cond::Carry if self.registers.carry() => true,
                     _ => false,
                 };
 
@@ -250,10 +259,10 @@ impl Cpu {
             Jr { offset, cond } => {
                 let ok = match cond {
                     Cond::None => true,
-                    Cond::NotZero if !self.flags.zero() => true,
-                    Cond::Zero if self.flags.zero() => true,
-                    Cond::NotCarry if !self.flags.carry() => true,
-                    Cond::Carry if self.flags.carry() => true,
+                    Cond::NotZero if !self.registers.zero() => true,
+                    Cond::Zero if self.registers.zero() => true,
+                    Cond::NotCarry if !self.registers.carry() => true,
+                    Cond::Carry if self.registers.carry() => true,
                     _ => false,
                 };
 
@@ -294,10 +303,10 @@ impl Cpu {
                     _ => unreachable!("Unexpected dst: {:?}", dst),
                 };
 
-                self.flags.set(Flag::Zero, result == 0);
-                self.flags.set(Flag::Subtract, false);
-                self.flags.set(Flag::HalfCarry, false);
-                self.flags.set(Flag::Carry, false);
+                self.registers.set(Flag::Zero, result == 0);
+                self.registers.set(Flag::Subtract, false);
+                self.registers.set(Flag::HalfCarry, false);
+                self.registers.set(Flag::Carry, false);
             }
 
             // Bit manipulation instructions
@@ -313,9 +322,9 @@ impl Cpu {
 
                 let result = value & (1 << bit);
 
-                self.flags.set(Flag::Zero, result == 0);
-                self.flags.set(Flag::Subtract, false);
-                self.flags.set(Flag::HalfCarry, true);
+                self.registers.set(Flag::Zero, result == 0);
+                self.registers.set(Flag::Subtract, false);
+                self.registers.set(Flag::HalfCarry, true);
             }
             Set { dst, bit } => self.set(dst, bit, false),
             Res { dst, bit } => self.set(dst, bit, true),
@@ -327,15 +336,15 @@ impl Cpu {
             Cpl => {
                 let curr = self.registers.read(Reg8::A);
                 self.registers.write(Reg8::A, !curr);
-                self.flags.set(Flag::Subtract, false);
-                self.flags.set(Flag::HalfCarry, true);
+                self.registers.set(Flag::Subtract, false);
+                self.registers.set(Flag::HalfCarry, true);
             }
             Ccf => {
-                let f = self.flags.carry();
-                self.flags.set(Flag::Carry, !f);
+                let f = self.registers.carry();
+                self.registers.set(Flag::Carry, !f);
             }
             Scf => {
-                self.flags.set(Flag::Carry, true);
+                self.registers.set(Flag::Carry, true);
             }
         }
     }
@@ -353,7 +362,7 @@ impl Cpu {
             _ => unreachable!("Unexpected dst: {:?}", dst),
         };
 
-        let prev_carry = self.flags.carry();
+        let prev_carry = self.registers.carry();
         let carry;
         let mut value;
 
@@ -395,10 +404,10 @@ impl Cpu {
         }
 
         // Flags
-        self.flags.set(Flag::Zero, value == 0);
-        self.flags.set(Flag::Subtract, false);
-        self.flags.set(Flag::HalfCarry, false);
-        self.flags.set(Flag::Carry, carry);
+        self.registers.set(Flag::Zero, value == 0);
+        self.registers.set(Flag::Subtract, false);
+        self.registers.set(Flag::HalfCarry, false);
+        self.registers.set(Flag::Carry, carry);
     }
 
     /// Handle shift instructions
@@ -445,10 +454,10 @@ impl Cpu {
         }
 
         // Flags
-        self.flags.set(Flag::Zero, value == 0);
-        self.flags.set(Flag::Subtract, false);
-        self.flags.set(Flag::HalfCarry, false);
-        self.flags.set(Flag::Carry, carry);
+        self.registers.set(Flag::Zero, value == 0);
+        self.registers.set(Flag::Subtract, false);
+        self.registers.set(Flag::HalfCarry, false);
+        self.registers.set(Flag::Carry, carry);
     }
 
     /// Helper that pops 2 bytes off the stack
@@ -497,10 +506,10 @@ impl Cpu {
 
         self.registers.write(Reg8::A, result);
 
-        self.flags.set(Flag::Zero, result == 0);
-        self.flags.set(Flag::Subtract, false);
-        self.flags.set(Flag::HalfCarry, half_carry);
-        self.flags.set(Flag::Carry, carry);
+        self.registers.set(Flag::Zero, result == 0);
+        self.registers.set(Flag::Subtract, false);
+        self.registers.set(Flag::HalfCarry, half_carry);
+        self.registers.set(Flag::Carry, carry);
     }
 
     /// ADD with carry
@@ -518,7 +527,7 @@ impl Cpu {
             _ => unreachable!("Unexpected src: {:?}", src),
         };
 
-        let curr_carry = if self.flags.carry() { 1u8 } else { 0u8 };
+        let curr_carry = if self.registers.carry() { 1u8 } else { 0u8 };
 
         // Compute half-carry based on the current value of the carry flag
         let half_carry = ((val & 0xF) + (a & 0xF) + curr_carry) & 0x10 == 0x10;
@@ -533,10 +542,10 @@ impl Cpu {
 
         self.registers.write(Reg8::A, result);
 
-        self.flags.set(Flag::Zero, result == 0);
-        self.flags.set(Flag::Subtract, false);
-        self.flags.set(Flag::HalfCarry, half_carry);
-        self.flags.set(Flag::Carry, carry);
+        self.registers.set(Flag::Zero, result == 0);
+        self.registers.set(Flag::Subtract, false);
+        self.registers.set(Flag::HalfCarry, half_carry);
+        self.registers.set(Flag::Carry, carry);
     }
 
     /// 16-bit version of ADD for HL
@@ -552,10 +561,10 @@ impl Cpu {
 
         self.registers.write(Reg16::HL, result);
 
-        self.flags.set(Flag::Zero, result == 0);
-        self.flags.set(Flag::Subtract, false);
-        self.flags.set(Flag::HalfCarry, half_carry);
-        self.flags.set(Flag::Carry, carry);
+        self.registers.set(Flag::Zero, result == 0);
+        self.registers.set(Flag::Subtract, false);
+        self.registers.set(Flag::HalfCarry, half_carry);
+        self.registers.set(Flag::Carry, carry);
     }
 
     fn sub(&mut self, src: Arg, write: bool) {
@@ -580,10 +589,10 @@ impl Cpu {
             self.registers.write(Reg8::A, result);
         }
 
-        self.flags.set(Flag::Zero, result == 0);
-        self.flags.set(Flag::Subtract, true);
-        self.flags.set(Flag::HalfCarry, half_carry);
-        self.flags.set(Flag::Carry, carry);
+        self.registers.set(Flag::Zero, result == 0);
+        self.registers.set(Flag::Subtract, true);
+        self.registers.set(Flag::HalfCarry, half_carry);
+        self.registers.set(Flag::Carry, carry);
     }
 
     /// SUB with carry
@@ -601,7 +610,7 @@ impl Cpu {
             _ => unreachable!("Unexpected src: {:?}", src),
         };
 
-        let curr_carry = if self.flags.carry() { 1u8 } else { 0u8 };
+        let curr_carry = if self.registers.carry() { 1u8 } else { 0u8 };
 
         // Compute half-carry based on the current value of the carry flag
         let half_carry = ((val & 0xF) + (a & 0xF) + curr_carry) & 0x10 == 0x10;
@@ -616,10 +625,10 @@ impl Cpu {
 
         self.registers.write(Reg8::A, result);
 
-        self.flags.set(Flag::Zero, result == 0);
-        self.flags.set(Flag::Subtract, true);
-        self.flags.set(Flag::HalfCarry, half_carry);
-        self.flags.set(Flag::Carry, carry);
+        self.registers.set(Flag::Zero, result == 0);
+        self.registers.set(Flag::Subtract, true);
+        self.registers.set(Flag::HalfCarry, half_carry);
+        self.registers.set(Flag::Carry, carry);
     }
 
     fn logical(&mut self, src: Arg, op: LogicalOp) {
@@ -644,14 +653,14 @@ impl Cpu {
 
         self.registers.write(Reg8::A, result);
 
-        self.flags.set(Flag::Zero, result == 0);
-        self.flags.set(Flag::Subtract, false);
-        self.flags.set(Flag::Carry, false);
+        self.registers.set(Flag::Zero, result == 0);
+        self.registers.set(Flag::Subtract, false);
+        self.registers.set(Flag::Carry, false);
 
         if let LogicalOp::And = op {
-            self.flags.set(Flag::HalfCarry, true);
+            self.registers.set(Flag::HalfCarry, true);
         } else {
-            self.flags.set(Flag::HalfCarry, false);
+            self.registers.set(Flag::HalfCarry, false);
         }
     }
 
@@ -688,9 +697,9 @@ impl Cpu {
         };
 
         if update_flags {
-            self.flags.set(Flag::Zero, result == 0);
-            self.flags.set(Flag::Subtract, false);
-            self.flags.set(Flag::HalfCarry, half_carry);
+            self.registers.set(Flag::Zero, result == 0);
+            self.registers.set(Flag::Subtract, false);
+            self.registers.set(Flag::HalfCarry, half_carry);
         }
     }
 
@@ -733,10 +742,10 @@ impl Cpu {
         };
 
         if update_flags {
-            self.flags.set(Flag::Zero, result == 0);
-            self.flags.set(Flag::Subtract, true);
-            self.flags.set(Flag::HalfCarry, half_carry);
-            self.flags.set(Flag::Carry, carry);
+            self.registers.set(Flag::Zero, result == 0);
+            self.registers.set(Flag::Subtract, true);
+            self.registers.set(Flag::HalfCarry, half_carry);
+            self.registers.set(Flag::Carry, carry);
         }
     }
 
@@ -806,18 +815,18 @@ mod test {
         };
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::A), 0x00);
-        assert!(cpu.flags.zero());
-        assert!(cpu.flags.carry());
+        assert!(cpu.registers.zero());
+        assert!(cpu.registers.carry());
 
         // Half overflow
         cpu.registers.write(Reg8::A, 0x3C);
         let inst = Instruction::Add { src: 0xFFu8.into() };
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::A), 0x3B);
-        assert!(!cpu.flags.zero());
-        assert!(!cpu.flags.subtract());
-        assert!(cpu.flags.half_carry());
-        assert!(cpu.flags.carry());
+        assert!(!cpu.registers.zero());
+        assert!(!cpu.registers.subtract());
+        assert!(cpu.registers.half_carry());
+        assert!(cpu.registers.carry());
     }
 
     #[test]
@@ -833,19 +842,19 @@ mod test {
         // Normal add
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg16::HL), 0x1234);
-        assert!(!cpu.flags.zero());
-        assert!(!cpu.flags.subtract());
-        assert!(!cpu.flags.half_carry());
-        assert!(!cpu.flags.carry());
+        assert!(!cpu.registers.zero());
+        assert!(!cpu.registers.subtract());
+        assert!(!cpu.registers.half_carry());
+        assert!(!cpu.registers.carry());
 
         // Overflow
         cpu.registers.write(Reg16::DE, 0xEDCC);
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg16::HL), 0x0);
-        assert!(cpu.flags.zero());
-        assert!(!cpu.flags.subtract());
-        assert!(cpu.flags.half_carry());
-        assert!(cpu.flags.carry());
+        assert!(cpu.registers.zero());
+        assert!(!cpu.registers.subtract());
+        assert!(cpu.registers.half_carry());
+        assert!(cpu.registers.carry());
     }
 
     #[test]
@@ -856,22 +865,22 @@ mod test {
 
         // Normal add
         let inst = Instruction::Adc { src: 0x10u8.into() };
-        cpu.flags.set(Flag::Carry, true);
+        cpu.registers.set(Flag::Carry, true);
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::A), 0x11);
-        assert!(!cpu.flags.zero());
-        assert!(!cpu.flags.carry());
+        assert!(!cpu.registers.zero());
+        assert!(!cpu.registers.carry());
 
         // Overflow
         let inst = Instruction::Adc { src: Reg8::B.into() };
-        cpu.flags.set(Flag::Carry, true);
+        cpu.registers.set(Flag::Carry, true);
         cpu.registers.write(Reg8::A, 0xE1);
         cpu.registers.write(Reg8::B, 0x1E);
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::A), 0x00);
-        assert!(cpu.flags.zero());
-        assert!(cpu.flags.half_carry());
-        assert!(cpu.flags.carry());
+        assert!(cpu.registers.zero());
+        assert!(cpu.registers.half_carry());
+        assert!(cpu.registers.carry());
     }
 
     #[test]
@@ -884,24 +893,24 @@ mod test {
         let inst = Instruction::Sub { src: 0x10u8.into() };
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::A), 0);
-        assert!(cpu.flags.zero());
-        assert!(cpu.flags.subtract());
+        assert!(cpu.registers.zero());
+        assert!(cpu.registers.subtract());
 
         // Underflow
         let inst = Instruction::Sub { src: 0x10u8.into() };
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::A), 0xF0);
-        assert!(!cpu.flags.zero());
-        assert!(cpu.flags.subtract());
-        assert!(cpu.flags.carry());
+        assert!(!cpu.registers.zero());
+        assert!(cpu.registers.subtract());
+        assert!(cpu.registers.carry());
 
         // Half underflow
         cpu.registers.write(Reg8::A, 0x3E);
         let inst = Instruction::Sub { src: 0xFu8.into() };
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::A), 0x2F);
-        assert!(!cpu.flags.zero());
-        assert!(cpu.flags.subtract());
+        assert!(!cpu.registers.zero());
+        assert!(cpu.registers.subtract());
     }
 
     #[test]
@@ -911,23 +920,23 @@ mod test {
         // Normal sub
         let inst = Instruction::Sbc { src: 0x09u8.into() };
         cpu.registers.write(Reg8::A, 0x0A);
-        cpu.flags.set(Flag::Carry, true);
+        cpu.registers.set(Flag::Carry, true);
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::A), 0x00);
-        assert!(cpu.flags.zero());
-        assert!(!cpu.flags.carry());
+        assert!(cpu.registers.zero());
+        assert!(!cpu.registers.carry());
 
         // Overflow
         let inst = Instruction::Sbc { src: Reg8::B.into() };
-        cpu.flags.set(Flag::Carry, true);
+        cpu.registers.set(Flag::Carry, true);
         cpu.registers.write(Reg8::A, 0x3B);
         cpu.registers.write(Reg8::B, 0x4F);
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::A), 0xEB);
-        assert!(!cpu.flags.zero());
-        assert!(cpu.flags.subtract());
-        assert!(cpu.flags.half_carry());
-        assert!(cpu.flags.carry());
+        assert!(!cpu.registers.zero());
+        assert!(cpu.registers.subtract());
+        assert!(cpu.registers.half_carry());
+        assert!(cpu.registers.carry());
     }
 
     #[test]
@@ -939,24 +948,24 @@ mod test {
         cpu.registers.write(Reg8::A, 0x0A);
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::A), 0x02);
-        assert!(!cpu.flags.zero());
-        assert!(cpu.flags.half_carry());
+        assert!(!cpu.registers.zero());
+        assert!(cpu.registers.half_carry());
 
         // OR
         let inst = Instruction::Or { src: 0xF0u8.into() };
         cpu.registers.write(Reg8::A, 0x0A);
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::A), 0xFA);
-        assert!(!cpu.flags.zero());
-        assert!(!cpu.flags.half_carry());
+        assert!(!cpu.registers.zero());
+        assert!(!cpu.registers.half_carry());
 
         // XOR
         let inst = Instruction::Xor { src: 0xFFu8.into() };
         cpu.registers.write(Reg8::A, 0x0F);
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::A), 0xF0);
-        assert!(!cpu.flags.zero());
-        assert!(!cpu.flags.half_carry());
+        assert!(!cpu.registers.zero());
+        assert!(!cpu.registers.half_carry());
     }
 
     #[test]
@@ -971,9 +980,9 @@ mod test {
         };
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::A), 0);
-        assert!(cpu.flags.zero());
-        assert!(cpu.flags.half_carry());
-        assert!(!cpu.flags.subtract());
+        assert!(cpu.registers.zero());
+        assert!(cpu.registers.half_carry());
+        assert!(!cpu.registers.subtract());
     }
 
     #[test]
@@ -988,9 +997,9 @@ mod test {
         };
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::A), 0xFF);
-        assert!(!cpu.flags.zero());
-        assert!(cpu.flags.half_carry());
-        assert!(cpu.flags.subtract());
+        assert!(!cpu.registers.zero());
+        assert!(cpu.registers.half_carry());
+        assert!(cpu.registers.subtract());
     }
 
     #[test]
@@ -1004,25 +1013,25 @@ mod test {
             src: Reg8::B.into(),
         };
         cpu.execute(inst);
-        assert!(!cpu.flags.zero());
-        assert!(cpu.flags.subtract());
-        assert!(cpu.flags.half_carry());
-        assert!(!cpu.flags.carry());
+        assert!(!cpu.registers.zero());
+        assert!(cpu.registers.subtract());
+        assert!(cpu.registers.half_carry());
+        assert!(!cpu.registers.carry());
 
         let inst = Instruction::Cp { src: 0x3Cu8.into() };
         cpu.execute(inst);
-        assert!(cpu.flags.zero());
-        assert!(cpu.flags.subtract());
+        assert!(cpu.registers.zero());
+        assert!(cpu.registers.subtract());
 
         let (addr, value) = (0xBEEF, 0x40u8);
         cpu.memory.write(addr, value);
         cpu.registers.write(Reg16::HL, addr);
         let inst = Instruction::Cp { src: Arg::MemHl };
         cpu.execute(inst);
-        assert!(!cpu.flags.zero());
-        assert!(cpu.flags.subtract());
-        assert!(!cpu.flags.half_carry());
-        assert!(cpu.flags.carry());
+        assert!(!cpu.registers.zero());
+        assert!(cpu.registers.subtract());
+        assert!(!cpu.registers.half_carry());
+        assert!(cpu.registers.carry());
     }
 
     #[test]
@@ -1051,7 +1060,7 @@ mod test {
         assert_eq!(cpu.registers.PC, 0x2345);
 
         let inst = Instruction::Jp { addr: 0x1234, cond: Cond::Zero };
-        cpu.flags.set(Flag::Zero, true);
+        cpu.registers.set(Flag::Zero, true);
         cpu.execute(inst);
         assert_eq!(cpu.registers.PC, 0x1234);
 
@@ -1061,7 +1070,7 @@ mod test {
 
         let inst = Instruction::Jr { offset: 1, cond: Cond::NotCarry };
         cpu.registers.write(Reg16::PC, 0xFFFF);
-        cpu.flags.set(Flag::Carry, false);
+        cpu.registers.set(Flag::Carry, false);
         cpu.execute(inst);
         assert_eq!(cpu.registers.PC, 0x0);
 
@@ -1116,85 +1125,85 @@ mod test {
         cpu.registers.write(Reg8::B, 0x85);
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::B), 0x0B);
-        assert!(!cpu.flags.zero());
-        assert!(!cpu.flags.subtract());
-        assert!(!cpu.flags.half_carry());
-        assert!(cpu.flags.carry());
+        assert!(!cpu.registers.zero());
+        assert!(!cpu.registers.subtract());
+        assert!(!cpu.registers.half_carry());
+        assert!(cpu.registers.carry());
 
         let inst = Instruction::Rl { dst: Reg8::L.into() };
-        cpu.flags.clear(Flag::Carry);
+        cpu.registers.clear(Flag::Carry);
         cpu.registers.write(Reg8::L, 0x80);
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::L), 0);
-        assert!(cpu.flags.zero());
-        assert!(!cpu.flags.subtract());
-        assert!(!cpu.flags.half_carry());
-        assert!(cpu.flags.carry());
+        assert!(cpu.registers.zero());
+        assert!(!cpu.registers.subtract());
+        assert!(!cpu.registers.half_carry());
+        assert!(cpu.registers.carry());
 
         let inst = Instruction::Rrc { dst: Reg8::C.into() };
-        cpu.flags.clear(Flag::Carry);
+        cpu.registers.clear(Flag::Carry);
         cpu.registers.write(Reg8::C, 0x1);
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::C), 0x80);
-        assert!(!cpu.flags.zero());
-        assert!(!cpu.flags.subtract());
-        assert!(!cpu.flags.half_carry());
-        assert!(cpu.flags.carry());
+        assert!(!cpu.registers.zero());
+        assert!(!cpu.registers.subtract());
+        assert!(!cpu.registers.half_carry());
+        assert!(cpu.registers.carry());
 
         let inst = Instruction::Rr { dst: Reg8::A.into() };
-        cpu.flags.clear(Flag::Carry);
+        cpu.registers.clear(Flag::Carry);
         cpu.registers.write(Reg8::A, 0x1);
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::A), 0);
-        assert!(cpu.flags.zero());
-        assert!(!cpu.flags.subtract());
-        assert!(!cpu.flags.half_carry());
-        assert!(cpu.flags.carry());
+        assert!(cpu.registers.zero());
+        assert!(!cpu.registers.subtract());
+        assert!(!cpu.registers.half_carry());
+        assert!(cpu.registers.carry());
 
         let inst = Instruction::Sla { dst: Reg8::D.into() };
         cpu.registers.write(Reg8::D, 0x80);
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::D), 0);
-        assert!(cpu.flags.zero());
-        assert!(!cpu.flags.subtract());
-        assert!(!cpu.flags.half_carry());
-        assert!(cpu.flags.carry());
+        assert!(cpu.registers.zero());
+        assert!(!cpu.registers.subtract());
+        assert!(!cpu.registers.half_carry());
+        assert!(cpu.registers.carry());
 
         let inst = Instruction::Sra { dst: Reg8::A.into() };
         cpu.registers.write(Reg8::A, 0x8A);
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::A), 0xC5);
-        assert!(!cpu.flags.zero());
-        assert!(!cpu.flags.subtract());
-        assert!(!cpu.flags.half_carry());
-        assert!(!cpu.flags.carry());
+        assert!(!cpu.registers.zero());
+        assert!(!cpu.registers.subtract());
+        assert!(!cpu.registers.half_carry());
+        assert!(!cpu.registers.carry());
 
         cpu.registers.write(Reg8::A, 0x1);
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::A), 0);
-        assert!(cpu.flags.zero());
-        assert!(!cpu.flags.subtract());
-        assert!(!cpu.flags.half_carry());
-        assert!(cpu.flags.carry());
+        assert!(cpu.registers.zero());
+        assert!(!cpu.registers.subtract());
+        assert!(!cpu.registers.half_carry());
+        assert!(cpu.registers.carry());
 
         let inst = Instruction::Srl { dst: Reg8::A.into() };
-        cpu.flags.clear(Flag::Carry);
+        cpu.registers.clear(Flag::Carry);
         cpu.registers.write(Reg8::A, 0xFF);
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::A), 0x7F);
-        assert!(!cpu.flags.zero());
-        assert!(!cpu.flags.subtract());
-        assert!(!cpu.flags.half_carry());
-        assert!(cpu.flags.carry());
+        assert!(!cpu.registers.zero());
+        assert!(!cpu.registers.subtract());
+        assert!(!cpu.registers.half_carry());
+        assert!(cpu.registers.carry());
 
         let inst = Instruction::Swap { dst: Reg8::A.into() };
         cpu.registers.write(Reg8::A, 0xF1);
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::A), 0x1F);
-        assert!(!cpu.flags.zero());
-        assert!(!cpu.flags.subtract());
-        assert!(!cpu.flags.half_carry());
-        assert!(!cpu.flags.carry());
+        assert!(!cpu.registers.zero());
+        assert!(!cpu.registers.subtract());
+        assert!(!cpu.registers.half_carry());
+        assert!(!cpu.registers.carry());
     }
 
     #[test]
@@ -1204,9 +1213,9 @@ mod test {
         let inst = Instruction::Bit { dst: Reg8::B.into(), bit: 2 };
         cpu.registers.write(Reg8::B, 0x4);
         cpu.execute(inst);
-        assert!(!cpu.flags.zero());
-        assert!(!cpu.flags.subtract());
-        assert!(cpu.flags.half_carry());
+        assert!(!cpu.registers.zero());
+        assert!(!cpu.registers.subtract());
+        assert!(cpu.registers.half_carry());
 
         let inst = Instruction::Set { dst: Reg8::B.into(), bit: 3 };
         cpu.registers.write(Reg8::B, 0x7);

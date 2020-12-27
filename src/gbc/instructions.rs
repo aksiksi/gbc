@@ -110,9 +110,6 @@ pub enum Instruction {
     /// * Carry: set or reset
     LdHlSpImm8i { offset: i8 },
 
-    /// Load SP into address `addr`
-    LdMemImmSp { addr: u16 },
-
     /// Push [Reg16](Arg::Reg16) (register pair) onto stack
     Push { src: Reg16 },
 
@@ -232,7 +229,7 @@ pub enum Instruction {
     ///
     /// * Zero: set if result 0
     /// * Subtract: reset
-    /// * HalfCarry: set if carry from bit 11
+    /// * HalfCarry: set if carry from bit 7
     /// * Carry: set if carry from bit 15
     AddHlReg16 { src: Reg16 },
 
@@ -242,7 +239,7 @@ pub enum Instruction {
     ///
     /// * Zero: reset
     /// * Subtract: reset
-    /// * HalfCarry: set if carry from bit 11
+    /// * HalfCarry: set if carry from bit 7
     /// * Carry: set if carry from bit 15
     AddSpImm8i { offset: i8 },
 
@@ -662,6 +659,7 @@ impl Instruction {
             0x8E => (Adc { src: Arg::MemHl }, 1, 8.into()),
             0x8F => (Adc { src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
             0xCE => (Adc { src: arg8.unwrap().into() }, 2, 8.into()),
+            0xE8 => (AddSpImm8i { offset: arg8.unwrap() as i8 }, 2, 16.into()),
 
             // Sub
             0x90 => (Sub { src: Arg::Reg8(Reg8::B) }, 1, 4.into()),

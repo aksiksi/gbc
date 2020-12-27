@@ -40,113 +40,11 @@ pub enum Flag {
 }
 
 #[derive(Debug)]
-pub struct Flags {
-    zero: bool,
-    subtract: bool,
-    half_carry: bool,
-    carry: bool,
-}
-
-impl Flags {
-    pub fn new() -> Self {
-        Self {
-            zero: false,
-            subtract: false,
-            half_carry: false,
-            carry: false,
-        }
-    }
-
-    pub fn set_all(&mut self) {
-        self.zero = true;
-        self.subtract = true;
-        self.half_carry = true;
-        self.carry = true;
-    }
-
-    /// Return flags as a raw 8-bit number
-    pub fn raw(&self) -> u8 {
-        let mut flags = 0u8;
-
-        if self.zero {
-            flags |= 1 << 7;
-        }
-        if self.subtract {
-            flags |= 1 << 6;
-        }
-        if self.half_carry {
-            flags |= 1 << 5;
-        }
-        if self.carry {
-            flags |= 1 << 4;
-        }
-
-        flags
-    }
-
-    pub fn set(&mut self, flag: Flag, value: bool) {
-        match flag {
-            Flag::Zero => {
-                self.zero = value;
-            }
-            Flag::Subtract => {
-                self.subtract = value;
-            }
-            Flag::HalfCarry => {
-                self.half_carry = value;
-            }
-            Flag::Carry => {
-                self.carry = value;
-            }
-        }
-    }
-
-    pub fn clear(&mut self, flag: Flag) {
-        match flag {
-            Flag::Zero => {
-                self.zero = false;
-            }
-            Flag::Subtract => {
-                self.subtract = false;
-            }
-            Flag::HalfCarry => {
-                self.half_carry = false;
-            }
-            Flag::Carry => {
-                self.carry = false;
-            }
-        }
-    }
-
-    pub fn clear_all(&mut self) {
-        self.zero = false;
-        self.subtract = false;
-        self.half_carry = false;
-        self.carry = false;
-    }
-
-    pub fn zero(&self) -> bool {
-        self.zero
-    }
-
-    pub fn subtract(&self) -> bool {
-        self.subtract
-    }
-
-    pub fn half_carry(&self) -> bool {
-        self.half_carry
-    }
-
-    pub fn carry(&self) -> bool {
-        self.carry
-    }
-}
-
-#[derive(Debug)]
 #[allow(non_snake_case)]
 pub struct RegisterFile {
+    // Registers
     A: u8,
-    F: u8,
+    F: u8, // Flags register
     B: u8,
     C: u8,
     D: u8,
@@ -155,6 +53,12 @@ pub struct RegisterFile {
     L: u8,
     pub PC: u16,
     pub SP: u16,
+
+    // Individual flag bits
+    zero: bool,
+    subtract: bool,
+    half_carry: bool,
+    carry: bool,
 }
 
 impl RegisterFile {
@@ -177,7 +81,67 @@ impl RegisterFile {
             L: 0x01,
             PC: 0x0100,
             SP: 0xFFFE,
+            zero: false,
+            subtract: false,
+            half_carry: false,
+            carry: false,
         }
+    }
+
+    /// Set a flag
+    pub fn set(&mut self, flag: Flag, value: bool) {
+        match flag {
+            Flag::Zero => {
+                self.zero = value;
+            }
+            Flag::Subtract => {
+                self.subtract = value;
+            }
+            Flag::HalfCarry => {
+                self.half_carry = value;
+            }
+            Flag::Carry => {
+                self.carry = value;
+            }
+        }
+    }
+
+    /// Clear a flag
+    pub fn clear(&mut self, flag: Flag) {
+        match flag {
+            Flag::Zero => {
+                self.zero = false;
+            }
+            Flag::Subtract => {
+                self.subtract = false;
+            }
+            Flag::HalfCarry => {
+                self.half_carry = false;
+            }
+            Flag::Carry => {
+                self.carry = false;
+            }
+        }
+    }
+
+    pub fn flags(&self) -> u8 {
+        self.F
+    }
+
+    pub fn zero(&self) -> bool {
+        self.zero
+    }
+
+    pub fn subtract(&self) -> bool {
+        self.subtract
+    }
+
+    pub fn half_carry(&self) -> bool {
+        self.half_carry
+    }
+
+    pub fn carry(&self) -> bool {
+        self.carry
     }
 }
 
@@ -264,19 +228,12 @@ mod test {
 
     #[test]
     fn flags() {
-        let mut flags = Flags::new();
+        let mut registers = RegisterFile::new();
 
-        flags.set(Flag::Zero, true);
-        assert!(flags.zero());
+        registers.set(Flag::Zero, true);
+        assert!(registers.zero());
 
-        flags.clear(Flag::Zero);
-        assert!(!flags.zero());
-
-        flags.set_all();
-        assert!(flags.carry());
-        assert_eq!(flags.raw(), 0xF0);
-
-        flags.clear_all();
-        assert!(!flags.carry());
+        registers.clear(Flag::Zero);
+        assert!(!registers.zero());
     }
 }
