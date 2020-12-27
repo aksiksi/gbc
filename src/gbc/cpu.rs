@@ -94,6 +94,8 @@ impl Cpu {
             Ei => {
                 // TODO: Enable interrupts
             }
+
+            // Load
             Ld { dst, src } => match (dst, src) {
                 (Arg::Reg16(dst), Arg::Imm16(src)) => {
                     self.registers.write(dst, src);
@@ -273,6 +275,31 @@ impl Cpu {
             Sra { dst } => self.shift(dst, false, true),
             Srl { dst } => self.shift(dst, false, false),
 
+            // Swap upper & lower nibbles
+            Swap { dst } => {
+                let result = match dst {
+                    Arg::Reg8(dst) => {
+                        let value = self.registers.read(dst);
+                        let value = (value << 4) | (value >> 4);
+                        self.registers.write(dst, value);
+                        value
+                    }
+                    Arg::MemHl => {
+                        let addr = self.registers.read(Reg16::SP);
+                        let value = self.memory.read(addr);
+                        let value = (value << 4) | (value >> 4);
+                        self.memory.write(addr, value);
+                        value
+                    }
+                    _ => unreachable!("Unexpected dst: {:?}", dst),
+                };
+
+                self.flags.set(Flag::Zero, result == 0);
+                self.flags.set(Flag::Subtract, false);
+                self.flags.set(Flag::HalfCarry, false);
+                self.flags.set(Flag::Carry, false);
+            }
+
             // Bit manipulation instructions
             Bit { dst, bit } => {
                 let value = match dst {
@@ -293,7 +320,23 @@ impl Cpu {
             Set { dst, bit } => self.set(dst, bit, false),
             Res { dst, bit } => self.set(dst, bit, true),
 
-            other => panic!("Cannot execute instruction: {:?}", other),
+            // Misc
+            Daa => {
+                todo!()
+            }
+            Cpl => {
+                let curr = self.registers.read(Reg8::A);
+                self.registers.write(Reg8::A, !curr);
+                self.flags.set(Flag::Subtract, false);
+                self.flags.set(Flag::HalfCarry, true);
+            }
+            Ccf => {
+                let f = self.flags.carry();
+                self.flags.set(Flag::Carry, !f);
+            }
+            Scf => {
+                self.flags.set(Flag::Carry, true);
+            }
         }
     }
 
@@ -307,7 +350,7 @@ impl Cpu {
                 let addr = self.registers.read(Reg16::HL);
                 self.memory.read(addr)
             }
-            _ => unreachable!(),
+            _ => unreachable!("Unexpected dst: {:?}", dst),
         };
 
         let prev_carry = self.flags.carry();
@@ -348,7 +391,7 @@ impl Cpu {
                 let addr = self.registers.read(Reg16::HL);
                 self.memory.write(addr, value);
             }
-            _ => unreachable!(),
+            _ => unreachable!("Unexpected dst: {:?}", dst),
         }
 
         // Flags
@@ -368,7 +411,7 @@ impl Cpu {
                 let addr = self.registers.read(Reg16::HL);
                 self.memory.read(addr)
             }
-            _ => unreachable!(),
+            _ => unreachable!("Unexpected dst: {:?}", dst),
         };
 
         let carry;
@@ -398,7 +441,7 @@ impl Cpu {
                 let addr = self.registers.read(Reg16::HL);
                 self.memory.write(addr, value);
             }
-            _ => unreachable!(),
+            _ => unreachable!("Unexpected dst: {:?}", dst),
         }
 
         // Flags
@@ -446,7 +489,7 @@ impl Cpu {
                 let val = self.memory.read(addr);
                 val
             }
-            _ => panic!("Unexpected src {:?}", src),
+            _ => unreachable!("Unexpected src: {:?}", src),
         };
 
         let half_carry = a.half_carry(val);
@@ -472,7 +515,7 @@ impl Cpu {
                 let val = self.memory.read(addr);
                 val
             }
-            _ => panic!("Unexpected src {:?}", src),
+            _ => unreachable!("Unexpected src: {:?}", src),
         };
 
         let curr_carry = if self.flags.carry() { 1u8 } else { 0u8 };
@@ -526,7 +569,7 @@ impl Cpu {
                 let val = self.memory.read(addr);
                 val
             }
-            _ => panic!("Unexpected src {:?}", src),
+            _ => unreachable!("Unexpected src: {:?}", src),
         };
 
         let half_carry = a.half_carry(val);
@@ -555,7 +598,7 @@ impl Cpu {
                 let val = self.memory.read(addr);
                 val
             }
-            _ => panic!("Unexpected src {:?}", src),
+            _ => unreachable!("Unexpected src: {:?}", src),
         };
 
         let curr_carry = if self.flags.carry() { 1u8 } else { 0u8 };
@@ -590,7 +633,7 @@ impl Cpu {
                 let val = self.memory.read(addr);
                 val
             }
-            _ => panic!("Unexpected src {:?}", src),
+            _ => unreachable!("Unexpected src: {:?}", src),
         };
 
         let result = match op {
@@ -641,7 +684,7 @@ impl Cpu {
                 self.memory.write(addr, result);
                 result as u16
             }
-            _ => panic!("Unexpected dst: {:?}", dst),
+            _ => unreachable!("Unexpected dst: {:?}", dst),
         };
 
         if update_flags {
@@ -1143,6 +1186,15 @@ mod test {
         assert!(!cpu.flags.subtract());
         assert!(!cpu.flags.half_carry());
         assert!(cpu.flags.carry());
+
+        let inst = Instruction::Swap { dst: Reg8::A.into() };
+        cpu.registers.write(Reg8::A, 0xF1);
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::A), 0x1F);
+        assert!(!cpu.flags.zero());
+        assert!(!cpu.flags.subtract());
+        assert!(!cpu.flags.half_carry());
+        assert!(!cpu.flags.carry());
     }
 
     #[test]
