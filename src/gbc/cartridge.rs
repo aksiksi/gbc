@@ -474,6 +474,152 @@ impl std::fmt::Debug for Rom {
     }
 }
 
+/// Cartridge ROM + RAM controller.
+#[derive(Debug)]
+pub struct Controller {
+    /// Cartridge ROM
+    pub rom: Rom,
+
+    /// Cartridge RAM
+    pub ram: Option<Ram>,
+
+    /// ROM size
+    rom_size: RomSize,
+
+    /// RAM size
+    ram_size: RamSize,
+
+    /// Cartridge type
+    cartridge_type: CartridgeType,
+
+    /// Bank mode (simple: false, advanced: true)
+    banking_mode: bool,
+}
+
+impl Controller {
+    /// Create a default controller
+    pub fn new() -> Self {
+        let rom_size = RomSize::_32K;
+        let ram_size = RamSize::_8K;
+
+        Self {
+            rom: Rom::new(rom_size),
+            ram: Ram::new(ram_size),
+            rom_size,
+            ram_size,
+            cartridge_type: CartridgeType::Mbc1,
+            banking_mode: false,
+        }
+    }
+
+    /// Create a controller from a `Cartridge`
+    pub fn from_cartridge(mut cartridge: Cartridge) -> Result<Self> {
+        // Extract ROM and RAM info from cartridge header
+        let cartridge_type = cartridge.cartridge_type()?;
+        let rom_size = cartridge.rom_size()?;
+        let ram_size = cartridge.ram_size()?;
+        let rom = Rom::from_file(rom_size, &mut cartridge.rom_file)?;
+        let ram = Ram::new(ram_size);
+
+        Ok(Self {
+            rom,
+            ram,
+            rom_size,
+            ram_size,
+            cartridge_type,
+            banking_mode: false,
+        })
+    }
+}
+
+// TODO: Clean this up perhaps?
+// RTC functions are missing, and it does not handle ROM bank_0 switching
+impl MemoryWrite<u16, u8> for Controller {
+    /// Handle ROM and RAM bank changes as well as regular writes to cartridge RAM
+    #[inline]
+    fn write(&mut self, addr: u16, value: u8) {
+        match addr {
+            0x2000..=0x3FFF if self.cartridge_type.is_mbc1() => {
+                // MBC1 ROM bank select (5 bit register)
+                let value = value & 0b00011111;
+                let value = if value == 0 { 1 } else { value };
+                self.rom.active_bank = value as u16;
+            }
+            0x4000..=0x5FFF if self.cartridge_type.is_mbc1() => {
+                // MBC1 RAM bank select OR upper 2 bits of ROM bank (2 bit register)
+                let value = value & 0x03;
+
+                if usize::from(self.ram_size) >= RamSize::_32K.into() && self.banking_mode {
+                    // Switch RAM bank, but only in advanced banking mode
+                    self.ram.as_mut().unwrap().set_bank(value);
+                } else if usize::from(self.rom_size) >= RomSize::_1M.into() {
+                    // Set as upper two bits of ROM bank
+                    self.rom.active_bank |= (value as u16) << 5;
+                }
+            }
+            0x6000..=0x7FFF if self.cartridge_type.is_mbc1() => {
+                // Banking mode select (1 bit)
+                self.banking_mode = value & 0x01 == 1;
+            }
+            0x0000..=0x3FFF if self.cartridge_type.is_mbc2() => {
+                // MBC2 ROM bank select
+
+                // Ignore RAM enable requests
+                if value & (1 << 7) == 0 {
+                    return;
+                }
+
+                let addr_upper = (addr >> 8) as u8;
+
+                if addr_upper & 1 != 0 {
+                    // If the lower bit of the upper byte of the address is 1,
+                    // we have a valid ROM bank select request
+                    let value = value & 0xF;
+                    let value = if value == 0 { 1 } else { value };
+                    self.rom.active_bank = value as u16;
+                }
+            }
+            0x2000..=0x3FFF if self.cartridge_type.is_mbc3() => {
+                // MBC3 ROM bank select (7 bit register)
+                let value = value & 0b01111111;
+                let value = if value == 0 { 1 } else { value };
+                self.rom.active_bank = value as u16;
+            }
+            0x4000..=0x5FFF if self.cartridge_type.is_mbc3() => {
+                // MBC3 RAM bank select OR RTC register select (2 bits)
+                let value = value & 0x03;
+
+                match value {
+                    0x0..=0x3 => self.ram.as_mut().unwrap().set_bank(value),
+                    0x8..=0xC => todo!("Enable reading/writing to RTC register"),
+                    _ => unreachable!(),
+                }
+            }
+            0x6000..=0x7FFF if self.cartridge_type.is_mbc3() => {
+                todo!("Latch clock data, write only")
+            }
+            0x2000..=0x2FFF if self.cartridge_type.is_mbc5() => {
+                // MBC5 ROM bank select (lower 8 bits)
+                self.rom.active_bank |= value as u16;
+            }
+            0x3000..=0x3FFF if self.cartridge_type.is_mbc5() => {
+                // MBC5 ROM bank select (9th bit)
+                let value = (value & 0x1) as u16;
+                self.rom.active_bank |= value << 8;
+            }
+            0x4000..=0x5FFF if self.cartridge_type.is_mbc5() => {
+                // MBC5 RAM bank select (4 bits)
+                self.ram.as_mut().unwrap().set_bank(value & 0xF);
+            }
+
+            // Forward RAM writes as-is
+            Ram::BASE_ADDR..=Ram::LAST_ADDR => self.ram.as_mut().unwrap().write(addr, value),
+
+            _ => unreachable!("Unexpected write to: {}", addr),
+        }
+    }
+}
+
 /// GB/GBC cartridge types
 #[derive(Copy, Clone, Debug, PartialEq)]
 #[repr(u8)]
@@ -609,49 +755,18 @@ impl TryFrom<u8> for CartridgeType {
 
 #[derive(Debug)]
 pub struct Cartridge {
+    /// ROM file
+    pub rom_file: File,
+
     /// Cartridge header
     ///
     /// See: https://gbdev.gg8.se/wiki/articles/The_Cartridge_Header
-    header: [u8; Self::HEADER_SIZE],
-
-    /// Cartridge ROM
-    pub rom: Rom,
-
-    /// Cartridge RAM
-    pub ram: Option<Ram>,
-
-    /// Cartridge type
-    cartridge_type: CartridgeType,
-
-    /// ROM size
-    rom_size: RomSize,
-
-    /// RAM size
-    ram_size: RamSize,
-
-    /// Bank mode (simple: false, advanced: true)
-    banking_mode: bool,
+    pub header: [u8; Self::HEADER_SIZE],
 }
 
 impl Cartridge {
     const HEADER_SIZE: usize = 0x50; // bytes
     const HEADER_OFFSET: u64 = 0x100;
-
-    /// Empty cartridge
-    pub fn new() -> Self {
-        let rom_size = RomSize::_32K;
-        let ram_size = RamSize::_32K;
-
-        Self {
-            header: [0u8; Self::HEADER_SIZE],
-            rom: Rom::new(rom_size),
-            ram: Ram::new(ram_size),
-            cartridge_type: CartridgeType::Mbc1,
-            rom_size,
-            ram_size,
-            banking_mode: false,
-        }
-    }
 
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let mut rom_file = File::open(&path)?;
@@ -661,29 +776,12 @@ impl Cartridge {
         rom_file.seek(SeekFrom::Start(Self::HEADER_OFFSET))?;
         rom_file.read(&mut header)?;
 
-        // Extract ROM and RAM info from header
-        let cartridge_type = CartridgeType::try_from(header[0x47])?;
-        let rom_size = RomSize::try_from(header[0x48])?;
-        let ram_size = RamSize::try_from(header[0x49])?;
-        let rom = Rom::from_file(rom_size, &mut rom_file)?;
-        let ram = Ram::new(ram_size);
-
         let cartridge = Self {
+            rom_file,
             header,
-            rom,
-            ram,
-            cartridge_type,
-            rom_size,
-            ram_size,
-            banking_mode: false,
         };
 
         Ok(cartridge)
-    }
-
-    /// Raw header data
-    pub fn header(&self) -> &[u8] {
-        &self.header
     }
 
     /// Entry point
@@ -787,94 +885,6 @@ impl Cartridge {
         let upper = self.header[0x4E] as u16;
         let lower = self.header[0x4F] as u16;
         upper << 8 | lower
-    }
-}
-
-// TODO: Clean this up perhaps?
-// RTC functions are missing, and it does not handle ROM bank_0 switching
-impl MemoryWrite<u16, u8> for Cartridge {
-    /// Handle ROM and RAM bank changes as well as regular writes to cartridge RAM
-    #[inline]
-    fn write(&mut self, addr: u16, value: u8) {
-        match addr {
-            0x2000..=0x3FFF if self.cartridge_type.is_mbc1() => {
-                // MBC1 ROM bank select (5 bit register)
-                let value = value & 0b00011111;
-                let value = if value == 0 { 1 } else { value };
-                self.rom.active_bank = value as u16;
-            }
-            0x4000..=0x5FFF if self.cartridge_type.is_mbc1() => {
-                // MBC1 RAM bank select OR upper 2 bits of ROM bank (2 bit register)
-                let value = value & 0x03;
-
-                if usize::from(self.ram_size) >= RamSize::_32K.into() && self.banking_mode {
-                    // Switch RAM bank, but only in advanced banking mode
-                    self.ram.as_mut().unwrap().set_bank(value);
-                } else if usize::from(self.rom_size) >= RomSize::_1M.into() {
-                    // Set as upper two bits of ROM bank
-                    self.rom.active_bank |= (value as u16) << 5;
-                }
-            }
-            0x6000..=0x7FFF if self.cartridge_type.is_mbc1() => {
-                // Banking mode select (1 bit)
-                self.banking_mode = value & 0x01 == 1;
-            }
-            0x0000..=0x3FFF if self.cartridge_type.is_mbc2() => {
-                // MBC2 ROM bank select
-
-                // Ignore RAM enable requests
-                if value & (1 << 7) == 0 {
-                    return;
-                }
-
-                let addr_upper = (addr >> 8) as u8;
-
-                if addr_upper & 1 != 0 {
-                    // If the lower bit of the upper byte of the address is 1,
-                    // we have a valid ROM bank select request
-                    let value = value & 0xF;
-                    let value = if value == 0 { 1 } else { value };
-                    self.rom.active_bank = value as u16;
-                }
-            }
-            0x2000..=0x3FFF if self.cartridge_type.is_mbc3() => {
-                // MBC3 ROM bank select (7 bit register)
-                let value = value & 0b01111111;
-                let value = if value == 0 { 1 } else { value };
-                self.rom.active_bank = value as u16;
-            }
-            0x4000..=0x5FFF if self.cartridge_type.is_mbc3() => {
-                // MBC3 RAM bank select OR RTC register select (2 bits)
-                let value = value & 0x03;
-
-                match value {
-                    0x0..=0x3 => self.ram.as_mut().unwrap().set_bank(value),
-                    0x8..=0xC => todo!("Enable reading/writing to RTC register"),
-                    _ => unreachable!(),
-                }
-            }
-            0x6000..=0x7FFF if self.cartridge_type.is_mbc3() => {
-                todo!("Latch clock data, write only")
-            }
-            0x2000..=0x2FFF if self.cartridge_type.is_mbc5() => {
-                // MBC5 ROM bank select (lower 8 bits)
-                self.rom.active_bank |= value as u16;
-            }
-            0x3000..=0x3FFF if self.cartridge_type.is_mbc5() => {
-                // MBC5 ROM bank select (9th bit)
-                let value = (value & 0x1) as u16;
-                self.rom.active_bank |= value << 8;
-            }
-            0x4000..=0x5FFF if self.cartridge_type.is_mbc5() => {
-                // MBC5 RAM bank select (4 bits)
-                self.ram.as_mut().unwrap().set_bank(value & 0xF);
-            }
-
-            // Forward RAM writes as-is
-            Ram::BASE_ADDR..=Ram::LAST_ADDR => self.ram.as_mut().unwrap().write(addr, value),
-
-            _ => unreachable!("Unexpected write to: {}", addr),
-        }
     }
 }
 

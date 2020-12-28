@@ -1,4 +1,4 @@
-use crate::cartridge::{Cartridge, Ram as CartridgeRam, Rom};
+use crate::cartridge::{Cartridge, Controller, Ram as CartridgeRam, Rom};
 use crate::error::Result;
 use crate::joypad::Joypad;
 
@@ -421,7 +421,7 @@ impl MemoryWrite<u16, u8> for Io {
 pub struct MemoryBus {
     /// ROM:       0x0000 - 0x7FFF
     /// Cart RAM:  0xA000 - 0xBFFF
-    cartridge: Cartridge,
+    controller: Controller,
 
     /// Video RAM: 0x8000 - 0x9FFF
     vram: Vram,
@@ -444,7 +444,7 @@ pub struct MemoryBus {
 impl MemoryBus {
     pub fn new() -> Self {
         Self {
-            cartridge: Cartridge::new(),
+            controller: Controller::new(),
             vram: Vram::new(true),
             ram: Ram::new(true),
             io: Io::new(),
@@ -454,8 +454,10 @@ impl MemoryBus {
     }
 
     pub fn from_cartridge(cartridge: Cartridge) -> Result<Self> {
+        let controller = Controller::from_cartridge(cartridge)?;
+
         Ok(Self {
-            cartridge,
+            controller,
             vram: Vram::new(true),
             ram: Ram::new(true),
             io: Io::new(),
@@ -464,8 +466,8 @@ impl MemoryBus {
         })
     }
 
-    pub fn cartridge(&mut self) -> &mut Cartridge {
-        &mut self.cartridge
+    pub fn controller(&mut self) -> &mut Controller {
+        &mut self.controller
     }
 
     /// Return a reference to the joypad
@@ -485,10 +487,10 @@ impl MemoryRead<u16, u8> for MemoryBus {
     /// This will be converted into a read from the relevant memory section.
     fn read(&self, addr: u16) -> u8 {
         match addr {
-            Rom::BASE_ADDR..=Rom::LAST_ADDR => self.cartridge.rom.read(addr),
+            Rom::BASE_ADDR..=Rom::LAST_ADDR => self.controller.rom.read(addr),
             Vram::BASE_ADDR..=Vram::LAST_ADDR => self.vram.read(addr),
             CartridgeRam::BASE_ADDR..=CartridgeRam::LAST_ADDR => {
-                self.cartridge.ram.as_ref().unwrap().read(addr)
+                self.controller.ram.as_ref().unwrap().read(addr)
             }
             Ram::BASE_ADDR..=Ram::LAST_ADDR => self.ram.read(addr),
             Io::BASE_ADDR..=Io::LAST_ADDR => self.io.read(addr),
@@ -507,10 +509,10 @@ impl std::ops::Index<std::ops::Range<u16>> for MemoryBus {
     /// Return a range of bytes from the relevant memory.
     fn index(&self, range: std::ops::Range<u16>) -> &Self::Output {
         match range.start {
-            Rom::BASE_ADDR..=Rom::LAST_ADDR => &self.cartridge.rom[range],
+            Rom::BASE_ADDR..=Rom::LAST_ADDR => &self.controller.rom[range],
             // 0x8000..=0x9FFF => self.vram.read(addr),
             CartridgeRam::BASE_ADDR..=CartridgeRam::LAST_ADDR => {
-                &self.cartridge.ram.as_ref().unwrap()[range]
+                &self.controller.ram.as_ref().unwrap()[range]
             }
             // 0xC000..=0xDFFF => self.ram.read(addr),
             0xFF80..=0xFFFE => {
@@ -529,10 +531,10 @@ impl std::ops::Index<std::ops::RangeFrom<u16>> for MemoryBus {
     /// Return a range of bytes from the relevant memory.
     fn index(&self, range: std::ops::RangeFrom<u16>) -> &Self::Output {
         match range.start {
-            Rom::BASE_ADDR..=Rom::LAST_ADDR => &self.cartridge.rom[range],
+            Rom::BASE_ADDR..=Rom::LAST_ADDR => &self.controller.rom[range],
             // 0x8000..=0x9FFF => self.vram.read(addr),
             CartridgeRam::BASE_ADDR..=CartridgeRam::LAST_ADDR => {
-                &self.cartridge.ram.as_ref().unwrap()[range]
+                &self.controller.ram.as_ref().unwrap()[range]
             }
             // 0xC000..=0xDFFF => self.ram.read(addr),
             0xFF80..=0xFFFE => {
@@ -547,10 +549,10 @@ impl std::ops::Index<std::ops::RangeFrom<u16>> for MemoryBus {
 impl MemoryWrite<u16, u8> for MemoryBus {
     fn write(&mut self, addr: u16, value: u8) {
         match addr {
-            Rom::BASE_ADDR..=Rom::LAST_ADDR => self.cartridge.write(addr, value),
+            Rom::BASE_ADDR..=Rom::LAST_ADDR => self.controller.write(addr, value),
             Vram::BASE_ADDR..=Vram::LAST_ADDR => self.vram.write(addr, value),
             CartridgeRam::BASE_ADDR..=CartridgeRam::LAST_ADDR => {
-                self.cartridge.write(addr, value)
+                self.controller.write(addr, value)
             }
             Ram::BASE_ADDR..=Ram::LAST_ADDR => self.ram.write(addr, value),
             Io::BASE_ADDR..=Io::LAST_ADDR => {
@@ -579,7 +581,7 @@ impl MemoryWrite<u16, u16> for MemoryBus {
     fn write(&mut self, addr: u16, value: u16) {
         match addr {
             CartridgeRam::BASE_ADDR..=CartridgeRam::LAST_ADDR => {
-                self.cartridge.ram.as_mut().unwrap().write(addr, value)
+                self.controller.ram.as_mut().unwrap().write(addr, value)
             }
             Ram::BASE_ADDR..=Ram::LAST_ADDR => self.ram.write(addr, value),
             0xFF80..=0xFFFE => {
