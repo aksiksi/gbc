@@ -12,5 +12,10 @@ path = "src/gbc/lib.rs"
 name = "gbc"
 path = "src/main.rs"
 test = false
+required-features = ["gui"]
+
+[features]
+gui = ["sdl2"]
 
 [dependencies]
+sdl2 = { version = "0.34.3", features = [ "bundled", "static-link" ], optional = true }
