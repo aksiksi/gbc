@@ -1,5 +1,3 @@
-use std::convert::TryInto;
-
 use crate::registers::{Reg16, Reg8};
 
 /// A single argument to an instruction.
@@ -474,25 +472,20 @@ impl From<u8> for Cycles {
 }
 
 impl Instruction {
-    /// Decode a single instruction from a slice. The slice must contain
-    /// at least a single byte (opcode).
+    /// Decode a single instruction from a 3 byte array.
     ///
     /// In all cases, we will attempt to extract an argument from the following
     /// 2 bytes. If we are at the end of a memory region, we will return `None` for the
     /// args.
     ///
     /// Returns: instruction, instruction size, cycle count
-    pub fn decode(data: &[u8]) -> (Self, u8, Cycles) {
+    pub fn decode(data: [u8; 3]) -> (Self, u8, Cycles) {
         use Instruction::*;
 
         // Safely attempt to extract the next arg as 8-bit and 16-bit immediates.
         // If we are at the end of the memory range, we will return 0.
-        let arg8 = data.get(1).map(|x| *x);
-        let arg16 = if data.len() >= 3 {
-            Some(u16::from_le_bytes(data[1..3].try_into().unwrap()))
-        } else {
-            None
-        };
+        let arg8 = data[1];
+        let arg16 = u16::from_le_bytes([data[1], data[2]]);
 
         let (inst, size, cycles) = match data[0] {
             0x00 => (Nop, 1, 4.into()),
@@ -502,27 +495,27 @@ impl Instruction {
             0xCB => Self::decode_cb(data[1]),
 
             // Load
-            0x08 => (Ld { dst: Arg::MemImm(arg16.unwrap()), src: Reg16::SP.into() }, 3, 20.into()),
+            0x08 => (Ld { dst: Arg::MemImm(arg16), src: Reg16::SP.into() }, 3, 20.into()),
             0x02 => (Ld { dst: Arg::Mem(Reg16::BC), src: Reg8::A.into() }, 1, 8.into()),
             0x12 => (Ld { dst: Arg::Mem(Reg16::DE), src: Reg8::A.into() }, 1, 8.into()),
             0x0A => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::Mem(Reg16::BC)}, 1, 8.into()),
             0x1A => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::Mem(Reg16::DE)}, 1, 8.into()),
-            0x01 => (Ld { dst: Arg::Reg16(Reg16::BC), src: Arg::Imm16(arg16.unwrap()) }, 3, 12.into()),
-            0x11 => (Ld { dst: Arg::Reg16(Reg16::DE), src: Arg::Imm16(arg16.unwrap()) }, 3, 12.into()),
-            0x21 => (Ld { dst: Arg::Reg16(Reg16::HL), src: Arg::Imm16(arg16.unwrap()) }, 3, 12.into()),
-            0x31 => (Ld { dst: Arg::Reg16(Reg16::SP), src: Arg::Imm16(arg16.unwrap()) }, 3, 12.into()),
-            0x06 => (Ld { dst: Arg::Reg8(Reg8::B), src: Arg::Imm8(arg8.unwrap()) }, 2, 8.into()),
-            0x16 => (Ld { dst: Arg::Reg8(Reg8::D), src: Arg::Imm8(arg8.unwrap()) }, 2, 8.into()),
-            0x26 => (Ld { dst: Arg::Reg8(Reg8::H), src: Arg::Imm8(arg8.unwrap()) }, 2, 8.into()),
-            0x36 => (Ld { dst: Arg::Mem(Reg16::HL), src: Arg::Imm8(arg8.unwrap()) }, 2, 12.into()),
+            0x01 => (Ld { dst: Arg::Reg16(Reg16::BC), src: Arg::Imm16(arg16) }, 3, 12.into()),
+            0x11 => (Ld { dst: Arg::Reg16(Reg16::DE), src: Arg::Imm16(arg16) }, 3, 12.into()),
+            0x21 => (Ld { dst: Arg::Reg16(Reg16::HL), src: Arg::Imm16(arg16) }, 3, 12.into()),
+            0x31 => (Ld { dst: Arg::Reg16(Reg16::SP), src: Arg::Imm16(arg16) }, 3, 12.into()),
+            0x06 => (Ld { dst: Arg::Reg8(Reg8::B), src: Arg::Imm8(arg8) }, 2, 8.into()),
+            0x16 => (Ld { dst: Arg::Reg8(Reg8::D), src: Arg::Imm8(arg8) }, 2, 8.into()),
+            0x26 => (Ld { dst: Arg::Reg8(Reg8::H), src: Arg::Imm8(arg8) }, 2, 8.into()),
+            0x36 => (Ld { dst: Arg::Mem(Reg16::HL), src: Arg::Imm8(arg8) }, 2, 12.into()),
             0x22 => (LdiMemHlA, 1, 8.into()),
             0x32 => (LddMemHlA, 1, 8.into()),
             0x2A => (LdiAMemHl, 1, 8.into()),
             0x3A => (LddAMemHl, 1, 8.into()),
-            0x0E => (Ld { dst: Arg::Reg8(Reg8::C), src: Arg::Imm8(arg8.unwrap()) }, 2, 8.into()),
-            0x1E => (Ld { dst: Arg::Reg8(Reg8::E), src: Arg::Imm8(arg8.unwrap()) }, 2, 8.into()),
-            0x2E => (Ld { dst: Arg::Reg8(Reg8::L), src: Arg::Imm8(arg8.unwrap()) }, 2, 8.into()),
-            0x3E => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::Imm8(arg8.unwrap()) }, 2, 8.into()),
+            0x0E => (Ld { dst: Arg::Reg8(Reg8::C), src: Arg::Imm8(arg8) }, 2, 8.into()),
+            0x1E => (Ld { dst: Arg::Reg8(Reg8::E), src: Arg::Imm8(arg8) }, 2, 8.into()),
+            0x2E => (Ld { dst: Arg::Reg8(Reg8::L), src: Arg::Imm8(arg8) }, 2, 8.into()),
+            0x3E => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::Imm8(arg8) }, 2, 8.into()),
             0x40 => (Ld { dst: Arg::Reg8(Reg8::B), src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
             0x50 => (Ld { dst: Arg::Reg8(Reg8::D), src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
             0x60 => (Ld { dst: Arg::Reg8(Reg8::H), src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
@@ -587,13 +580,13 @@ impl Instruction {
             0x5F => (Ld { dst: Arg::Reg8(Reg8::E), src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
             0x6F => (Ld { dst: Arg::Reg8(Reg8::L), src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
             0x7F => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
-            0xE0 => (Ldh { offset: arg8.unwrap() }, 2, 12.into()),
-            0xF0 => (LdhA { offset: arg8.unwrap() }, 2, 12.into()),
+            0xE0 => (Ldh { offset: arg8 }, 2, 12.into()),
+            0xF0 => (LdhA { offset: arg8 }, 2, 12.into()),
             0xE2 => (LdMemCA, 2, 8.into()),
             0xF2 => (LdAMemC, 2, 8.into()),
-            0xEA => (Ld { dst: Arg::MemImm(arg16.unwrap()), src: Arg::Reg8(Reg8::A) }, 3, 16.into()),
-            0xFA => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::MemImm(arg16.unwrap()) }, 3, 16.into()),
-            0xF8 => (LdHlSpImm8i { offset: arg8.unwrap() as i8 }, 2, 12.into()),
+            0xEA => (Ld { dst: Arg::MemImm(arg16), src: Arg::Reg8(Reg8::A) }, 3, 16.into()),
+            0xFA => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::MemImm(arg16) }, 3, 16.into()),
+            0xF8 => (LdHlSpImm8i { offset: arg8 as i8 }, 2, 12.into()),
             0xF9 => (Ld { dst: Reg16::SP.into(), src: Reg16::SP.into() }, 1, 8.into()),
 
             // Misc
@@ -649,7 +642,7 @@ impl Instruction {
             0x85 => (Add { src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
             0x86 => (Add { src: Arg::MemHl }, 1, 8.into()),
             0x87 => (Add { src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
-            0xC6 => (Add { src: arg8.unwrap().into() }, 2, 8.into()),
+            0xC6 => (Add { src: arg8.into() }, 2, 8.into()),
             0x88 => (Adc { src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
             0x89 => (Adc { src: Arg::Reg8(Reg8::C) }, 1, 4.into()),
             0x8A => (Adc { src: Arg::Reg8(Reg8::D) }, 1, 4.into()),
@@ -658,8 +651,8 @@ impl Instruction {
             0x8D => (Adc { src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
             0x8E => (Adc { src: Arg::MemHl }, 1, 8.into()),
             0x8F => (Adc { src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
-            0xCE => (Adc { src: arg8.unwrap().into() }, 2, 8.into()),
-            0xE8 => (AddSpImm8i { offset: arg8.unwrap() as i8 }, 2, 16.into()),
+            0xCE => (Adc { src: arg8.into() }, 2, 8.into()),
+            0xE8 => (AddSpImm8i { offset: arg8 as i8 }, 2, 16.into()),
 
             // Sub
             0x90 => (Sub { src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
@@ -698,7 +691,7 @@ impl Instruction {
             0xAD => (Xor { src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
             0xAE => (Xor { src: Arg::MemHl }, 1, 8.into()),
             0xAF => (Xor { src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
-            0xEE => (Xor { src: Arg::Imm8(arg8.unwrap()) }, 2, 8.into()),
+            0xEE => (Xor { src: Arg::Imm8(arg8) }, 2, 8.into()),
 
             // Or
             0xB0 => (Or { src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
@@ -719,7 +712,7 @@ impl Instruction {
             0xBC => (Cp { src: Arg::Reg8(Reg8::H) }, 1, 4.into()),
             0xBD => (Cp { src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
             0xBE => (Cp { src: Arg::MemHl }, 1, 8.into()),
-            0xFE => (Cp { src: Arg::Imm8(arg8.unwrap()) }, 2, 8.into()),
+            0xFE => (Cp { src: Arg::Imm8(arg8) }, 2, 8.into()),
 
             // Push/pop
             0xC1 => (Pop  { dst: Reg16::BC.into() }, 1, 12.into()),
@@ -732,24 +725,24 @@ impl Instruction {
             0xF5 => (Push { src: Reg16::AF.into() }, 1, 16.into()),
 
             // Jump
-            0x18 => (Jr { offset: arg8.unwrap() as i8, cond: Cond::None }, 2, Cycles(12, 8)),
-            0x20 => (Jr { offset: arg8.unwrap() as i8, cond: Cond::NotZero }, 2, Cycles(12, 8)),
-            0x28 => (Jr { offset: arg8.unwrap() as i8, cond: Cond::Zero }, 2, Cycles(12, 8)),
-            0x30 => (Jr { offset: arg8.unwrap() as i8, cond: Cond::NotCarry }, 2, Cycles(12, 8)),
-            0x38 => (Jr { offset: arg8.unwrap() as i8, cond: Cond::Carry }, 2, Cycles(12, 8)),
-            0xC2 => (Jp { addr: arg16.unwrap(), cond: Cond::NotZero }, 3, Cycles(16, 12)),
-            0xCA => (Jp { addr: arg16.unwrap(), cond: Cond::Zero }, 3, Cycles(16, 12)),
-            0xD2 => (Jp { addr: arg16.unwrap(), cond: Cond::NotCarry }, 3, Cycles(16, 12)),
-            0xDA => (Jp { addr: arg16.unwrap(), cond: Cond::Carry }, 3, Cycles(16, 12)),
-            0xC3 => (Jp { addr: arg16.unwrap(), cond: Cond::None }, 3, 16.into()),
+            0x18 => (Jr { offset: arg8 as i8, cond: Cond::None }, 2, Cycles(12, 8)),
+            0x20 => (Jr { offset: arg8 as i8, cond: Cond::NotZero }, 2, Cycles(12, 8)),
+            0x28 => (Jr { offset: arg8 as i8, cond: Cond::Zero }, 2, Cycles(12, 8)),
+            0x30 => (Jr { offset: arg8 as i8, cond: Cond::NotCarry }, 2, Cycles(12, 8)),
+            0x38 => (Jr { offset: arg8 as i8, cond: Cond::Carry }, 2, Cycles(12, 8)),
+            0xC2 => (Jp { addr: arg16, cond: Cond::NotZero }, 3, Cycles(16, 12)),
+            0xCA => (Jp { addr: arg16, cond: Cond::Zero }, 3, Cycles(16, 12)),
+            0xD2 => (Jp { addr: arg16, cond: Cond::NotCarry }, 3, Cycles(16, 12)),
+            0xDA => (Jp { addr: arg16, cond: Cond::Carry }, 3, Cycles(16, 12)),
+            0xC3 => (Jp { addr: arg16, cond: Cond::None }, 3, 16.into()),
             0xE9 => (JpHl, 1, 4.into()),
 
             // Call
-            0xC4 => (Call { addr: arg16.unwrap(), cond: Cond::NotZero }, 3, Cycles(24, 12)),
-            0xD4 => (Call { addr: arg16.unwrap(), cond: Cond::NotCarry }, 3, Cycles(24, 12)),
-            0xCC => (Call { addr: arg16.unwrap(), cond: Cond::Zero }, 3, Cycles(24, 12)),
-            0xCD => (Call { addr: arg16.unwrap(), cond: Cond::None }, 3, 24.into()),
-            0xDC => (Call { addr: arg16.unwrap(), cond: Cond::Carry }, 3, Cycles(24, 12)),
+            0xC4 => (Call { addr: arg16, cond: Cond::NotZero }, 3, Cycles(24, 12)),
+            0xD4 => (Call { addr: arg16, cond: Cond::NotCarry }, 3, Cycles(24, 12)),
+            0xCC => (Call { addr: arg16, cond: Cond::Zero }, 3, Cycles(24, 12)),
+            0xCD => (Call { addr: arg16, cond: Cond::None }, 3, 24.into()),
+            0xDC => (Call { addr: arg16, cond: Cond::Carry }, 3, Cycles(24, 12)),
 
             // Ret
             0xC0 => (Ret { cond: Cond::NotZero }, 1, Cycles(20, 8)),
@@ -935,6 +928,9 @@ impl Instruction {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    use std::convert::TryInto;
+
     use Instruction::*;
 
     #[test]
@@ -967,7 +963,7 @@ mod test {
         ];
 
         for (input, expected, expected_size, expected_cycles) in test_vectors {
-            let (inst, size, cycles) = Instruction::decode(&input[..]);
+            let (inst, size, cycles) = Instruction::decode(input[..].try_into().unwrap());
             assert_eq!(expected, &inst);
             assert_eq!(expected_size, &size);
             assert_eq!(expected_cycles, &cycles);
@@ -978,38 +974,38 @@ mod test {
     fn decode_cb_instructions() {
         // Vector of (input instruction, expected decoded, size, cycle count)
         #[rustfmt::skip]
-        let test_vectors: &[([u8; 2], Instruction, u8, Cycles)] = &[
+        let test_vectors: &[([u8; 3], Instruction, u8, Cycles)] = &[
             // Rotate, Shift, Swap
-            ([0xCB, 0x01], Instruction::Rlc { dst: Reg8::C.into() }, 2, 8.into()),
-            ([0xCB, 0x0D], Instruction::Rrc { dst: Reg8::L.into() }, 2, 8.into()),
-            ([0xCB, 0x16], Instruction::Rl { dst: Arg::MemHl }, 2, 16.into()),
-            ([0xCB, 0x1B], Instruction::Rr { dst: Reg8::E.into() }, 2, 8.into()),
-            ([0xCB, 0x25], Instruction::Sla { dst: Reg8::L.into() }, 2, 8.into()),
-            ([0xCB, 0x2E], Instruction::Sra { dst: Arg::MemHl }, 2, 16.into()),
-            ([0xCB, 0x31], Instruction::Swap { dst: Reg8::C.into() }, 2, 8.into()),
-            ([0xCB, 0x3C], Instruction::Srl { dst: Reg8::H.into() }, 2, 8.into()),
+            ([0xCB, 0x01, 0x00], Instruction::Rlc { dst: Reg8::C.into() }, 2, 8.into()),
+            ([0xCB, 0x0D, 0x00], Instruction::Rrc { dst: Reg8::L.into() }, 2, 8.into()),
+            ([0xCB, 0x16, 0x00], Instruction::Rl { dst: Arg::MemHl }, 2, 16.into()),
+            ([0xCB, 0x1B, 0x00], Instruction::Rr { dst: Reg8::E.into() }, 2, 8.into()),
+            ([0xCB, 0x25, 0x00], Instruction::Sla { dst: Reg8::L.into() }, 2, 8.into()),
+            ([0xCB, 0x2E, 0x00], Instruction::Sra { dst: Arg::MemHl }, 2, 16.into()),
+            ([0xCB, 0x31, 0x00], Instruction::Swap { dst: Reg8::C.into() }, 2, 8.into()),
+            ([0xCB, 0x3C, 0x00], Instruction::Srl { dst: Reg8::H.into() }, 2, 8.into()),
 
             // Bit
-            ([0xCB, 0x46], Instruction::Bit { dst: Arg::MemHl, bit: 0 }, 2, 16.into()),
-            ([0xCB, 0x4B], Instruction::Bit { dst: Reg8::E.into(), bit: 1 }, 2, 8.into()),
-            ([0xCB, 0x53], Instruction::Bit { dst: Reg8::E.into(), bit: 2 }, 2, 8.into()),
-            ([0xCB, 0x69], Instruction::Bit { dst: Reg8::C.into(), bit: 5 }, 2, 8.into()),
+            ([0xCB, 0x46, 0x00], Instruction::Bit { dst: Arg::MemHl, bit: 0 }, 2, 16.into()),
+            ([0xCB, 0x4B, 0x00], Instruction::Bit { dst: Reg8::E.into(), bit: 1 }, 2, 8.into()),
+            ([0xCB, 0x53, 0x00], Instruction::Bit { dst: Reg8::E.into(), bit: 2 }, 2, 8.into()),
+            ([0xCB, 0x69, 0x00], Instruction::Bit { dst: Reg8::C.into(), bit: 5 }, 2, 8.into()),
 
             // Res
-            ([0xCB, 0x86], Instruction::Res { dst: Arg::MemHl, bit: 0 }, 2, 16.into()),
-            ([0xCB, 0x8B], Instruction::Res { dst: Reg8::E.into(), bit: 1 }, 2, 8.into()),
-            ([0xCB, 0x93], Instruction::Res { dst: Reg8::E.into(), bit: 2 }, 2, 8.into()),
-            ([0xCB, 0xA9], Instruction::Res { dst: Reg8::C.into(), bit: 5 }, 2, 8.into()),
+            ([0xCB, 0x86, 0x00], Instruction::Res { dst: Arg::MemHl, bit: 0 }, 2, 16.into()),
+            ([0xCB, 0x8B, 0x00], Instruction::Res { dst: Reg8::E.into(), bit: 1 }, 2, 8.into()),
+            ([0xCB, 0x93, 0x00], Instruction::Res { dst: Reg8::E.into(), bit: 2 }, 2, 8.into()),
+            ([0xCB, 0xA9, 0x00], Instruction::Res { dst: Reg8::C.into(), bit: 5 }, 2, 8.into()),
 
             // Set
-            ([0xCB, 0xC6], Instruction::Set { dst: Arg::MemHl, bit: 0 }, 2, 16.into()),
-            ([0xCB, 0xCB], Instruction::Set { dst: Reg8::E.into(), bit: 1 }, 2, 8.into()),
-            ([0xCB, 0xD3], Instruction::Set { dst: Reg8::E.into(), bit: 2 }, 2, 8.into()),
-            ([0xCB, 0xE9], Instruction::Set { dst: Reg8::C.into(), bit: 5 }, 2, 8.into()),
+            ([0xCB, 0xC6, 0x00], Instruction::Set { dst: Arg::MemHl, bit: 0 }, 2, 16.into()),
+            ([0xCB, 0xCB, 0x00], Instruction::Set { dst: Reg8::E.into(), bit: 1 }, 2, 8.into()),
+            ([0xCB, 0xD3, 0x00], Instruction::Set { dst: Reg8::E.into(), bit: 2 }, 2, 8.into()),
+            ([0xCB, 0xE9, 0x00], Instruction::Set { dst: Reg8::C.into(), bit: 5 }, 2, 8.into()),
         ];
 
         for (input, expected, expected_size, expected_cycles) in test_vectors {
-            let (inst, size, cycles) = Instruction::decode(&input[..]);
+            let (inst, size, cycles) = Instruction::decode(input[..].try_into().unwrap());
             assert_eq!(expected, &inst);
             assert_eq!(expected_size, &size);
             assert_eq!(expected_cycles, &cycles);

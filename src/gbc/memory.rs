@@ -116,36 +116,6 @@ impl MemoryWrite<u16, u8> for Ram {
     }
 }
 
-impl MemoryWrite<u16, u16> for Ram {
-    #[inline]
-    fn write(&mut self, addr: u16, value: u16) {
-        let addr = (addr - Self::BASE_ADDR) as usize;
-        let value = value.to_le_bytes();
-
-        match self {
-            Self::Unbanked { data } => {
-                data[addr] = value[0];
-                data[addr + 1] = value[1];
-            }
-            Self::Banked { data, active_bank } => {
-                match addr {
-                    0x0000..=0x0FFF => {
-                        // Write to the first bank
-                        data[addr] = value[0];
-                        data[addr + 1] = value[1];
-                    }
-                    _ => {
-                        // Write to the switchable bank
-                        let bank_offset = *active_bank as usize * Self::BANK_SIZE;
-                        data[bank_offset + addr] = value[0];
-                        data[bank_offset + addr + 1] = value[1];
-                    }
-                }
-            }
-        }
-    }
-}
-
 impl std::fmt::Debug for Ram {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -503,49 +473,6 @@ impl MemoryRead<u16, u8> for MemoryBus {
     }
 }
 
-impl std::ops::Index<std::ops::Range<u16>> for MemoryBus {
-    type Output = [u8];
-
-    /// Return a range of bytes from the relevant memory.
-    fn index(&self, range: std::ops::Range<u16>) -> &Self::Output {
-        match range.start {
-            Rom::BASE_ADDR..=Rom::LAST_ADDR => &self.controller.rom[range],
-            // 0x8000..=0x9FFF => self.vram.read(addr),
-            CartridgeRam::BASE_ADDR..=CartridgeRam::LAST_ADDR => {
-                &self.controller.ram.as_ref().unwrap()[range]
-            }
-            // 0xC000..=0xDFFF => self.ram.read(addr),
-            0xFF80..=0xFFFE => {
-                let start = range.start as usize - 0xFF80;
-                let end = range.end as usize - 0xFF80;
-                &self.high_ram[start..end]
-            }
-            _ => panic!("Unable to handle range: {:?}", range),
-        }
-    }
-}
-
-impl std::ops::Index<std::ops::RangeFrom<u16>> for MemoryBus {
-    type Output = [u8];
-
-    /// Return a range of bytes from the relevant memory.
-    fn index(&self, range: std::ops::RangeFrom<u16>) -> &Self::Output {
-        match range.start {
-            Rom::BASE_ADDR..=Rom::LAST_ADDR => &self.controller.rom[range],
-            // 0x8000..=0x9FFF => self.vram.read(addr),
-            CartridgeRam::BASE_ADDR..=CartridgeRam::LAST_ADDR => {
-                &self.controller.ram.as_ref().unwrap()[range]
-            }
-            // 0xC000..=0xDFFF => self.ram.read(addr),
-            0xFF80..=0xFFFE => {
-                let start = range.start as usize - 0xFF80;
-                &self.high_ram[start..]
-            }
-            _ => panic!("Unable to handle range: {:?}", range),
-        }
-    }
-}
-
 impl MemoryWrite<u16, u8> for MemoryBus {
     fn write(&mut self, addr: u16, value: u8) {
         match addr {
@@ -576,17 +503,24 @@ impl MemoryWrite<u16, u8> for MemoryBus {
     }
 }
 
-/// Write a 16-bit word to memory.
+/// Write a 16-bit word to memory. This maps into 2 8 bit writes
+/// to the relevant memory region.
 impl MemoryWrite<u16, u16> for MemoryBus {
     fn write(&mut self, addr: u16, value: u16) {
+        let value = value.to_le_bytes();
+
         match addr {
             CartridgeRam::BASE_ADDR..=CartridgeRam::LAST_ADDR => {
-                self.controller.ram.as_mut().unwrap().write(addr, value)
+                let controller = self.controller.ram.as_mut().expect("Cartridge RAM is not available");
+                controller.write(addr, value[0]);
+                controller.write(addr + 1, value[1]);
             }
-            Ram::BASE_ADDR..=Ram::LAST_ADDR => self.ram.write(addr, value),
+            Ram::BASE_ADDR..=Ram::LAST_ADDR => {
+                self.ram.write(addr, value[0]);
+                self.ram.write(addr + 1, value[1]);
+            }
             0xFF80..=0xFFFE => {
                 let addr = addr as usize - 0xFF80;
-                let value = value.to_le_bytes();
                 self.high_ram[addr] = value[0];
                 self.high_ram[addr + 1] = value[1];
             }

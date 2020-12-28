@@ -77,13 +77,15 @@ impl Cpu {
     pub fn step(&mut self) -> u8 {
         let pc = self.registers.PC;
 
-        // This returns a read-only slice of the relevant memory, starting from PC.
-        // The slice is used to decode the next instruction.
+        // Read the next 3 bytes from memory, starting from PC
+        // This is what we will use to decode the next instruction.
         //
-        // Note that the slice is unbounded: it ends at the end of the relevant memory/bank.
-        // For example, if the current PC is in ROM bank 0, `data` will contain a slice
-        // from PC to the end of ROM bank 0.
-        let data = &self.memory[pc..];
+        // TODO: Evaluate the boundary cases
+        let data: [u8; 3] = [
+            self.memory.read(pc),
+            self.memory.read(pc+1),
+            self.memory.read(pc+2),
+        ];
 
         // Decode the instruction
         let (inst, size, cycles) = Instruction::decode(data);

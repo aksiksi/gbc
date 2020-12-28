@@ -129,51 +129,6 @@ impl MemoryRead<u16, u8> for Ram {
     }
 }
 
-impl std::ops::Index<std::ops::Range<u16>> for Ram {
-    type Output = [u8];
-
-    /// Return a slice of memory corresponding to the given range.
-    ///
-    /// Note: This internally handles both banked and unbanked cartridge RAM.
-    #[inline]
-    fn index(&self, range: std::ops::Range<u16>) -> &Self::Output {
-        let start = (range.start - Self::BASE_ADDR) as usize;
-        let end = (range.end - Self::BASE_ADDR) as usize;
-
-        match self {
-            Self::Unbanked { data, .. } => &data[start..end],
-            Self::Banked {
-                data, active_bank, ..
-            } => {
-                let bank_offset = *active_bank as usize * Self::BANK_SIZE;
-                &data[bank_offset + start..bank_offset + end]
-            }
-        }
-    }
-}
-
-impl std::ops::Index<std::ops::RangeFrom<u16>> for Ram {
-    type Output = [u8];
-
-    /// Return a slice of memory corresponding to the given range.
-    ///
-    /// Note: This internally handles both banked and unbanked cartridge RAM.
-    #[inline]
-    fn index(&self, range: std::ops::RangeFrom<u16>) -> &Self::Output {
-        let start = (range.start - Self::BASE_ADDR) as usize;
-
-        match self {
-            Self::Unbanked { data, .. } => &data[start..],
-            Self::Banked {
-                data, active_bank, ..
-            } => {
-                let bank_offset = *active_bank as usize * Self::BANK_SIZE;
-                &data[bank_offset + start..]
-            }
-        }
-    }
-}
-
 impl MemoryWrite<u16, u8> for Ram {
     /// Write a byte of data to the current active bank
     #[inline]
@@ -188,28 +143,6 @@ impl MemoryWrite<u16, u8> for Ram {
             } => {
                 let bank_offset = *active_bank as usize * Self::BANK_SIZE;
                 data[bank_offset + addr] = value;
-            }
-        }
-    }
-}
-
-/// Write a 16-bit word to memory.
-impl MemoryWrite<u16, u16> for Ram {
-    #[inline]
-    fn write(&mut self, addr: u16, value: u16) {
-        let addr = (addr - Self::BASE_ADDR) as usize;
-        let value = value.to_le_bytes();
-        match self {
-            Self::Unbanked { data, .. } => {
-                data[addr] = value[0];
-                data[addr + 1] = value[1];
-            }
-            Self::Banked {
-                data, active_bank, ..
-            } => {
-                let bank_offset = *active_bank as usize * Self::BANK_SIZE;
-                data[bank_offset + addr] = value[0];
-                data[bank_offset + addr + 1] = value[1];
             }
         }
     }
@@ -374,90 +307,6 @@ impl MemoryRead<u16, u8> for Rom {
                 self.bank1[bank_offset + addr]
             }
             _ => unreachable!("Unexpected read from: {}", addr),
-        }
-    }
-}
-
-impl MemoryRead<u16, u16> for Rom {
-    /// Read the next 2 bytes in ROM as a single u16 (LS byte first)
-    #[inline]
-    fn read(&self, addr: u16) -> u16 {
-        let addr = addr as usize;
-
-        match addr {
-            0x0000..=0x3FFF => {
-                if addr + 1 > self.bank0.len() {
-                    eprintln!("Cannot read 16-bit value at address {}", addr);
-                    return 0;
-                }
-
-                // Bank 0 (static)
-                let lower = self.bank0[addr] as u16;
-                let upper = self.bank0[addr + 1] as u16;
-                (upper << 8) | lower
-            }
-            0x4000..=0x7FFF => {
-                if addr + 1 > Self::LAST_ADDR as usize {
-                    eprintln!("Cannot read 16-bit value at address {}", addr);
-                    return 0;
-                }
-
-                // Bank 1 (dynamic)
-                let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
-                let lower = self.bank1[bank_offset + addr] as u16;
-                let upper = self.bank1[bank_offset + addr + 1] as u16;
-                (upper << 8) | lower
-            }
-            _ => unreachable!("Unexpected read from: {}", addr),
-        }
-    }
-}
-
-impl std::ops::Index<std::ops::Range<u16>> for Rom {
-    type Output = [u8];
-
-    /// Returns a slice of bytes from the ROM bank corresponding to
-    /// the given `start` address.
-    ///
-    /// Note that this does not handle cross-bank slices.
-    #[inline]
-    fn index(&self, range: std::ops::Range<u16>) -> &Self::Output {
-        let start = range.start;
-        let end = range.end as usize;
-
-        match start {
-            0x0000..=0x3FFF => {
-                // Bank 0 (static)
-                &self.bank0[start as usize..end]
-            }
-            0x4000..=0x7FFF => {
-                // Bank 1 (dynamic)
-                let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
-                &self.bank1[bank_offset + start as usize..bank_offset + end]
-            }
-            _ => unreachable!("Range start is larger than allowed: {}", start),
-        }
-    }
-}
-
-impl std::ops::Index<std::ops::RangeFrom<u16>> for Rom {
-    type Output = [u8];
-
-    #[inline]
-    fn index(&self, range: std::ops::RangeFrom<u16>) -> &Self::Output {
-        let start = range.start;
-
-        match start {
-            0x0000..=0x3FFF => {
-                // Bank 0 (static)
-                &self.bank0[start as usize..]
-            }
-            0x4000..=0x7FFF => {
-                // Bank 1 (dynamic)
-                let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
-                &self.bank1[bank_offset + start as usize..]
-            }
-            _ => unreachable!("Range start is larger than allowed: {}", start),
         }
     }
 }
