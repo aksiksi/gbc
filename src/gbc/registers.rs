@@ -124,6 +124,14 @@ impl RegisterFile {
         }
     }
 
+    /// Clear all flags
+    pub fn clear_all(&mut self) {
+        self.zero = false;
+        self.subtract = false;
+        self.half_carry = false;
+        self.carry = false;
+    }
+
     pub fn flags(&self) -> u8 {
         self.F
     }

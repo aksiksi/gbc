@@ -16,18 +16,30 @@ enum LogicalOp {
 /// Small trait that abstracts computation of half-carry
 /// between two numbers
 trait HalfCarry<T> {
+    /// Half carry for addition
     fn half_carry(&self, other: T) -> bool;
+
+    /// Half carry for subtraction
+    fn half_carry_sub(&self, other: T) -> bool;
 }
 
 impl HalfCarry<u8> for u8 {
     fn half_carry(&self, other: u8) -> bool {
         ((self & 0xF) + (other & 0xF)) & 0x10 == 0x10
     }
+
+    fn half_carry_sub(&self, other: u8) -> bool {
+        (self & 0xF) < (other & 0xF)
+    }
 }
 
 impl HalfCarry<u16> for u16 {
     fn half_carry(&self, other: u16) -> bool {
         ((self & 0x00FF) + (other & 0x00FF)) & 0x100 == 0x100
+    }
+
+    fn half_carry_sub(&self, other: u16) -> bool {
+        (self & 0x00FF) < (other & 0x00FF)
     }
 }
 
@@ -235,8 +247,7 @@ impl Cpu {
             RetI => {
                 let addr = self.pop();
                 self.registers.PC = addr;
-
-                // TODO: Enable interrupts
+                self.interrupts_enabled = true;
             }
             Rst { offset } => {
                 // Push current PC onto stack, then jump to offset
@@ -342,9 +353,7 @@ impl Cpu {
             Res { dst, bit } => self.set(dst, bit, true),
 
             // Misc
-            Daa => {
-                todo!()
-            }
+            Daa => self.daa(),
             Cpl => {
                 let curr = self.registers.read(Reg8::A);
                 self.registers.write(Reg8::A, !curr);
@@ -474,12 +483,13 @@ impl Cpu {
 
     /// Helper that pops 2 bytes off the stack
     fn pop(&mut self) -> u16 {
+        // Read upper and lower bytes from stack.
+        let lower = self.memory.read(self.registers.SP);
+        let upper = self.memory.read(self.registers.SP + 1);
+        let value = (upper as u16) << 8 | lower as u16;
+
         // Increment SP
         self.registers.SP += 2;
-
-        let lower = self.memory.read(self.registers.SP);
-        let upper = self.memory.read(self.registers.SP - 1);
-        let value = (upper as u16) << 8 | lower as u16;
 
         value
     }
@@ -492,8 +502,8 @@ impl Cpu {
         // Write upper and lower bytes seperately to the stack.
         // We cannot use the `MemoryWrite` trait because it assumes
         // that memory addresses increase instead of decrease.
-        self.memory.write(self.registers.SP, lower);
         self.memory.write(self.registers.SP-1, upper);
+        self.memory.write(self.registers.SP-2, lower);
 
         // Decrement SP
         self.registers.SP -= 2;
@@ -541,16 +551,15 @@ impl Cpu {
 
         let curr_carry = if self.registers.carry() { 1u8 } else { 0u8 };
 
-        // Compute half-carry based on the current value of the carry flag
-        let half_carry = ((val & 0xF) + (a & 0xF) + curr_carry) & 0x10 == 0x10;
+        // First, add the current carry to A and compute initial carry flags
+        let tmp = a.wrapping_add(curr_carry);
+        let mut carry = tmp < a;
+        let mut half_carry = tmp < a;
 
-        let (result, carry) = match a.overflowing_add(val) {
-            // If the first add overflows, propagate the carry flag
-            (result, true) => (result.wrapping_add(1), true),
-
-            // If the first add does not overflow, try another overflowing_add
-            (result, false) => result.overflowing_add(1),
-        };
+        // Then, add the actual value to A and update the carry flags (if needed)
+        let result = tmp.wrapping_add(val);
+        carry = carry || result < tmp;
+        half_carry = half_carry || tmp.half_carry(val);
 
         self.registers.write(Reg8::A, result);
 
@@ -567,7 +576,7 @@ impl Cpu {
 
         let (result, carry) = {
             let val = self.registers.read(src);
-            half_carry = ((val & 0x00FF) + (hl & 0x00FF)) & 0x0100 == 0x0100;
+            half_carry = val.half_carry(hl);
             hl.overflowing_add(val)
         };
 
@@ -593,7 +602,7 @@ impl Cpu {
             _ => unreachable!("Unexpected src: {:?}", src),
         };
 
-        let half_carry = a.half_carry(val);
+        let half_carry = a.half_carry_sub(val);
         let (result, carry) = a.overflowing_sub(val);
 
         // Write back the result for non-CP
@@ -624,16 +633,15 @@ impl Cpu {
 
         let curr_carry = if self.registers.carry() { 1u8 } else { 0u8 };
 
-        // Compute half-carry based on the current value of the carry flag
-        let half_carry = ((val & 0xF) + (a & 0xF) + curr_carry) & 0x10 == 0x10;
+        // First, subtract the current carry from A and compute initial carry flags
+        let tmp = a.wrapping_sub(curr_carry);
+        let mut carry = tmp > a;
+        let mut half_carry = tmp > a;
 
-        let (result, carry) = match a.overflowing_sub(val) {
-            // If the first sub overflows, propagate the carry flag
-            (result, true) => (result.wrapping_sub(1), true),
-
-            // If the first sub does not overflow, try another overflowing_sub
-            (result, false) => result.overflowing_sub(1),
-        };
+        // Then, subtract the actual value from A and update the carry flags (if needed)
+        let result = tmp.wrapping_sub(val);
+        carry = carry || result > tmp;
+        half_carry = half_carry || tmp.half_carry_sub(val);
 
         self.registers.write(Reg8::A, result);
 
@@ -790,6 +798,42 @@ impl Cpu {
         }
     }
 
+    /// Adjust A to BCD following ADD or SUB
+    //
+    /// Refer to first table on pg. 110 of GB Programming Manual
+    fn daa(&mut self) {
+        let subtract = self.registers.subtract();
+        let half_carry = self.registers.half_carry();
+        let mut carry = self.registers.carry();
+
+        let mut a = self.registers.read(Reg8::A);
+        let lower = a & 0xF;
+        let upper = a >> 4;
+
+        if subtract {
+            if half_carry {
+                a = a.wrapping_sub(0x06);
+            }
+            if carry {
+                a = a.wrapping_sub(0x60);
+            }
+        } else {
+            if half_carry || lower >= 0xA {
+                a = a.wrapping_add(0x06);
+            }
+            if carry || upper >= 0x9 {
+                a = a.wrapping_add(0x60);
+                carry = true;
+            }
+        }
+
+        self.registers.write(Reg8::A, a);
+
+        self.registers.set(Flag::Zero, a == 0);
+        self.registers.set(Flag::HalfCarry, false);
+        self.registers.set(Flag::Carry, carry);
+    }
+
     pub fn memory(&self) -> &MemoryBus {
         &self.memory
     }
@@ -922,6 +966,16 @@ mod test {
         assert_eq!(cpu.registers.read(Reg8::A), 0x2F);
         assert!(!cpu.registers.zero());
         assert!(cpu.registers.subtract());
+
+        cpu.registers.clear_all();
+        cpu.registers.write(Reg8::A, 0x83);
+        cpu.registers.write(Reg8::B, 0x38);
+        let inst = Instruction::Sub { src: Reg8::B.into() };
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::A), 0x4B);
+        assert!(!cpu.registers.zero());
+        assert!(cpu.registers.subtract());
+        assert!(cpu.registers.half_carry());
     }
 
     #[test]
@@ -1043,6 +1097,34 @@ mod test {
         assert!(cpu.registers.subtract());
         assert!(!cpu.registers.half_carry());
         assert!(cpu.registers.carry());
+    }
+
+    #[test]
+    fn daa() {
+        let mut cpu = get_cpu();
+
+        cpu.registers.write(Reg8::A, 0x45);
+        cpu.registers.write(Reg8::B, 0x38);
+
+        // ADD, then DAA
+        let inst = Instruction::Add { src: Reg8::B.into() };
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::A), 0x7D);
+
+        let inst = Instruction::Daa;
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::A), 0x83);
+        assert!(!cpu.registers.carry());
+
+        // SUB, then DAA
+        let inst = Instruction::Sub { src: Reg8::B.into() };
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::A), 0x4B);
+        assert!(cpu.registers.subtract());
+
+        let inst = Instruction::Daa;
+        cpu.execute(inst);
+        assert_eq!(cpu.registers.read(Reg8::A), 0x45);
     }
 
     #[test]

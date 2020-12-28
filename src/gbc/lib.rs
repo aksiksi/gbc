@@ -9,7 +9,7 @@ pub mod joypad;
 pub mod memory;
 pub mod registers;
 
-#[feature(debug)]
+#[cfg(feature = "debug")]
 pub mod debug;
 
 pub use cpu::Cpu;
