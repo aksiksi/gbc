@@ -14,8 +14,15 @@ path = "src/main.rs"
 test = false
 required-features = ["gui"]
 
+[[bin]]
+name = "gbc_dbg"
+path = "src/debugger/main.rs"
+test = false
+required-features = ["debug"]
+
 [features]
 gui = ["sdl2"]
+debug = []
 
 [dependencies]
 sdl2 = { version = "0.34.3", features = [ "bundled", "static-link" ], optional = true }

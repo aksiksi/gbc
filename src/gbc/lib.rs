@@ -9,6 +9,9 @@ pub mod joypad;
 pub mod memory;
 pub mod registers;
 
+#[feature(debug)]
+pub mod debug;
+
 pub use cpu::Cpu;
 use cartridge::Cartridge;
 pub use error::{Error, Result};
