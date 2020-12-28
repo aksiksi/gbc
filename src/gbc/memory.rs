@@ -257,11 +257,14 @@ pub struct Io {
     /// Range: 0xFF50
     disable_boot_rom: u8,
 
-    /// Range: 0xFF51 - 0xFF55
-    hdma: [u8; 4],
+    /// HDMA1-HDMA5 (0xFF51-0xFF55)
+    hdma: [u8; 5],
 
-    /// Range: 0xFF68 - 0xFF69
+    /// BCPS, BCPD (0xFF68, 0xFF69)
     bcp: [u8; 2],
+
+    /// OCPS, OCPD (0xFF6A, 0xFF6B)
+    ocp: [u8; 2],
 
     /// Range: 0xFF70
     wram_bank: u8,
@@ -283,8 +286,9 @@ impl Io {
             prep_speed_switch: 0,
             vram_bank: 0,
             disable_boot_rom: 0,
-            hdma: [0; 4],
+            hdma: [0; 5],
             bcp: [0; 2],
+            ocp: [0; 2],
             wram_bank: 0,
         }
     }
@@ -332,6 +336,7 @@ impl MemoryRead<u16, u8> for Io {
             0xFF50 => self.disable_boot_rom,
             0xFF51..=0xFF55 => self.hdma[idx],
             0xFF68..=0xFF69 => self.bcp[idx],
+            0xFF6A..=0xFF6B => self.ocp[idx],
             Self::WRAM_BANK_SELECT_ADDR => self.wram_bank,
             _ => panic!("Invalid write to address {}", addr),
         }
@@ -401,14 +406,17 @@ pub struct MemoryBus {
 
     // ..ignored
 
+    /// OAM (0xFE00-0xFE9F)
+    oam: [u8; 0x9F],
+
     // I/O:        0xFF00 - 0xFF7F
     io: Io,
 
     /// High RAM:  0xFF80 - 0xFFFE
     high_ram: [u8; 0x80],
 
-    /// 0xFFFF
-    int_enable_reg: u8,
+    /// IF, IE (0xFF0F, 0xFFFF)
+    int_regs: [u8; 2],
 }
 
 impl MemoryBus {
@@ -417,9 +425,10 @@ impl MemoryBus {
             controller: Controller::new(),
             vram: Vram::new(true),
             ram: Ram::new(true),
+            oam: [0u8; 0x9F],
             io: Io::new(),
             high_ram: [0u8; 0x80],
-            int_enable_reg: 0,
+            int_regs: [0u8; 2],
         }
     }
 
@@ -430,9 +439,10 @@ impl MemoryBus {
             controller,
             vram: Vram::new(true),
             ram: Ram::new(true),
+            oam: [0u8; 0x9F],
             io: Io::new(),
             high_ram: [0u8; 0x80],
-            int_enable_reg: 0,
+            int_regs: [0u8; 2],
         })
     }
 
@@ -464,6 +474,10 @@ impl MemoryRead<u16, u8> for MemoryBus {
             }
             Ram::BASE_ADDR..=Ram::LAST_ADDR => self.ram.read(addr),
             Io::BASE_ADDR..=Io::LAST_ADDR => self.io.read(addr),
+            0xFE00..=0xFE9F => {
+                let addr = addr as usize - 0xFE00;
+                self.oam[addr]
+            }
             0xFF80..=0xFFFE => {
                 let addr = addr as usize - 0xFF80;
                 self.high_ram[addr]
@@ -494,6 +508,10 @@ impl MemoryWrite<u16, u8> for MemoryBus {
                     self.ram.update_bank(bank);
                 }
             }
+            0xFE00..=0xFE9F => {
+                let addr = addr as usize - 0xFE00;
+                self.oam[addr] = value;
+            }
             0xFF80..=0xFFFE => {
                 let addr = addr as usize - 0xFF80;
                 self.high_ram[addr] = value;
@@ -503,29 +521,13 @@ impl MemoryWrite<u16, u8> for MemoryBus {
     }
 }
 
-/// Write a 16-bit word to memory. This maps into 2 8 bit writes
+/// Write a 16-bit word to memory. This maps into 2 8-bit writes
 /// to the relevant memory region.
 impl MemoryWrite<u16, u16> for MemoryBus {
     fn write(&mut self, addr: u16, value: u16) {
         let value = value.to_le_bytes();
-
-        match addr {
-            CartridgeRam::BASE_ADDR..=CartridgeRam::LAST_ADDR => {
-                let controller = self.controller.ram.as_mut().expect("Cartridge RAM is not available");
-                controller.write(addr, value[0]);
-                controller.write(addr + 1, value[1]);
-            }
-            Ram::BASE_ADDR..=Ram::LAST_ADDR => {
-                self.ram.write(addr, value[0]);
-                self.ram.write(addr + 1, value[1]);
-            }
-            0xFF80..=0xFFFE => {
-                let addr = addr as usize - 0xFF80;
-                self.high_ram[addr] = value[0];
-                self.high_ram[addr + 1] = value[1];
-            }
-            _ => panic!("Unable to write to address: {:?}", addr),
-        }
+        self.write(addr, value[0]);
+        self.write(addr, value[1]);
     }
 }
 
