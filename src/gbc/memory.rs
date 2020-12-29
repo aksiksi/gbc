@@ -231,6 +231,8 @@ impl std::fmt::Debug for Vram {
 }
 
 /// Memory-mapped I/O registers and buffers
+///
+/// TODO: Move some stuff to PPU
 #[derive(Debug)]
 pub struct Io {
     /// Joypad register: 0xFF00
@@ -238,6 +240,9 @@ pub struct Io {
 
     /// Range: 0xFF04 - 0xFF07
     port1: [u8; 3],
+
+    /// Interrupt flags (IF) 0xFF0F
+    pub int_flags: u8,
 
     /// Range: 0xFF10 - 0xFF26
     sound: [u8; 23],
@@ -260,6 +265,9 @@ pub struct Io {
     /// HDMA1-HDMA5 (0xFF51-0xFF55)
     hdma: [u8; 5],
 
+    /// Infrared comm. register (0xFF56)
+    rp: u8,
+
     /// BCPS, BCPD (0xFF68, 0xFF69)
     bcp: [u8; 2],
 
@@ -280,6 +288,7 @@ impl Io {
         Self {
             joypad: Joypad::new(),
             port1: [0; 3],
+            int_flags: 0,
             sound: [0; 23],
             waveform_ram: [0; 16],
             lcd: [0; 12],
@@ -287,6 +296,7 @@ impl Io {
             vram_bank: 0,
             disable_boot_rom: 0,
             hdma: [0; 5],
+            rp: 0,
             bcp: [0; 2],
             ocp: [0; 2],
             wram_bank: 0,
@@ -328,6 +338,7 @@ impl MemoryRead<u16, u8> for Io {
         match addr {
             0xFF00 => self.joypad.read(),
             0xFF04..=0xFF07 => self.port1[idx],
+            0xFF0F => self.int_flags,
             0xFF10..=0xFF26 => self.sound[idx],
             0xFF30..=0xFF3F => self.waveform_ram[idx],
             0xFF40..=0xFF4B => self.lcd[idx],
@@ -335,6 +346,7 @@ impl MemoryRead<u16, u8> for Io {
             Self::VRAM_BANK_SELECT_ADDR => self.vram_bank,
             0xFF50 => self.disable_boot_rom,
             0xFF51..=0xFF55 => self.hdma[idx],
+            0xFF56 => self.rp,
             0xFF68..=0xFF69 => self.bcp[idx],
             0xFF6A..=0xFF6B => self.ocp[idx],
             Self::WRAM_BANK_SELECT_ADDR => self.wram_bank,
@@ -346,20 +358,26 @@ impl MemoryRead<u16, u8> for Io {
 impl MemoryWrite<u16, u8> for Io {
     #[inline]
     fn write(&mut self, addr: u16, value: u8) {
-        let idx = (addr - Self::BASE_ADDR) as usize;
 
         match addr {
             0xFF00 => self.joypad.write(value),
             0xFF04..=0xFF07 => {
+                let idx = (addr - 0xFF04) as usize;
                 self.port1[idx] = value;
             }
+            0xFF0F => {
+                self.int_flags = value;
+            }
             0xFF10..=0xFF26 => {
+                let idx = (addr - 0xFF10) as usize;
                 self.sound[idx] = value;
             }
             0xFF30..=0xFF3F => {
+                let idx = (addr - 0xFF30) as usize;
                 self.waveform_ram[idx] = value;
             }
             0xFF40..=0xFF4B => {
+                let idx = (addr - 0xFF40) as usize;
                 self.lcd[idx] = value;
             }
             0xFF4D => {
@@ -378,9 +396,14 @@ impl MemoryWrite<u16, u8> for Io {
                 self.disable_boot_rom = value;
             }
             0xFF51..=0xFF55 => {
+                let idx = (addr - 0xFF51) as usize;
                 self.hdma[idx] = value;
             }
+            0xFF56 => {
+                self.rp = value;
+            }
             0xFF68..=0xFF69 => {
+                let idx = (addr - 0xFF68) as usize;
                 self.bcp[idx] = value;
             }
             Self::WRAM_BANK_SELECT_ADDR => {
@@ -415,8 +438,8 @@ pub struct MemoryBus {
     /// High RAM:  0xFF80 - 0xFFFE
     high_ram: [u8; 0x80],
 
-    /// IF, IE (0xFF0F, 0xFFFF)
-    int_regs: [u8; 2],
+    /// Interrupt enable  - 0xFFFF
+    pub int_enable: u8,
 }
 
 impl MemoryBus {
@@ -428,7 +451,7 @@ impl MemoryBus {
             oam: [0u8; 0x9F],
             io: Io::new(),
             high_ram: [0u8; 0x80],
-            int_regs: [0u8; 2],
+            int_enable: 0,
         }
     }
 
@@ -442,7 +465,7 @@ impl MemoryBus {
             oam: [0u8; 0x9F],
             io: Io::new(),
             high_ram: [0u8; 0x80],
-            int_regs: [0u8; 2],
+            int_enable: 0,
         })
     }
 
@@ -482,6 +505,7 @@ impl MemoryRead<u16, u8> for MemoryBus {
                 let addr = addr as usize - 0xFF80;
                 self.high_ram[addr]
             }
+            0xFFFF => self.int_enable,
             _ => panic!("Unable to read from address: {:?}", addr),
         }
     }
@@ -515,6 +539,9 @@ impl MemoryWrite<u16, u8> for MemoryBus {
             0xFF80..=0xFFFE => {
                 let addr = addr as usize - 0xFF80;
                 self.high_ram[addr] = value;
+            }
+            0xFFFF => {
+                self.int_enable = value;
             }
             _ => panic!("Unable to write to address: {:?}", addr),
         }

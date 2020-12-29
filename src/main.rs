@@ -1,15 +1,51 @@
 #![allow(dead_code)]
 
 use gbc::{Gameboy, Result};
+use gbc::joypad::{JoypadEvent, JoypadInput};
+
+use sdl2::rect::Rect;
+use sdl2::render::TextureAccess;
+use sdl2::pixels::Color;
+use sdl2::event::Event;
+use sdl2::keyboard::Keycode;
+use std::time::Duration;
+
+fn keycode_to_joypad_input(keycode: Option<Keycode>) -> Option<JoypadInput> {
+    match keycode.unwrap() {
+        // TODO: Make key mapping configurable
+        Keycode::X => Some(JoypadInput::A),
+        Keycode::Z => Some(JoypadInput::B),
+        Keycode::A => Some(JoypadInput::Select),
+        Keycode::S => Some(JoypadInput::Start),
+        Keycode::Up => Some(JoypadInput::Up),
+        Keycode::Down => Some(JoypadInput::Down),
+        Keycode::Left => Some(JoypadInput::Left),
+        Keycode::Right => Some(JoypadInput::Right),
+        _ => None,
+    }
+}
+
+fn event_to_joypad(event: Event) -> Option<JoypadEvent> {
+    match event {
+        Event::KeyDown { keycode, .. } => {
+            if let Some(event) = keycode_to_joypad_input(keycode) {
+                Some(JoypadEvent::Down(event))
+            } else {
+                None
+            }
+        }
+        Event::KeyUp { keycode, .. } => {
+            if let Some(event) = keycode_to_joypad_input(keycode) {
+                Some(JoypadEvent::Up(event))
+            } else {
+                None
+            }
+        }
+        _ => unreachable!(),
+    }
+}
 
 fn gui() {
-    use sdl2::rect::Rect;
-    use sdl2::render::TextureAccess;
-    use sdl2::pixels::Color;
-    use sdl2::event::Event;
-    use sdl2::keyboard::Keycode;
-    use std::time::Duration;
-
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
 
@@ -37,20 +73,35 @@ fn gui() {
     let mut i = 0;
     let mut j = 0;
 
-    let gameboy = Gameboy::init("samples/pokemon_gold.gbc").unwrap();
+    let mut gameboy = Gameboy::init("samples/pokemon_gold.gbc").unwrap();
 
     // Start the event loop
     let mut event_pump = sdl_context.event_pump().unwrap();
     'running: loop {
+        // List of pending key events
+        let mut latest_event = None;
+
         for event in event_pump.poll_iter() {
             match event {
                 Event::Quit {..} |
                 Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
                     break 'running
                 },
+                Event::KeyDown { .. } | Event::KeyUp { .. } => {
+                    if latest_event.is_none() {
+                        latest_event = Some(event.clone());
+                    }
+                }
                 _ => (),
             }
         }
+
+        // Take the latest event and map it to a JoypadEvent
+        // TODO: Does this make sense?
+        let event = match latest_event {
+            Some(e) => event_to_joypad(e),
+            None => None,
+        };
 
         // Remember the texture we created above? That is basically a buffer in VRAM
         // With the following, we are setting that texture as a render target for
@@ -81,9 +132,11 @@ fn gui() {
         i = (i + 1) % 8;
         j = (j + 1) % 6;
 
-        // The rest of the game loop goes here...
+        gameboy.frame(event);
 
-        std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
+        // TODO: Update texture(s) based on VRAM data
+
+        std::thread::sleep(Duration::new(0, Gameboy::FRAME_DURATION));
     }
 }
 

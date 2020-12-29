@@ -311,6 +311,27 @@ impl MemoryRead<u16, u8> for Rom {
     }
 }
 
+// This is only used by tests
+impl MemoryWrite<u16, u8> for Rom {
+    #[inline]
+    fn write(&mut self, addr: u16, value: u8) {
+        let addr = addr as usize;
+
+        match addr {
+            0x0000..=0x3FFF => {
+                // Bank 0 (static)
+                self.bank0[addr] = value;
+            }
+            0x4000..=0x7FFF => {
+                // Bank 1 (dynamic)
+                let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
+                self.bank1[bank_offset + addr] = value;
+            }
+            _ => unreachable!("Unexpected read from: {}", addr),
+        }
+    }
+}
+
 impl std::fmt::Debug for Rom {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Rom")

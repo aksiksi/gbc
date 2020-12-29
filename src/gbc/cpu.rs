@@ -2,6 +2,16 @@ use crate::instructions::{Arg, Cond, Instruction};
 use crate::memory::{MemoryBus, MemoryRead, MemoryWrite};
 use crate::registers::{Flag, Reg16, Reg8, RegisterFile, RegisterOps};
 
+#[derive(Clone, Copy, Debug)]
+#[repr(u8)]
+pub enum Interrupt {
+    Vblank = 0,
+    LcdStat,
+    Timer,
+    Serial,
+    Joypad,
+}
+
 /// Types of logical operations
 ///
 /// This allows us to use a single method for all supported
@@ -47,7 +57,9 @@ impl HalfCarry<u16> for u16 {
 pub struct Cpu {
     pub registers: RegisterFile,
     pub memory: MemoryBus,
-    pub interrupts_enabled: bool,
+
+    /// Global interrupt enable flag (Interrupt Master Enable)
+    ime: bool,
 }
 
 impl Cpu {
@@ -56,7 +68,7 @@ impl Cpu {
         Self {
             registers,
             memory,
-            interrupts_enabled: false,
+            ime: false,
         }
     }
 
@@ -64,7 +76,7 @@ impl Cpu {
     ///
     /// This value is fetched based on the current value in
     /// the speed I/O register.
-    pub fn cycle_time(&self) -> u64 {
+    pub fn cycle_time(&self) -> u32 {
         if self.memory.io().speed() {
             500
         } else {
@@ -75,9 +87,15 @@ impl Cpu {
     /// Executes the next instruction and returns the number of cycles it
     /// took to complete.
     pub fn step(&mut self) -> u8 {
+        // Check for pending interrupts before fetching the next instruction.
+        // If an interrupt is serviced, PC will jump to the ISR address.
+        if self.ime {
+            self.service_interrupts();
+        }
+
         let pc = self.registers.PC;
 
-        // Read the next 3 bytes from memory, starting from PC
+        // Read the next 3 bytes from memory, starting from PC.
         // This is what we will use to decode the next instruction.
         //
         // TODO: Evaluate the boundary cases
@@ -106,6 +124,47 @@ impl Cpu {
         }
     }
 
+    /// Figure out which interrupts are pending and service the one with the
+    /// highest priority.
+    ///
+    /// See: pg. 27 of GB Programming Manual
+    fn service_interrupts(&mut self) {
+        // Iterate over each interrupt in priority order
+        for int in 0..5 {
+            let int_enable = self.memory.read(0xFFFF);
+            let int_flags = self.memory.read(0xFF0F);
+
+            let enabled = (int_enable & 1 << int) != 0;
+            let pending = (int_flags & 1 << int) != 0;
+
+            if enabled && pending {
+                // Disable interrupts
+                self.ime = false;
+
+                // Clear the pending flag
+                self.memory.write(0xFF0F, int_flags & !(1 << int));
+
+                // Push current PC to the stack
+                self.push(self.registers.PC);
+
+                // Compute the ISR address to jump to
+                let isr = (int << 3) + 0x40;
+
+                self.registers.PC = isr;
+
+                break;
+            }
+        }
+    }
+
+    /// Trigger a particular interrupt
+    #[inline]
+    pub fn trigger_interrupt(&mut self, interrupt: Interrupt) {
+        let bit = interrupt as u8;
+        let int_flags = self.memory.read(0xFF0F);
+        self.memory.write(0xFF0F, int_flags | 1 << bit);
+    }
+
     /// Execute a single instruction on this CPU
     pub fn execute(&mut self, instruction: Instruction) {
         use Instruction::*;
@@ -115,10 +174,10 @@ impl Cpu {
             Halt => todo!(),
             Stop => todo!(),
             Di => {
-                self.interrupts_enabled = false;
+                self.ime = false;
             }
             Ei => {
-                self.interrupts_enabled = true;
+                self.ime = true;
             }
 
             // Load
@@ -249,7 +308,7 @@ impl Cpu {
             RetI => {
                 let addr = self.pop();
                 self.registers.PC = addr;
-                self.interrupts_enabled = true;
+                self.ime = true;
             }
             Rst { offset } => {
                 // Push current PC onto stack, then jump to offset
@@ -852,6 +911,64 @@ mod test {
     fn get_cpu() -> Cpu {
         let memory = MemoryBus::new();
         Cpu::new(memory)
+    }
+
+    #[test]
+    fn interrupts() {
+        let mut cpu = get_cpu();
+
+        cpu.registers.PC = 0x1000;
+        cpu.registers.write(Reg8::A, 0x01u8);
+        cpu.registers.write(Reg8::B, 0x40u8);
+
+        // Enable interrupts
+        let inst = Instruction::Ei;
+        cpu.execute(inst);
+
+        // Enable VBLANK and LCD STAT
+        cpu.memory.write(0xFFFF, 0x03u8);
+
+        // Prepare basic ISRs in ROM:
+        //
+        // Vblank:
+        // 1. ADD A, B
+        // 2. RETI
+        //
+        // LcdStat:
+        // 1. NOP
+        // 2. RET
+        let controller = cpu.memory.controller();
+        controller.rom.write(0x40, 0x80u8);
+        controller.rom.write(0x41, 0xD9u8);
+        controller.rom.write(0x48, 0x00u8);
+        controller.rom.write(0x49, 0xC9u8);
+
+        // Trigger VBLANK and LCD interrupts
+        cpu.trigger_interrupt(Interrupt::Vblank);
+        cpu.trigger_interrupt(Interrupt::LcdStat);
+
+        // Execute a CPU step and verify that the ADD
+        // in the VBLANK ISR was executed
+        cpu.step();
+        assert!(!cpu.ime);
+        assert_eq!(cpu.registers.PC, 0x41);
+        assert_eq!(cpu.registers.read(Reg8::A), 0x41);
+
+        // Step again
+        // RETI should restore original PC and re-enable interrupts
+        cpu.step();
+        assert!(cpu.ime);
+        assert_eq!(cpu.registers.PC, 0x1000);
+
+        // Step again -> this should trigger LcdStat and execute a NOP
+        cpu.step();
+        assert!(!cpu.ime);
+        assert_eq!(cpu.registers.PC, 0x49);
+
+        // Last step -> verify PC is restored
+        cpu.step();
+        assert!(!cpu.ime);
+        assert_eq!(cpu.registers.PC, 0x1000);
     }
 
     #[test]
