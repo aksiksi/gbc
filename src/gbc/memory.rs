@@ -1,6 +1,7 @@
 use crate::cartridge::{Cartridge, Controller, Ram as CartridgeRam, Rom};
 use crate::error::Result;
 use crate::joypad::Joypad;
+use crate::ppu::{Ppu, Vram};
 
 /// Generic traits that provide access to some memory.
 ///
@@ -38,6 +39,7 @@ impl Ram {
     const BANK_SIZE: usize = 4 * 1024; // 4K
     pub const BASE_ADDR: u16 = 0xC000;
     pub const LAST_ADDR: u16 = 0xDFFF;
+    pub const BANK_SELECT_ADDR: u16 = 0xFF70;
 
     pub fn new(cgb: bool) -> Self {
         if cgb {
@@ -132,104 +134,6 @@ impl std::fmt::Debug for Ram {
     }
 }
 
-pub enum Vram {
-    Unbanked {
-        /// Static bank, 8K
-        ///
-        /// Non-CGB mode
-        data: [u8; Self::BANK_SIZE],
-    },
-    Banked {
-        /// Two static banks, 8K each
-        ///
-        /// CGB mode
-        data: [u8; Self::BANK_SIZE * 2],
-        active_bank: u8,
-    },
-}
-
-impl Vram {
-    const BANK_SIZE: usize = 8 * 1024;
-    pub const BASE_ADDR: u16 = 0x8000;
-    pub const LAST_ADDR: u16 = 0x9FFF;
-
-    pub fn new(cgb: bool) -> Self {
-        if cgb {
-            Self::Banked {
-                data: [0u8; Self::BANK_SIZE * 2],
-                active_bank: 0,
-            }
-        } else {
-            Self::Unbanked {
-                data: [0u8; Self::BANK_SIZE],
-            }
-        }
-    }
-
-    /// Update the active VRAM bank
-    pub fn update_bank(&mut self, bank: u8) {
-        match self {
-            Self::Banked {
-                data: _,
-                active_bank,
-            } => {
-                *active_bank = bank;
-            }
-            _ => panic!("Received VRAM bank change request on unbanked VRAM"),
-        }
-    }
-}
-
-impl MemoryRead<u16, u8> for Vram {
-    #[inline]
-    fn read(&self, addr: u16) -> u8 {
-        let addr = (addr - Self::BASE_ADDR) as usize;
-        match self {
-            Self::Unbanked { data } => {
-                // Bank 0 (static)
-                data[addr]
-            }
-            Self::Banked { data, active_bank } => {
-                let bank_offset = *active_bank as usize * Self::BANK_SIZE;
-                data[bank_offset + addr]
-            }
-        }
-    }
-}
-
-impl MemoryWrite<u16, u8> for Vram {
-    #[inline]
-    fn write(&mut self, addr: u16, value: u8) {
-        let addr = (addr - Self::BASE_ADDR) as usize;
-        match self {
-            Self::Unbanked { data } => {
-                // Bank 0 (static)
-                data[addr] = value;
-            }
-            Self::Banked { data, active_bank } => {
-                let bank_offset = *active_bank as usize * Self::BANK_SIZE;
-                data[bank_offset + addr] = value;
-            }
-        }
-    }
-}
-
-impl std::fmt::Debug for Vram {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Unbanked { data } => f
-                .debug_struct("Vram::Unbanked")
-                .field("vram_size", &data.len())
-                .finish(),
-            Self::Banked { data, active_bank } => f
-                .debug_struct("Vram::Banked")
-                .field("vram_size", &data.len())
-                .field("active_bank", &active_bank)
-                .finish(),
-        }
-    }
-}
-
 /// Memory-mapped I/O registers and buffers
 ///
 /// TODO: Move some stuff to PPU
@@ -250,14 +154,8 @@ pub struct Io {
     /// Range: 0xFF30 - 0xFF3F
     waveform_ram: [u8; 16],
 
-    /// Range: 0xFF40 - 0xFF4B
-    lcd: [u8; 12],
-
     // KEY1: 0xFF4D
     prep_speed_switch: u8,
-
-    /// Range: 0xFF4F
-    vram_bank: u8,
 
     /// Range: 0xFF50
     disable_boot_rom: u8,
@@ -274,15 +172,11 @@ pub struct Io {
     /// OCPS, OCPD (0xFF6A, 0xFF6B)
     ocp: [u8; 2],
 
-    /// Range: 0xFF70
-    wram_bank: u8,
 }
 
 impl Io {
     pub const BASE_ADDR: u16 = 0xFF00;
     pub const LAST_ADDR: u16 = 0xFF7F;
-    pub const VRAM_BANK_SELECT_ADDR: u16 = 0xFF4F;
-    pub const WRAM_BANK_SELECT_ADDR: u16 = 0xFF70;
 
     pub fn new() -> Self {
         Self {
@@ -291,26 +185,13 @@ impl Io {
             int_flags: 0,
             sound: [0; 23],
             waveform_ram: [0; 16],
-            lcd: [0; 12],
             prep_speed_switch: 0,
-            vram_bank: 0,
             disable_boot_rom: 0,
             hdma: [0; 5],
             rp: 0,
             bcp: [0; 2],
             ocp: [0; 2],
-            wram_bank: 0,
         }
-    }
-
-    /// Returns currently selected VRAM bank
-    pub fn vram_bank(&self) -> u8 {
-        self.vram_bank
-    }
-
-    /// Returns currently selected WRAM bank
-    pub fn wram_bank(&self) -> u8 {
-        self.wram_bank
     }
 
     /// Returns current CGB speed
@@ -341,15 +222,12 @@ impl MemoryRead<u16, u8> for Io {
             0xFF0F => self.int_flags,
             0xFF10..=0xFF26 => self.sound[idx],
             0xFF30..=0xFF3F => self.waveform_ram[idx],
-            0xFF40..=0xFF4B => self.lcd[idx],
             0xFF4D => self.prep_speed_switch,
-            Self::VRAM_BANK_SELECT_ADDR => self.vram_bank,
             0xFF50 => self.disable_boot_rom,
             0xFF51..=0xFF55 => self.hdma[idx],
             0xFF56 => self.rp,
             0xFF68..=0xFF69 => self.bcp[idx],
             0xFF6A..=0xFF6B => self.ocp[idx],
-            Self::WRAM_BANK_SELECT_ADDR => self.wram_bank,
             _ => panic!("Invalid write to address {}", addr),
         }
     }
@@ -376,10 +254,6 @@ impl MemoryWrite<u16, u8> for Io {
                 let idx = (addr - 0xFF30) as usize;
                 self.waveform_ram[idx] = value;
             }
-            0xFF40..=0xFF4B => {
-                let idx = (addr - 0xFF40) as usize;
-                self.lcd[idx] = value;
-            }
             0xFF4D => {
                 // Switch speed immediately
                 // TODO: See if this needs to happen after a STOP?
@@ -388,9 +262,6 @@ impl MemoryWrite<u16, u8> for Io {
                 } else {
                     self.prep_speed_switch = 0;
                 }
-            }
-            Self::VRAM_BANK_SELECT_ADDR => {
-                self.vram_bank = value;
             }
             0xFF50 => {
                 self.disable_boot_rom = value;
@@ -406,9 +277,6 @@ impl MemoryWrite<u16, u8> for Io {
                 let idx = (addr - 0xFF68) as usize;
                 self.bcp[idx] = value;
             }
-            Self::WRAM_BANK_SELECT_ADDR => {
-                self.wram_bank = value;
-            }
             _ => panic!("Invalid write to address {}: value {}", addr, value),
         }
     }
@@ -421,16 +289,15 @@ pub struct MemoryBus {
     /// Cart RAM:  0xA000 - 0xBFFF
     controller: Controller,
 
+    /// PPU
+    ///
     /// Video RAM: 0x8000 - 0x9FFF
-    vram: Vram,
+    ppu: Ppu,
 
     /// Work RAM:  0xC000 - 0xDFFF
     ram: Ram,
 
     // ..ignored
-
-    /// OAM (0xFE00-0xFE9F)
-    oam: [u8; 0x9F],
 
     // I/O:        0xFF00 - 0xFF7F
     io: Io,
@@ -446,9 +313,8 @@ impl MemoryBus {
     pub fn new() -> Self {
         Self {
             controller: Controller::new(),
-            vram: Vram::new(true),
+            ppu: Ppu::new(true),
             ram: Ram::new(true),
-            oam: [0u8; 0x9F],
             io: Io::new(),
             high_ram: [0u8; 0x80],
             int_enable: 0,
@@ -460,9 +326,8 @@ impl MemoryBus {
 
         Ok(Self {
             controller,
-            vram: Vram::new(true),
+            ppu: Ppu::new(true),
             ram: Ram::new(true),
-            oam: [0u8; 0x9F],
             io: Io::new(),
             high_ram: [0u8; 0x80],
             int_enable: 0,
@@ -482,6 +347,11 @@ impl MemoryBus {
     pub fn io(&self) -> &Io {
         &self.io
     }
+
+    /// Return a reference to the PPU
+    pub fn ppu(&self) -> &Ppu {
+        &self.ppu
+    }
 }
 
 impl MemoryRead<u16, u8> for MemoryBus {
@@ -491,22 +361,20 @@ impl MemoryRead<u16, u8> for MemoryBus {
     fn read(&self, addr: u16) -> u8 {
         match addr {
             Rom::BASE_ADDR..=Rom::LAST_ADDR => self.controller.rom.read(addr),
-            Vram::BASE_ADDR..=Vram::LAST_ADDR => self.vram.read(addr),
+            Vram::BASE_ADDR..=Vram::LAST_ADDR => self.ppu.vram().read(addr),
             CartridgeRam::BASE_ADDR..=CartridgeRam::LAST_ADDR => {
                 self.controller.ram.as_ref().unwrap().read(addr)
             }
             Ram::BASE_ADDR..=Ram::LAST_ADDR => self.ram.read(addr),
-            Io::BASE_ADDR..=Io::LAST_ADDR => self.io.read(addr),
-            0xFE00..=0xFE9F => {
-                let addr = addr as usize - 0xFE00;
-                self.oam[addr]
-            }
+            0xFE00..=0xFE9F | 0xFF40..=0xFF4B => self.ppu.read(addr),
             0xFF80..=0xFFFE => {
                 let addr = addr as usize - 0xFF80;
                 self.high_ram[addr]
             }
             0xFFFF => self.int_enable,
-            _ => panic!("Unable to read from address: {:?}", addr),
+
+            // Default to I/O access
+            _ => self.io.read(addr),
         }
     }
 }
@@ -515,35 +383,24 @@ impl MemoryWrite<u16, u8> for MemoryBus {
     fn write(&mut self, addr: u16, value: u8) {
         match addr {
             Rom::BASE_ADDR..=Rom::LAST_ADDR => self.controller.write(addr, value),
-            Vram::BASE_ADDR..=Vram::LAST_ADDR => self.vram.write(addr, value),
+            Vram::BASE_ADDR..=Vram::LAST_ADDR => self.ppu.vram_mut().write(addr, value),
             CartridgeRam::BASE_ADDR..=CartridgeRam::LAST_ADDR => {
                 self.controller.write(addr, value)
             }
             Ram::BASE_ADDR..=Ram::LAST_ADDR => self.ram.write(addr, value),
-            Io::BASE_ADDR..=Io::LAST_ADDR => {
-                self.io.write(addr, value);
-
-                // Snoop for bank changes
-                if addr == Io::VRAM_BANK_SELECT_ADDR {
-                    let bank = self.io.vram_bank();
-                    self.vram.update_bank(bank);
-                } else if addr == Io::WRAM_BANK_SELECT_ADDR {
-                    let bank = self.io.wram_bank();
-                    self.ram.update_bank(bank);
-                }
-            }
-            0xFE00..=0xFE9F => {
-                let addr = addr as usize - 0xFE00;
-                self.oam[addr] = value;
-            }
+            Vram::BANK_SELECT_ADDR => self.ppu.vram_mut().update_bank(value),
+            0xFE00..=0xFE9F | 0xFF40..=0xFF4B => self.ppu.write(addr, value),
             0xFF80..=0xFFFE => {
                 let addr = addr as usize - 0xFF80;
                 self.high_ram[addr] = value;
             }
+            Ram::BANK_SELECT_ADDR => self.ram.update_bank(value),
             0xFFFF => {
                 self.int_enable = value;
             }
-            _ => panic!("Unable to write to address: {:?}", addr),
+
+            // Default to I/O access
+            _ => self.io.write(addr, value),
         }
     }
 }

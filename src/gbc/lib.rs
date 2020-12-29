@@ -7,6 +7,7 @@ pub mod error;
 pub mod instructions;
 pub mod joypad;
 pub mod memory;
+pub mod ppu;
 pub mod registers;
 
 #[cfg(feature = "debug")]
