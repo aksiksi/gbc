@@ -31,12 +31,13 @@ pub trait RegisterOps<R, V> {
     fn write(&mut self, reg: R, value: V);
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[repr(u8)]
 pub enum Flag {
-    Zero,
-    Subtract,
-    HalfCarry,
-    Carry,
+    Zero = 7,
+    Subtract = 6,
+    HalfCarry = 5,
+    Carry = 4,
 }
 
 #[derive(Debug)]
@@ -90,6 +91,9 @@ impl RegisterFile {
 
     /// Set a flag
     pub fn set(&mut self, flag: Flag, value: bool) {
+        // Build a bit mask for this flag
+        let mask: u8 = 1 << flag as u8;
+
         match flag {
             Flag::Zero => {
                 self.zero = value;
@@ -104,10 +108,20 @@ impl RegisterFile {
                 self.carry = value;
             }
         }
-    }
+
+        // Update the flags register accordingly
+        if value {
+            self.F |= mask;
+        } else {
+            self.F &= !mask;
+        }
+}
 
     /// Clear a flag
     pub fn clear(&mut self, flag: Flag) {
+        // Build a bit mask for this flag
+        let mask: u8 = 1 << flag as u8;
+
         match flag {
             Flag::Zero => {
                 self.zero = false;
@@ -122,6 +136,9 @@ impl RegisterFile {
                 self.carry = false;
             }
         }
+
+        // Update the flags register accordingly
+        self.F &= !mask;
     }
 
     /// Clear all flags
@@ -130,6 +147,7 @@ impl RegisterFile {
         self.subtract = false;
         self.half_carry = false;
         self.carry = false;
+        self.F = 0;
     }
 
     pub fn flags(&self) -> u8 {
@@ -237,11 +255,18 @@ mod test {
     #[test]
     fn flags() {
         let mut registers = RegisterFile::new();
+        registers.clear_all();
 
         registers.set(Flag::Zero, true);
         assert!(registers.zero());
+        assert_eq!(registers.F, 1 << 7);
+
+        registers.set(Flag::Carry, true);
+        assert!(registers.carry());
+        assert_eq!(registers.F, 1 << 7 | 1 << 4);
 
         registers.clear(Flag::Zero);
         assert!(!registers.zero());
+        assert_eq!(registers.F, 1 << 4);
     }
 }
