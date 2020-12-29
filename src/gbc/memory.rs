@@ -25,12 +25,12 @@ pub enum Ram {
     Unbanked {
         /// Two static banks, 4K each
         /// Non-CGB mode
-        data: [u8; Self::BANK_SIZE * 2],
+        data: Box<[u8; Self::BANK_SIZE * 2]>,
     },
     Banked {
         /// Eight static banks, 4K each
         /// CGB mode
-        data: [u8; Self::BANK_SIZE * 8],
+        data: Box<[u8; Self::BANK_SIZE * 8]>,
         active_bank: u8,
     },
 }
@@ -44,12 +44,12 @@ impl Ram {
     pub fn new(cgb: bool) -> Self {
         if cgb {
             Self::Banked {
-                data: [0u8; Self::BANK_SIZE * 8],
+                data: Box::new([0u8; Self::BANK_SIZE * 8]),
                 active_bank: 0,
             }
         } else {
             Self::Unbanked {
-                data: [0u8; Self::BANK_SIZE * 2],
+                data: Box::new([0u8; Self::BANK_SIZE * 2]),
             }
         }
     }

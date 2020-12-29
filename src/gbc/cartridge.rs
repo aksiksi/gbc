@@ -51,7 +51,7 @@ impl TryFrom<u8> for RamSize {
 /// Cartridge RAM
 pub enum Ram {
     Unbanked {
-        data: [u8; Self::BANK_SIZE],
+        data: Box<[u8; Self::BANK_SIZE]>,
         ram_size: RamSize,
     },
     Banked {
@@ -74,7 +74,7 @@ impl Ram {
         match ram_size {
             // For 2K and 8K RAM sizes, the RAM is unbanked
             RamSize::_2K | RamSize::_8K => {
-                let data = [0u8; Self::BANK_SIZE];
+                let data = Box::new([0u8; Self::BANK_SIZE]);
                 Some(Self::Unbanked { data, ram_size })
             }
             RamSize::NotPresent => {
@@ -233,7 +233,7 @@ impl TryFrom<u8> for RomSize {
 /// ROM
 pub struct Rom {
     /// Static bank, 16K
-    bank0: [u8; Self::BANK_SIZE],
+    bank0: Box<[u8; Self::BANK_SIZE]>,
 
     /// Dynamic bank, depends on active bank
     bank1: Vec<u8>,
@@ -257,7 +257,7 @@ impl Rom {
     // Jump Vectors in first ROM bank
 
     pub fn new(rom_size: RomSize) -> Self {
-        let bank0 = [0u8; Self::BANK_SIZE];
+        let bank0 = Box::new([0u8; Self::BANK_SIZE]);
 
         let size = usize::from(rom_size);
         let num_banks = size / Self::BANK_SIZE;
@@ -282,7 +282,7 @@ impl Rom {
         rom_file.seek(SeekFrom::Start(0))?;
 
         // Read bank 0 from the ROM file
-        rom_file.read_exact(&mut rom.bank0)?;
+        rom_file.read_exact(&mut *rom.bank0)?;
 
         // Read bank 1 from the ROM file
         rom_file.read_exact(&mut rom.bank1)?;
