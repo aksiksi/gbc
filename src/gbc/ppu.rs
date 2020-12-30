@@ -215,7 +215,6 @@ pub struct Ppu {
 impl Ppu {
     const STAT_ADDR: u16 = 0xFF41;
     const LY_ADDR: u16 = 0xFF44;
-    const DOT_DURATION_NS: u32 = 238; // 4.1924 MHz
     const DOTS_PER_LINE: u32 = 456;
     const VBLANK_START_LINE: u8 = 144;
 
@@ -247,9 +246,15 @@ impl Ppu {
     /// Returned tuple contains two interrupt flags: (Vblank, LcdStat)
     ///
     /// This function is called once per frame from the main frame loop.
-    pub fn update(&mut self, cycle: u32, cycle_time: u32) -> (bool, bool) {
+    pub fn update(&mut self, cycle: u32, speed: bool) -> (bool, bool) {
         // Figure out the current dot and scan line
-        let dot = cycle / (cycle_time / Self::DOT_DURATION_NS);
+        let dot = if speed {
+            // If we are in double-speed mode, we get a dot every 2 cycles
+            cycle / 2
+        } else {
+            cycle
+        };
+
         let line = (dot / Self::DOTS_PER_LINE) as u8;
 
         // Set LY to current scan line

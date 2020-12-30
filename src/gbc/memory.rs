@@ -142,7 +142,7 @@ pub struct Io {
     /// Joypad register: 0xFF00
     joypad: Joypad,
 
-    // Serial port and control (0xFF01, 0xFF02)
+    // Serial port (SB) and control (SC) (0xFF01, 0xFF02)
     serial: [u8; 2],
 
     /// Range: 0xFF04 - 0xFF07

@@ -72,12 +72,17 @@ impl Cpu {
         }
     }
 
-    /// Current cycle time, in ns
+    /// Returns `true` if this CPU is in double-speed mode.
+    pub fn speed(&self) -> bool {
+        self.memory.io().speed()
+    }
+
+    /// Current clock cycle duration, in ns.
     ///
     /// This value is based on the current value in
     /// the speed I/O register.
     pub fn cycle_time(&self) -> u32 {
-        if self.memory.io().speed() {
+        if self.speed() {
             119
         } else {
             238
@@ -108,8 +113,8 @@ impl Cpu {
         // Decode the instruction
         let (inst, size, cycles) = Instruction::decode(data);
 
-        dbg!(pc);
-        dbg!(inst);
+        // dbg!(pc);
+        // dbg!(inst);
 
         // Execute the instruction on this CPU
         self.execute(inst);
@@ -1312,7 +1317,7 @@ mod test {
         cpu.execute(inst);
         assert_eq!(cpu.registers.PC, 0x0010);
         assert_eq!(cpu.registers.SP, 0xFFFC);
-        assert_eq!(cpu.pop(), 0xFF00);
+        assert_eq!(cpu.pop(), 0xFF01);
     }
 
     #[test]

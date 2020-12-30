@@ -43,25 +43,24 @@ impl Gameboy {
     pub fn frame(&mut self, joypad_event: Option<JoypadEvent>) {
         let now = Instant::now();
 
-        // Figure out the number of cycles we can execute in a single frame
+        // Figure out the number of clock cycles we can execute in a single frame
+        let speed = self.cpu.speed();
         let cycle_time = self.cpu.cycle_time();
         let num_cycles = Self::FRAME_DURATION / cycle_time;
-
-        let cpu = &mut self.cpu;
 
         // Execute next instruction
         let mut cycle = 0;
         while cycle < num_cycles {
-            // Update internal PPU state based on current time and trigger any required interrupts
-            let (trigger_vblank, trigger_stat) = cpu.memory.ppu_mut().update(cycle, cycle_time);
+            // Update internal PPU state based on current cycle and trigger any required interrupts
+            let (trigger_vblank, trigger_stat) = self.cpu.memory.ppu_mut().update(cycle, speed);
             if trigger_vblank {
-                cpu.trigger_interrupt(Interrupt::Vblank);
+                self.cpu.trigger_interrupt(Interrupt::Vblank);
             }
             if trigger_stat {
-                cpu.trigger_interrupt(Interrupt::LcdStat);
+                self.cpu.trigger_interrupt(Interrupt::LcdStat);
             }
 
-            cycle += cpu.step() as u32;
+            cycle += self.cpu.step() as u32;
         }
 
         // TODO: Update PPU
