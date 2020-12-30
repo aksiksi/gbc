@@ -108,6 +108,7 @@ impl Cpu {
         // Decode the instruction
         let (inst, size, cycles) = Instruction::decode(data);
 
+        dbg!(pc);
         dbg!(inst);
 
         // Execute the instruction on this CPU
@@ -311,8 +312,8 @@ impl Cpu {
                 self.ime = true;
             }
             Rst { offset } => {
-                // Push current PC onto stack, then jump to offset
-                self.push(self.registers.PC);
+                // Push next PC onto stack, then jump to offset
+                self.push(self.registers.PC + 1);
                 self.registers.PC = 0x0000 + offset as u16;
             }
             Jp { addr, cond } | Call { addr, cond } => {

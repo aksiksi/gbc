@@ -308,7 +308,7 @@ pub enum Instruction {
 
     /// Restart
     ///
-    /// Push current address to stack, then jump to address 0x0000 + n
+    /// Push next PC to stack, then jump to address 0x0000 + n
     ///
     /// n must be one of: [0x00, 0x08, 0x10, 0x18, 0x20, 0x28, 0x30, 0x38]
     Rst { offset: u8 },
