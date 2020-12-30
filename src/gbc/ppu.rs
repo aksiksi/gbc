@@ -98,6 +98,7 @@ impl Vram {
                 data: _,
                 active_bank,
             } => {
+                assert!(bank < 2);
                 *active_bank = bank;
             }
             _ => panic!("Received VRAM bank change request on unbanked VRAM"),
@@ -254,7 +255,7 @@ impl Ppu {
         // Set LY to current scan line
         self.ly = line;
 
-        // Figure out LY conincidence
+        // Compute LY conincidence
         let prev_ly_coincidence = (self.stat & 1 << 2) != 0;
         let ly_coincidence = self.ly == self.lyc;
 
@@ -280,10 +281,12 @@ impl Ppu {
 
         self.stat = stat;
 
-        // VBLANK interrupt is fired if the mode has changed and the current mode is VBLANK
+        // VBLANK interrupt is fired if the mode has changed and the current mode is VBLANK.
+        //
+        // Note: This is fired once per frame.
         let vblank_interrupt = prev_mode != mode as u8 && mode == StatMode::Vblank;
 
-        // If any of the STAT interrupt conditions are met, fire an interrupt
+        // If any of the STAT interrupt conditions are met, fire an interrupt.
         //
         // 1. LY coincidence interrupt is enabled and changed from false to true
         // 2. STAT mode interrupt is enabled and has changed
@@ -367,7 +370,19 @@ impl MemoryWrite<u16, u8> for Ppu {
             0xFF4A => self.wy = value,
             0xFF4B => self.wx = value,
             0xFF68 => self.bcps = value,
-            0xFF69 => self.bcpd = value,
+            0xFF69 => {
+                self.bcpd = value;
+
+                if self.bcps & (1 << 7) != 0 {
+                    // Auto increment BCPS on write to BCPD (wrapping)
+                    let mut bcp_index = self.bcps & 0x3F + 1;
+                    if bcp_index > 0x3F {
+                        bcp_index = 0x00;
+                    }
+
+                    self.bcps = bcp_index;
+                }
+            }
             0xFF6A => self.ocps = value,
             0xFF6B => self.ocpd = value,
             _ => panic!("Unexpected write to addr {} value {}", addr, value),

@@ -142,8 +142,11 @@ pub struct Io {
     /// Joypad register: 0xFF00
     joypad: Joypad,
 
+    // Serial port and control (0xFF01, 0xFF02)
+    serial: [u8; 2],
+
     /// Range: 0xFF04 - 0xFF07
-    port1: [u8; 3],
+    port1: [u8; 4],
 
     /// Interrupt flags (IF) 0xFF0F
     pub int_flags: u8,
@@ -165,13 +168,6 @@ pub struct Io {
 
     /// Infrared comm. register (0xFF56)
     rp: u8,
-
-    /// BCPS, BCPD (0xFF68, 0xFF69)
-    bcp: [u8; 2],
-
-    /// OCPS, OCPD (0xFF6A, 0xFF6B)
-    ocp: [u8; 2],
-
 }
 
 impl Io {
@@ -181,7 +177,8 @@ impl Io {
     pub fn new() -> Self {
         Self {
             joypad: Joypad::new(),
-            port1: [0; 3],
+            serial: [0; 2],
+            port1: [0; 4],
             int_flags: 0,
             sound: [0; 23],
             waveform_ram: [0; 16],
@@ -189,8 +186,6 @@ impl Io {
             disable_boot_rom: 0,
             hdma: [0; 5],
             rp: 0,
-            bcp: [0; 2],
-            ocp: [0; 2],
         }
     }
 
@@ -214,20 +209,36 @@ impl Io {
 impl MemoryRead<u16, u8> for Io {
     #[inline]
     fn read(&self, addr: u16) -> u8 {
-        let idx = (addr - Self::BASE_ADDR) as usize;
-
         match addr {
             0xFF00 => self.joypad.read(),
-            0xFF04..=0xFF07 => self.port1[idx],
+            0xFF01 => {
+                // Serial read
+                self.serial[0]
+            }
+            0xFF02 => {
+                // Serial control
+                self.serial[1]
+            }
+            0xFF04..=0xFF07 => {
+                let idx = (addr - 0xFF04) as usize;
+                self.port1[idx]
+            }
             0xFF0F => self.int_flags,
-            0xFF10..=0xFF26 => self.sound[idx],
-            0xFF30..=0xFF3F => self.waveform_ram[idx],
+            0xFF10..=0xFF26 => {
+                let idx = (addr - 0xFF10) as usize;
+                self.sound[idx]
+            }
+            0xFF30..=0xFF3F => {
+                let idx = (addr - 0xFF30) as usize;
+                self.waveform_ram[idx]
+            }
             0xFF4D => self.prep_speed_switch,
             0xFF50 => self.disable_boot_rom,
-            0xFF51..=0xFF55 => self.hdma[idx],
+            0xFF51..=0xFF55 => {
+                let idx = (addr - 0xFF51) as usize;
+                self.hdma[idx]
+            }
             0xFF56 => self.rp,
-            0xFF68..=0xFF69 => self.bcp[idx],
-            0xFF6A..=0xFF6B => self.ocp[idx],
             _ => panic!("Invalid write to address {}", addr),
         }
     }
@@ -236,9 +247,21 @@ impl MemoryRead<u16, u8> for Io {
 impl MemoryWrite<u16, u8> for Io {
     #[inline]
     fn write(&mut self, addr: u16, value: u8) {
-
         match addr {
             0xFF00 => self.joypad.write(value),
+            0xFF01 => {
+                // Serial write
+                self.serial[0] = value;
+            }
+            0xFF02 => {
+                // Serial control
+                self.serial[1] = value;
+
+                // Debug
+                if value == 0x81 {
+                    dbg!(self.serial[0]);
+                }
+            }
             0xFF04..=0xFF07 => {
                 let idx = (addr - 0xFF04) as usize;
                 self.port1[idx] = value;
@@ -272,10 +295,6 @@ impl MemoryWrite<u16, u8> for Io {
             }
             0xFF56 => {
                 self.rp = value;
-            }
-            0xFF68..=0xFF69 => {
-                let idx = (addr - 0xFF68) as usize;
-                self.bcp[idx] = value;
             }
             _ => panic!("Invalid write to address {}: value {}", addr, value),
         }
@@ -371,7 +390,7 @@ impl MemoryRead<u16, u8> for MemoryBus {
                 self.controller.ram.as_ref().unwrap().read(addr)
             }
             Ram::BASE_ADDR..=Ram::LAST_ADDR => self.ram.read(addr),
-            0xFE00..=0xFE9F | 0xFF40..=0xFF4B => self.ppu.read(addr),
+            0xFE00..=0xFE9F | 0xFF40..=0xFF4B | 0xFF68..=0xFF69 => self.ppu.read(addr),
             0xFF80..=0xFFFE => {
                 let addr = addr as usize - 0xFF80;
                 self.high_ram[addr]
@@ -394,7 +413,7 @@ impl MemoryWrite<u16, u8> for MemoryBus {
             }
             Ram::BASE_ADDR..=Ram::LAST_ADDR => self.ram.write(addr, value),
             Vram::BANK_SELECT_ADDR => self.ppu.vram_mut().update_bank(value),
-            0xFE00..=0xFE9F | 0xFF40..=0xFF4B => self.ppu.write(addr, value),
+            0xFE00..=0xFE9F | 0xFF40..=0xFF4B | 0xFF68..=0xFF69 => self.ppu.write(addr, value),
             0xFF80..=0xFFFE => {
                 let addr = addr as usize - 0xFF80;
                 self.high_ram[addr] = value;
