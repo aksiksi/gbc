@@ -75,7 +75,7 @@ fn gui() {
     let mut i = 0;
     let mut j = 0;
 
-    let mut gameboy = Gameboy::init("samples/pokemon_gold.gbc").unwrap();
+    let mut gameboy = Gameboy::init("samples/cpu_instrs.gb").unwrap();
 
     // Start the event loop
     let mut event_pump = sdl_context.event_pump().unwrap();

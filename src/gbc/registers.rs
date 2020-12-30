@@ -202,10 +202,10 @@ impl RegisterOps<Reg8, u8> for RegisterFile {
 impl RegisterOps<Reg16, u16> for RegisterFile {
     fn read(&self, reg: Reg16) -> u16 {
         match reg {
-            Reg16::AF => (self.F as u16) << 8 | self.A as u16,
-            Reg16::BC => (self.C as u16) << 8 | self.B as u16,
-            Reg16::DE => (self.E as u16) << 8 | self.D as u16,
-            Reg16::HL => (self.L as u16) << 8 | self.H as u16,
+            Reg16::AF => (self.A as u16) << 8 | self.F as u16,
+            Reg16::BC => (self.B as u16) << 8 | self.C as u16,
+            Reg16::DE => (self.D as u16) << 8 | self.E as u16,
+            Reg16::HL => (self.H as u16) << 8 | self.L as u16,
             Reg16::SP => self.SP,
             Reg16::PC => self.PC,
         }
@@ -214,20 +214,20 @@ impl RegisterOps<Reg16, u16> for RegisterFile {
     fn write(&mut self, reg: Reg16, value: u16) {
         match reg {
             Reg16::AF => {
-                self.A = value as u8;
-                self.F = (value >> 8) as u8;
+                self.A = (value >> 8) as u8;
+                self.F = value as u8;
             }
             Reg16::BC => {
-                self.B = value as u8;
-                self.C = (value >> 8) as u8;
+                self.B = (value >> 8) as u8;
+                self.C = value as u8;
             }
             Reg16::DE => {
-                self.D = value as u8;
-                self.E = (value >> 8) as u8;
+                self.D = (value >> 8) as u8;
+                self.E = value as u8;
             }
             Reg16::HL => {
-                self.H = value as u8;
-                self.L = (value >> 8) as u8;
+                self.H = (value >> 8) as u8;
+                self.L = value as u8;
             }
             Reg16::PC => self.PC = value,
             Reg16::SP => self.SP = value,
@@ -245,11 +245,11 @@ mod test {
 
         regs.write(Reg8::A, 0x10);
         regs.write(Reg8::F, 0xFF);
-        assert_eq!(regs.read(Reg16::AF), 0xFF10);
+        assert_eq!(regs.read(Reg16::AF), 0x10FF);
 
         regs.write(Reg16::BC, 0xBEEF);
-        assert_eq!(regs.read(Reg8::B), 0xEF);
-        assert_eq!(regs.read(Reg8::C), 0xBE);
+        assert_eq!(regs.read(Reg8::B), 0xBE);
+        assert_eq!(regs.read(Reg8::C), 0xEF);
     }
 
     #[test]
