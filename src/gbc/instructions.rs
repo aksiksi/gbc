@@ -642,7 +642,6 @@ impl Instruction {
             0x85 => (Add { src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
             0x86 => (Add { src: Arg::MemHl }, 1, 8.into()),
             0x87 => (Add { src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
-            0xC6 => (Add { src: arg8.into() }, 2, 8.into()),
             0x88 => (Adc { src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
             0x89 => (Adc { src: Arg::Reg8(Reg8::C) }, 1, 4.into()),
             0x8A => (Adc { src: Arg::Reg8(Reg8::D) }, 1, 4.into()),
@@ -651,6 +650,7 @@ impl Instruction {
             0x8D => (Adc { src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
             0x8E => (Adc { src: Arg::MemHl }, 1, 8.into()),
             0x8F => (Adc { src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
+            0xC6 => (Add { src: arg8.into() }, 2, 8.into()),
             0xCE => (Adc { src: arg8.into() }, 2, 8.into()),
             0xE8 => (AddSpImm8i { offset: arg8 as i8 }, 2, 16.into()),
 
@@ -671,6 +671,8 @@ impl Instruction {
             0x9D => (Sbc { src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
             0x9E => (Sbc { src: Arg::MemHl }, 1, 8.into()),
             0x9F => (Sbc { src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
+            0xD6 => (Sub { src: arg8.into() }, 2, 8.into()),
+            0xDE => (Sbc { src: arg8.into() }, 2, 8.into()),
 
             // And
             0xA0 => (And { src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
@@ -681,6 +683,7 @@ impl Instruction {
             0xA5 => (And { src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
             0xA6 => (And { src: Arg::MemHl }, 1, 8.into()),
             0xA7 => (And { src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
+            0xE6 => (And { src: arg8.into() }, 2, 8.into()),
 
             // Xor
             0xA8 => (Xor { src: Arg::Reg8(Reg8::B) }, 1, 4.into()),
@@ -702,6 +705,7 @@ impl Instruction {
             0xB5 => (Or { src: Arg::Reg8(Reg8::L) }, 1, 4.into()),
             0xB6 => (Or { src: Arg::MemHl }, 1, 8.into()),
             0xB7 => (Or { src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
+            0xF6 => (Or { src: arg8.into() }, 2, 8.into()),
 
             // Cp
             0xBF => (Cp { src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
@@ -766,7 +770,7 @@ impl Instruction {
             0xF3 => (Di, 1, 4.into()),
             0xFB => (Ei, 1, 4.into()),
 
-            other => panic!("Unknown instruction: {}", other),
+            0xD3 | 0xDB | 0xDD | 0xE3 | 0xE4 | 0xEB | 0xEC | 0xED | 0xF4 | 0xFC | 0xFD => panic!("Invalid instruction: {}", data[0]),
         };
 
         (inst, size, cycles)
