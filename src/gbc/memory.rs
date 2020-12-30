@@ -352,6 +352,11 @@ impl MemoryBus {
     pub fn ppu(&self) -> &Ppu {
         &self.ppu
     }
+
+    /// Return a mutable reference to the PPU
+    pub fn ppu_mut(&mut self) -> &mut Ppu {
+        &mut self.ppu
+    }
 }
 
 impl MemoryRead<u16, u8> for MemoryBus {

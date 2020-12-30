@@ -74,13 +74,13 @@ impl Cpu {
 
     /// Current cycle time, in ns
     ///
-    /// This value is fetched based on the current value in
+    /// This value is based on the current value in
     /// the speed I/O register.
     pub fn cycle_time(&self) -> u32 {
         if self.memory.io().speed() {
-            500
+            119
         } else {
-            1000
+            238
         }
     }
 

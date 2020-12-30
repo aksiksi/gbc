@@ -58,7 +58,9 @@ fn gui() {
 
     // Convert the Window into a Canvas
     // This is what we will use to render content in the Window
-    let mut canvas = window.into_canvas().build().unwrap();
+    let mut canvas = window.into_canvas()
+                           .build()
+                           .unwrap();
 
     // Get a handle to the Canvas texture creator
     let texture_creator = canvas.texture_creator();

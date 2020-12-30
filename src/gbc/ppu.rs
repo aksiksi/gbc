@@ -47,6 +47,15 @@
 //! The combination of these two periods nets us ~60 fps.
 use crate::memory::{MemoryRead, MemoryWrite};
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[repr(u8)]
+enum StatMode {
+    Hblank = 0,
+    Vblank,
+    OamScan,
+    OamRead,
+}
+
 pub enum Vram {
     Unbanked {
         /// Static bank, 8K
@@ -179,10 +188,9 @@ pub struct Ppu {
     scy: u8,
     scx: u8,
 
-    /// LCD line register: 0xFF44
-    ///
-    /// Note: LYC at 0xFF45 maps to this same value.
+    /// LCD line registers (0xFF44, 0xFF45)
     ly: u8,
+    lyc: u8,
 
     /// Window position registers (0xFF4A, 0xFF4B)
     ///
@@ -195,9 +203,21 @@ pub struct Ppu {
     bcpd: u8,
     ocps: u8,
     ocpd: u8,
+
+    /// Interrupt enable flags
+    oam_enabled: bool,
+    vblank_enabled: bool,
+    hblank_enabled: bool,
+    ly_enabled: bool,
 }
 
 impl Ppu {
+    const STAT_ADDR: u16 = 0xFF41;
+    const LY_ADDR: u16 = 0xFF44;
+    const DOT_DURATION_NS: u32 = 238; // 4.1924 MHz
+    const DOTS_PER_LINE: u32 = 456;
+    const VBLANK_START_LINE: u8 = 144;
+
     pub fn new(cgb: bool) -> Self {
         Self {
             vram: Vram::new(cgb),
@@ -207,13 +227,75 @@ impl Ppu {
             scy: 0,
             scx: 0,
             ly: 0,
+            lyc: 0,
             wy: 0,
             wx: 0,
             bcps: 0,
             bcpd: 0,
             ocps: 0,
             ocpd: 0,
+            oam_enabled: false,
+            vblank_enabled: false,
+            hblank_enabled: false,
+            ly_enabled: false,
         }
+    }
+
+    /// Update the PPU status registers based on current cycle and cycle time.
+    ///
+    /// Returned tuple contains two interrupt flags: (Vblank, LcdStat)
+    ///
+    /// This function is called once per frame from the main frame loop.
+    pub fn update(&mut self, cycle: u32, cycle_time: u32) -> (bool, bool) {
+        // Figure out the current dot and scan line
+        let dot = cycle / (cycle_time / Self::DOT_DURATION_NS);
+        let line = (dot / Self::DOTS_PER_LINE) as u8;
+
+        // Set LY to current scan line
+        self.ly = line;
+
+        // Figure out LY conincidence
+        let prev_ly_coincidence = (self.stat & 1 << 2) != 0;
+        let ly_coincidence = self.ly == self.lyc;
+
+        // Figure out which stat mode we are in based on line and dot
+        let prev_mode = self.stat & 0x3;
+        let mode = if line < Self::VBLANK_START_LINE {
+            let dot = dot % Self::DOTS_PER_LINE;
+            match dot {
+                0..=79 => StatMode::OamScan,
+                80..=329 => StatMode::OamRead,
+                _ => StatMode::Hblank,
+            }
+        } else {
+            // VBLANK
+            StatMode::Vblank
+        };
+
+        // Update STAT register
+        let mut stat = mode as u8;
+        if ly_coincidence {
+            stat |= 1 << 2;
+        }
+
+        self.stat = stat;
+
+        // VBLANK interrupt is fired if the mode has changed and the current mode is VBLANK
+        let vblank_interrupt = prev_mode != mode as u8 && mode == StatMode::Vblank;
+
+        // If any of the STAT interrupt conditions are met, fire an interrupt
+        //
+        // 1. LY coincidence interrupt is enabled and changed from false to true
+        // 2. STAT mode interrupt is enabled and has changed
+        let stat_interrupt = (self.ly_enabled && !prev_ly_coincidence && ly_coincidence) || {
+            prev_mode != mode as u8 && match mode {
+                StatMode::Hblank => self.hblank_enabled,
+                StatMode::Vblank => self.vblank_enabled,
+                StatMode::OamScan | StatMode::OamRead => self.oam_enabled,
+            }
+        };
+
+        (vblank_interrupt, stat_interrupt)
     }
 
     pub fn vram(&self) -> &Vram {
@@ -235,10 +317,11 @@ impl MemoryRead<u16, u8> for Ppu {
                 self.oam[idx]
             }
             0xFF40 => self.lcdc,
-            0xFF41 => self.stat,
+            Self::STAT_ADDR => self.stat,
             0xFF42 => self.scy,
             0xFF43 => self.scx,
-            0xFF44 | 0xFF45 => self.ly,
+            Self::LY_ADDR => self.ly,
+            0xFF45 => self.lyc,
             0xFF4A => self.wy,
             0xFF4B => self.wx,
             0xFF68 => self.bcps,
@@ -260,10 +343,27 @@ impl MemoryWrite<u16, u8> for Ppu {
                 self.oam[idx] = value;
             }
             0xFF40 => self.lcdc = value,
-            0xFF41 => self.stat = value,
+            Self::STAT_ADDR => {
+                self.stat = value;
+                self.hblank_enabled = self.stat & (1 << 3) != 0;
+                self.vblank_enabled = self.stat & (1 << 4) != 0;
+                self.oam_enabled = self.stat & (1 << 5) != 0;
+                self.ly_enabled = self.stat & (1 << 6) != 0;
+            }
             0xFF42 => self.scy = value,
             0xFF43 => self.scx = value,
-            0xFF44 | 0xFF45 => self.ly = value,
+            Self::LY_ADDR => {
+                if self.ly & (1 << 7) != 0 {
+                    // If bit 7 == 1 and it is getting reset, clear out LY entirely
+                    if value & (1 << 7) == 0 {
+                        self.ly = 0;
+                    }
+                } else {
+                    // If bit 7 == 0, accept all writes
+                    self.ly = value;
+                }
+            }
+            0xFF45 => self.lyc = value,
             0xFF4A => self.wy = value,
             0xFF4B => self.wx = value,
             0xFF68 => self.bcps = value,
