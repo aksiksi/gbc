@@ -60,15 +60,14 @@ impl Gameboy {
                 self.cpu.trigger_interrupt(Interrupt::LcdStat);
             }
 
-            cycle += self.cpu.step() as u32;
+            let (cycles_taken, _) = self.cpu.step();
+
+            cycle += cycles_taken as u32;
         }
 
         // TODO: Update PPU
 
         // TODO: Update sound
-
-        // Sleep until the next frame
-        // std::thread::sleep(sleep);
 
         // Update joypad, if needed
         if let Some(event) = joypad_event {

@@ -379,13 +379,13 @@ impl MemoryWrite<u16, u8> for Ppu {
                 self.bcpd = value;
 
                 if self.bcps & (1 << 7) != 0 {
-                    // Auto increment BCPS on write to BCPD (wrapping)
-                    let mut bcp_index = self.bcps & 0x3F + 1;
+                    // Auto-increment BCPS on write to BCPD (wrapping at bit 5)
+                    let mut bcp_index = (self.bcps & 0x3F) + 1;
                     if bcp_index > 0x3F {
                         bcp_index = 0x00;
                     }
 
-                    self.bcps = bcp_index;
+                    self.bcps |= bcp_index;
                 }
             }
             0xFF6A => self.ocps = value,

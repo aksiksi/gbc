@@ -174,6 +174,9 @@ impl Io {
     pub const BASE_ADDR: u16 = 0xFF00;
     pub const LAST_ADDR: u16 = 0xFF7F;
 
+    pub const SC_ADDR: u16 = 0xFF02;
+    pub const SC_REQUEST_MASK: u8 = 1 << 7;
+
     pub fn new() -> Self {
         Self {
             joypad: Joypad::new(),

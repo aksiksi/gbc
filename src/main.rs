@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+use std::time::Duration;
 
 use gbc::{Gameboy, Result};
 use gbc::joypad::{JoypadEvent, JoypadInput};
@@ -8,7 +9,6 @@ use sdl2::render::TextureAccess;
 use sdl2::pixels::Color;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
-use std::time::Duration;
 
 fn keycode_to_joypad_input(keycode: Option<Keycode>) -> Option<JoypadInput> {
     match keycode.unwrap() {
@@ -50,7 +50,7 @@ fn gui() {
     let video_subsystem = sdl_context.video().unwrap();
 
     // Setup an SDL2 Window
-    let mut window = video_subsystem.window("gbc", 800, 600)
+    let window = video_subsystem.window("gbc", 800, 600)
         .position_centered()
         .allow_highdpi()
         .build()
@@ -76,6 +76,7 @@ fn gui() {
     let mut j = 0;
 
     let mut gameboy = Gameboy::init("samples/cpu_instrs.gb").unwrap();
+    let frame_duration = Duration::new(0, Gameboy::FRAME_DURATION);
 
     // Start the event loop
     let mut event_pump = sdl_context.event_pump().unwrap();
@@ -138,7 +139,7 @@ fn gui() {
 
         // TODO: Update texture(s) based on VRAM data
 
-        std::thread::sleep(Duration::new(0, Gameboy::FRAME_DURATION));
+        std::thread::sleep(frame_duration);
     }
 }
 

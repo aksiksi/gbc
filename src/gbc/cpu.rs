@@ -1,5 +1,5 @@
 use crate::instructions::{Arg, Cond, Instruction};
-use crate::memory::{MemoryBus, MemoryRead, MemoryWrite};
+use crate::memory::{Io, MemoryBus, MemoryRead, MemoryWrite};
 use crate::registers::{Flag, Reg16, Reg8, RegisterFile, RegisterOps};
 
 #[derive(Clone, Copy, Debug)]
@@ -91,7 +91,7 @@ impl Cpu {
 
     /// Executes the next instruction and returns the number of cycles it
     /// took to complete.
-    pub fn step(&mut self) -> u8 {
+    pub fn step(&mut self) -> (u8, Instruction) {
         // Check for pending interrupts before fetching the next instruction.
         // If an interrupt is serviced, PC will jump to the ISR address.
         if self.ime {
@@ -113,13 +113,10 @@ impl Cpu {
         // Decode the instruction
         let (inst, size, cycles) = Instruction::decode(data);
 
-        // dbg!(pc);
-        // dbg!(inst);
-
         // Execute the instruction on this CPU
         self.execute(inst);
 
-        if pc == self.registers.PC {
+        let cycles = if pc == self.registers.PC {
             // If we did not execute a jump, proceed to next instruction as usual
             self.registers.PC = pc + size as u16;
             cycles.not_taken()
@@ -127,7 +124,16 @@ impl Cpu {
             // If we did jump, do not update the PC, and return the correct number
             // of cycles.
             cycles.taken()
+        };
+
+        // Check if a serial interrupt needs to be triggered
+        let sc = self.memory.read(Io::SC_ADDR);
+        if sc & Io::SC_REQUEST_MASK != 0 {
+            self.trigger_interrupt(Interrupt::Serial);
+            self.memory.write(0xFF02, sc & !Io::SC_REQUEST_MASK);
         }
+
+        (cycles, inst)
     }
 
     /// Figure out which interrupts are pending and service the one with the
