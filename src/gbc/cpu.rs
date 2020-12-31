@@ -60,7 +60,6 @@ pub struct Cpu {
 
     /// Global interrupt enable flag (Interrupt Master Enable)
     ime: bool,
-
     is_halted: bool,
 }
 
@@ -80,10 +79,8 @@ impl Cpu {
         self.memory.io().speed()
     }
 
-    /// Current clock cycle duration, in ns.
-    ///
-    /// This value is based on the current value in
-    /// the speed I/O register.
+    /// Current clock cycle duration, in ns. This value is based
+    /// on the current value in the speed I/O register.
     pub fn cycle_time(&self) -> u32 {
         if self.speed() {
             119
@@ -121,13 +118,6 @@ impl Cpu {
             // of cycles.
             cycles.taken()
         };
-
-        // Check if a serial interrupt needs to be triggered
-        let sc = self.memory.read(Io::SC_ADDR);
-        if sc & Io::SC_REQUEST_MASK != 0 {
-            self.trigger_interrupt(Interrupt::Serial);
-            self.memory.write(0xFF02, sc & !Io::SC_REQUEST_MASK);
-        }
 
         (int_cycles + cycles, inst)
     }

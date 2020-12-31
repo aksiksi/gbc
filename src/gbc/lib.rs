@@ -60,7 +60,14 @@ impl Gameboy {
                 self.cpu.trigger_interrupt(Interrupt::LcdStat);
             }
 
-            let (cycles_taken, _) = self.cpu.step();
+            let (cycles_taken, inst) = self.cpu.step();
+
+            // Check if a serial interrupt needs to be triggered
+            //
+            // TODO: This does not happen every cycle, right?
+            if self.cpu.memory.io_mut().serial_interrupt() {
+                self.cpu.trigger_interrupt(Interrupt::Serial);
+            }
 
             cycle += cycles_taken as u32;
         }

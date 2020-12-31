@@ -207,6 +207,18 @@ impl Io {
     pub fn joypad(&mut self) -> &mut Joypad {
         &mut self.joypad
     }
+
+    /// Determine if a serial interrupt needs to be triggered.
+    pub fn serial_interrupt(&mut self) -> bool {
+        let sc = self.serial[1];
+
+        if sc & Self::SC_REQUEST_MASK != 0 {
+            self.serial[1] = sc & !Io::SC_REQUEST_MASK;
+            true
+        } else {
+            false
+        }
+    }
 }
 
 impl MemoryRead<u16, u8> for Io {
@@ -368,6 +380,11 @@ impl MemoryBus {
     /// Return a reference to the I/O memory space
     pub fn io(&self) -> &Io {
         &self.io
+    }
+
+    /// Return a mutable reference to the I/O memory space
+    pub fn io_mut(&mut self) -> &mut Io {
+        &mut self.io
     }
 
     /// Return a reference to the PPU
