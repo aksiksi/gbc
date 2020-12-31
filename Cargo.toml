@@ -4,16 +4,19 @@ version = "0.1.0"
 authors = ["Assil Ksiksi <cyph0nik@gmail.com>"]
 edition = "2018"
 
+# Main library
 [lib]
 name = "gbc"
 path = "src/gbc/lib.rs"
 
+# Main emulator binary
 [[bin]]
 name = "gbc"
 path = "src/main.rs"
 test = false
 required-features = ["gui"]
 
+# Debugger
 [[bin]]
 name = "gbc_dbg"
 path = "src/debugger/main.rs"

@@ -1,3 +1,7 @@
+# Useful References
+
+* MAME instruction handler: https://github.com/mamedev/mame/blob/master/src/devices/cpu/lr35902/opc_main.hxx
+
 # NOTES
 
 ## CPU Architecture
@@ -15,7 +19,6 @@
 
 ### Memory
 
-
 ### Cartridge
 
 ### Instruction Handling
@@ -23,13 +26,21 @@
 * Look into abstracting out all arg types to simplify instruction handling
     * e.g., `Operand` can be `Reg8`, `Reg16`, `Imm8u`, `Imm8i`, `Imm16`, `Mem`, `MemImm16`
 
-## A GUI in Rust
+## Joypad/Gamepad
 
+Register 0xFF00 contains the joypad data. The 5th and 6th bits are used to select between directions and buttons. Whenever a keyboard event comes in from the window loop, we pass that down to the CPU to update the joypad register. Games typically snoop this register to determine whether or not a button is currently pressed.
 
-## OpenGL in Rust
+For now, we only pass in the last pressed button in each frame -- so, 1 joypad input per frame.
 
+## A 2D GUI in Rust
+
+SDL2 is the best option. You get 2D graphics (SW and HW rendering), keyboard events, and sound -- on all platforms. Also, the emulator can statically link against the SDL library.
+
+However, the texture needs to passed into the main emulator loop. The reason is that the LCD can be updated mid-frame (heck, even mid-scanline!). So, we will define a trait within the `gbc` crate and implement it for the SDL Texture type. Then we can pass in a trait object to the inner GB frame handler.
 
 ## PPU (GPU) Architecture
+
+* Basic registers, LY updates, and LCD STAT interrupts are fairly straightforward.
 
 
 ## APU Architecture
