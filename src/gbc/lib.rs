@@ -18,6 +18,7 @@ use cpu::Interrupt;
 use cartridge::Cartridge;
 pub use error::{Error, Result};
 use joypad::JoypadEvent;
+use memory::{MemoryRead, MemoryWrite};
 
 /// Gameboy
 pub struct Gameboy {
@@ -48,19 +49,30 @@ impl Gameboy {
         let cycle_time = self.cpu.cycle_time();
         let num_cycles = Self::FRAME_DURATION / cycle_time;
 
+        let mut vblank = false;
+
         // Execute next instruction
         let mut cycle = 0;
         while cycle < num_cycles {
             // Update internal PPU state based on current cycle and trigger any required interrupts
-            let (trigger_vblank, trigger_stat) = self.cpu.memory.ppu_mut().update(cycle, speed);
+            let (trigger_vblank, trigger_stat) = self.cpu.memory.ppu_mut().step(cycle, speed);
             if trigger_vblank {
+                vblank = true;
                 self.cpu.trigger_interrupt(Interrupt::Vblank);
             }
             if trigger_stat {
                 self.cpu.trigger_interrupt(Interrupt::LcdStat);
             }
 
+            if vblank {
+                dbg!(self.cpu.registers.PC);
+            }
+
             let (cycles_taken, inst) = self.cpu.step();
+
+            if vblank {
+                dbg!(inst);
+            }
 
             // Check if a serial interrupt needs to be triggered
             //

@@ -4,15 +4,6 @@ A Gameboy Color (GBC) emulator written in Rust.
 
 This is intended as a learning project.
 
-## TODO
-
-- [x] Implement a basic ROM loader
-- [ ] Get familiar with the GBC architecture
-- [ ] Work on basic CPU emulation
-- [ ] Get basic GUI up and running
-- [ ] Work on I/O emulation
-- [ ] TBD
-
 ## Building
 
 SDL2 is automatically built as part of the Rust-SDL2 build script. In addition, we statically link against `libsdl` on all platforms to avoid having to ship the DLL with the emulator (or asking users to install it).

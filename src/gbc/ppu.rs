@@ -56,20 +56,32 @@ enum StatMode {
     OamRead,
 }
 
-pub enum Vram {
-    Unbanked {
-        /// Static bank, 8K
-        ///
-        /// Non-CGB mode
-        data: Box<[u8; Self::BANK_SIZE]>,
-    },
-    Banked {
-        /// Two static banks, 8K each
-        ///
-        /// CGB mode
-        data: Box<[u8; Self::BANK_SIZE * 2]>,
-        active_bank: u8,
-    },
+/// Buffer that holds pixel data for a single frame.
+pub struct FrameBuffer {
+    /// 160x144 pixels in a frame
+    data: Box<[[u8; 160]; 144]>,
+}
+
+impl FrameBuffer {
+    pub fn new() -> Self {
+        Self {
+            data: Box::new([[0; 160]; 144]),
+        }
+    }
+
+    /// Write a single dot/pixel to the buffer.
+    pub fn write(&mut self, line: u8, dot: u8, data: u8) {
+        self.data[line as usize][dot as usize] = data;
+    }
+}
+
+pub struct Vram {
+    /// Two static banks, 8K each
+    ///
+    /// CGB mode
+    data: Vec<u8>,
+    active_bank: u8,
+    cgb: bool,
 }
 
 impl Vram {
@@ -79,30 +91,25 @@ impl Vram {
     pub const BANK_SELECT_ADDR: u16 = 0xFF4F;
 
     pub fn new(cgb: bool) -> Self {
+        let data;
+
         if cgb {
-            Self::Banked {
-                data: Box::new([0u8; Self::BANK_SIZE * 2]),
-                active_bank: 0,
-            }
+            data = vec![0u8; Self::BANK_SIZE * 2];
         } else {
-            Self::Unbanked {
-                data: Box::new([0u8; Self::BANK_SIZE]),
-            }
+            data = vec![0u8; Self::BANK_SIZE];
+        }
+
+        Self {
+            data,
+            active_bank: 0,
+            cgb,
         }
     }
 
     /// Update the active VRAM bank
     pub fn update_bank(&mut self, bank: u8) {
-        match self {
-            Self::Banked {
-                data: _,
-                active_bank,
-            } => {
-                assert!(bank < 2);
-                *active_bank = bank;
-            }
-            _ => panic!("Received VRAM bank change request on unbanked VRAM"),
-        }
+        assert!(self.cgb && bank < 2);
+        self.active_bank = bank;
     }
 }
 
@@ -110,16 +117,7 @@ impl MemoryRead<u16, u8> for Vram {
     #[inline]
     fn read(&self, addr: u16) -> u8 {
         let addr = (addr - Self::BASE_ADDR) as usize;
-        match self {
-            Self::Unbanked { data } => {
-                // Bank 0 (static)
-                data[addr]
-            }
-            Self::Banked { data, active_bank } => {
-                let bank_offset = *active_bank as usize * Self::BANK_SIZE;
-                data[bank_offset + addr]
-            }
-        }
+        self.data[addr]
     }
 }
 
@@ -127,32 +125,17 @@ impl MemoryWrite<u16, u8> for Vram {
     #[inline]
     fn write(&mut self, addr: u16, value: u8) {
         let addr = (addr - Self::BASE_ADDR) as usize;
-        match self {
-            Self::Unbanked { data } => {
-                // Bank 0 (static)
-                data[addr] = value;
-            }
-            Self::Banked { data, active_bank } => {
-                let bank_offset = *active_bank as usize * Self::BANK_SIZE;
-                data[bank_offset + addr] = value;
-            }
-        }
+        let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
+        self.data[bank_offset + addr] = value;
     }
 }
 
 impl std::fmt::Debug for Vram {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Unbanked { data } => f
-                .debug_struct("Vram::Unbanked")
-                .field("vram_size", &data.len())
-                .finish(),
-            Self::Banked { data, active_bank } => f
-                .debug_struct("Vram::Banked")
-                .field("vram_size", &data.len())
-                .field("active_bank", &active_bank)
-                .finish(),
-        }
+        f.debug_struct("Vram::Banked")
+            .field("vram_size", &self.data.len())
+            .field("active_bank", &self.active_bank)
+            .finish()
     }
 }
 
@@ -210,11 +193,24 @@ pub struct Ppu {
     vblank_enabled: bool,
     hblank_enabled: bool,
     ly_enabled: bool,
+
+    /// Latch stack
+    ///
+    /// Some of the registers, e.g., SCY and SCX, can be written to mid-scanline,
+    /// but the write does not go into affect until the end of the scanline. This
+    /// stack keeps track of these writes and flushes them on a scanline change.
+    latch_stack: Vec<(u16, u8)>,
 }
 
 impl Ppu {
+    const LCDC_ADDR: u16 = 0xFF40;
     const STAT_ADDR: u16 = 0xFF41;
+    const SCY_ADDR: u16 = 0xFF42;
+    const SCX_ADDR: u16 = 0xFF43;
     const LY_ADDR: u16 = 0xFF44;
+    const LYC_ADDR: u16 = 0xFF45;
+    const WY_ADDR: u16 = 0xFF4A;
+    const WX_ADDR: u16 = 0xFF4B;
     const DOTS_PER_LINE: u32 = 456;
     const VBLANK_START_LINE: u8 = 144;
 
@@ -238,6 +234,7 @@ impl Ppu {
             vblank_enabled: false,
             hblank_enabled: false,
             ly_enabled: false,
+            latch_stack: Vec::with_capacity(5), //  5 registers use this
         }
     }
 
@@ -245,8 +242,8 @@ impl Ppu {
     ///
     /// Returned tuple contains two interrupt flags: (Vblank, LcdStat)
     ///
-    /// This function is called once per frame from the main frame loop.
-    pub fn update(&mut self, cycle: u32, speed: bool) -> (bool, bool) {
+    /// This function is called once per CPU step from the main frame loop.
+    pub fn step(&mut self, cycle: u32, speed: bool) -> (bool, bool) {
         // Figure out the current dot and scan line
         let dot = if speed {
             // If we are in double-speed mode, we get a dot every 2 cycles
@@ -256,6 +253,21 @@ impl Ppu {
         };
 
         let line = (dot / Self::DOTS_PER_LINE) as u8;
+
+        // Update the internal PPU state
+        // The function returns which interrupts need to be triggered
+        let interrupts = self.update_state(dot, line);
+
+        interrupts
+    }
+
+    fn update_state(&mut self, dot: u32, line: u8) -> (bool, bool) {
+        // If we have a scanline change, flush the latch stack to memory
+        if line != self.ly {
+            while let Some((addr, value)) = self.latch_stack.pop() {
+                self.write(addr, value);
+            }
+        }
 
         // Set LY to current scan line
         self.ly = line;
@@ -306,6 +318,57 @@ impl Ppu {
         (vblank_interrupt, stat_interrupt)
     }
 
+    fn lcd_display_enable(&self) -> bool {
+        self.lcdc & (1 << 7) != 0
+    }
+
+    /// Returns a slice pointing to the window tile map region in VRAM
+    fn window_tile_map(&mut self) -> &mut [u8] {
+        let bank_offset = self.vram.active_bank as usize * Vram::BANK_SIZE;
+
+        if self.lcdc & (1 << 6) == 0 {
+            let start = 0x9800 - Vram::BASE_ADDR as usize;
+            let end = 0x9BFF - Vram::BASE_ADDR as usize;
+            &mut self.vram.data[bank_offset + start..=bank_offset + end]
+        } else {
+            let start = 0x9C00 - Vram::BASE_ADDR as usize;
+            let end = 0x9FFF - Vram::BASE_ADDR as usize;
+            &mut self.vram.data[bank_offset + start..=bank_offset + end]
+        }
+    }
+
+    fn window_display_enable(&self) -> bool {
+        self.lcdc & (1 << 5) != 0
+    }
+
+    fn tile_data(&mut self) -> &mut [u8] {
+        let bank_offset = self.vram.active_bank as usize * Vram::BANK_SIZE;
+
+        if self.lcdc & (1 << 4) == 0 {
+            let start = 0x8800 - Vram::BASE_ADDR as usize;
+            let end = 0x97FF - Vram::BASE_ADDR as usize;
+            &mut self.vram.data[bank_offset + start..=bank_offset + end]
+        } else {
+            let start = 0x8000 - Vram::BASE_ADDR as usize;
+            let end = 0x8FFF - Vram::BASE_ADDR as usize;
+            &mut self.vram.data[bank_offset + start..=bank_offset + end]
+        }
+    }
+
+    fn bg_tile_map(&mut self) -> &mut [u8] {
+        let bank_offset = self.vram.active_bank as usize * Vram::BANK_SIZE;
+
+        if self.lcdc & (1 << 4) == 0 {
+            let start = 0x8800 - Vram::BASE_ADDR as usize;
+            let end = 0x97FF - Vram::BASE_ADDR as usize;
+            &mut self.vram.data[bank_offset + start..=bank_offset + end]
+        } else {
+            let start = 0x8000 - Vram::BASE_ADDR as usize;
+            let end = 0x8FFF - Vram::BASE_ADDR as usize;
+            &mut self.vram.data[bank_offset + start..=bank_offset + end]
+        }
+    }
+
     pub fn vram(&self) -> &Vram {
         &self.vram
     }
@@ -324,14 +387,14 @@ impl MemoryRead<u16, u8> for Ppu {
                 let idx = (addr as usize) - 0xFE00;
                 self.oam[idx]
             }
-            0xFF40 => self.lcdc,
+            Self::LCDC_ADDR => self.lcdc,
             Self::STAT_ADDR => self.stat,
-            0xFF42 => self.scy,
-            0xFF43 => self.scx,
+            Self::SCY_ADDR => self.scy,
+            Self::SCX_ADDR => self.scx,
             Self::LY_ADDR => self.ly,
-            0xFF45 => self.lyc,
-            0xFF4A => self.wy,
-            0xFF4B => self.wx,
+            Self::LYC_ADDR => self.lyc,
+            Self::WY_ADDR => self.wy,
+            Self::WX_ADDR => self.wx,
             0xFF68 => self.bcps,
             0xFF69 => self.bcpd,
             0xFF6A => self.ocps,
@@ -350,7 +413,7 @@ impl MemoryWrite<u16, u8> for Ppu {
                 let idx = (addr as usize) - 0xFE00;
                 self.oam[idx] = value;
             }
-            0xFF40 => self.lcdc = value,
+            Self::LCDC_ADDR => self.lcdc = value,
             Self::STAT_ADDR => {
                 self.stat = value;
                 self.hblank_enabled = self.stat & (1 << 3) != 0;
@@ -358,8 +421,10 @@ impl MemoryWrite<u16, u8> for Ppu {
                 self.oam_enabled = self.stat & (1 << 5) != 0;
                 self.ly_enabled = self.stat & (1 << 6) != 0;
             }
-            0xFF42 => self.scy = value,
-            0xFF43 => self.scx = value,
+            Self::SCY_ADDR | Self::SCX_ADDR | Self::LYC_ADDR | Self::WY_ADDR | Self::WX_ADDR => {
+                // Latch these writes until the next scanline change
+                self.latch_stack.push((addr, value));
+            }
             Self::LY_ADDR => {
                 if self.ly & (1 << 7) != 0 {
                     // If bit 7 == 1 and it is getting reset, clear out LY entirely
@@ -371,9 +436,6 @@ impl MemoryWrite<u16, u8> for Ppu {
                     self.ly = value;
                 }
             }
-            0xFF45 => self.lyc = value,
-            0xFF4A => self.wy = value,
-            0xFF4B => self.wx = value,
             0xFF68 => self.bcps = value,
             0xFF69 => {
                 self.bcpd = value;

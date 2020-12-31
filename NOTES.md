@@ -1,5 +1,6 @@
 # Useful References
 
+* Wiki on how OAM DMA works: https://gbdev.gg8.se/wiki/articles/OAM_DMA_tutorial
 * MAME instruction handler: https://github.com/mamedev/mame/blob/master/src/devices/cpu/lr35902/opc_main.hxx
 
 # NOTES
@@ -41,6 +42,7 @@ However, the texture needs to passed into the main emulator loop. The reason is 
 ## PPU (GPU) Architecture
 
 * Basic registers, LY updates, and LCD STAT interrupts are fairly straightforward.
-
+* Some of the registers are latched during a scanline. In other words, writing to these registers has no effect until the next scanline. The registers are: SCY, SCX, LYC, WX, and WY.
+* 
 
 ## APU Architecture
