@@ -1,4 +1,4 @@
-use crate::instructions::{Arg, Cond, Instruction};
+use crate::instructions::{Arg, Cond, Cycles, Instruction};
 use crate::memory::{Io, MemoryBus, MemoryRead, MemoryWrite};
 use crate::registers::{Flag, Reg16, Reg8, RegisterFile, RegisterOps};
 
@@ -60,6 +60,8 @@ pub struct Cpu {
 
     /// Global interrupt enable flag (Interrupt Master Enable)
     ime: bool,
+
+    is_halted: bool,
 }
 
 impl Cpu {
@@ -69,6 +71,7 @@ impl Cpu {
             registers,
             memory,
             ime: false,
+            is_halted: false,
         }
     }
 
@@ -94,24 +97,17 @@ impl Cpu {
     pub fn step(&mut self) -> (u8, Instruction) {
         // Check for pending interrupts before fetching the next instruction.
         // If an interrupt is serviced, PC will jump to the ISR address.
-        if self.ime {
-            self.service_interrupts();
+        let int_cycles = self.service_interrupts();
+
+        // If the CPU is halted, bail out
+        if self.is_halted {
+            return (0, Instruction::Nop);
         }
 
         let pc = self.registers.PC;
 
-        // Read the next 3 bytes from memory, starting from PC.
-        // This is what we will use to decode the next instruction.
-        //
-        // TODO: Evaluate the boundary cases
-        let data: [u8; 3] = [
-            self.memory.read(pc),
-            self.memory.read(pc+1),
-            self.memory.read(pc+2),
-        ];
-
-        // Decode the instruction
-        let (inst, size, cycles) = Instruction::decode(data);
+        // Fetch and decode the next instruction
+        let (inst, size, cycles) = self.fetch();
 
         // Execute the instruction on this CPU
         self.execute(inst);
@@ -133,19 +129,55 @@ impl Cpu {
             self.memory.write(0xFF02, sc & !Io::SC_REQUEST_MASK);
         }
 
-        (cycles, inst)
+        (int_cycles + cycles, inst)
+    }
+
+    fn fetch(&self) -> (Instruction, u8, Cycles) {
+        let pc = self.registers.PC;
+
+        // Read the next 3 bytes from memory, starting from PC.
+        // This is what we will use to decode the next instruction.
+        //
+        // TODO: Evaluate the boundary cases
+        let data: [u8; 3] = [
+            self.memory.read(pc),
+            self.memory.read(pc+1),
+            self.memory.read(pc+2),
+        ];
+
+        // Decode the instruction
+        Instruction::decode(data)
     }
 
     /// Figure out which interrupts are pending and service the one with the
     /// highest priority.
     ///
+    /// Servicing an interrupt takes 20 clock cycles according to Pandocs.
+    ///
     /// See: pg. 27 of GB Programming Manual
-    fn service_interrupts(&mut self) {
-        // Iterate over each interrupt in priority order
-        for int in 0..5 {
-            let int_enable = self.memory.read(0xFFFF);
-            let int_flags = self.memory.read(0xFF0F);
+    fn service_interrupts(&mut self) -> u8 {
+        let int_enable = self.memory.read(0xFFFF);
+        let int_flags = self.memory.read(0xFF0F);
 
+        // If no interrupts are pending, bail out now
+        if int_enable & int_flags == 0 {
+            return 0;
+        }
+
+        // If the CPU is currently halted and there is a pending interrupt,
+        // leave HALT state, *even if IME is disabled*.
+        if self.is_halted {
+            self.is_halted = (int_enable & int_flags) == 0;
+        }
+
+        // If the IME is disabled, do not process any interrupts
+        if !self.ime {
+            return 0;
+        }
+
+        // Iterate over each interrupt in priority order and service
+        // the first one
+        for int in 0..5 {
             let enabled = (int_enable & 1 << int) != 0;
             let pending = (int_flags & 1 << int) != 0;
 
@@ -167,6 +199,8 @@ impl Cpu {
                 break;
             }
         }
+
+        20
     }
 
     /// Trigger a particular interrupt
@@ -183,8 +217,10 @@ impl Cpu {
 
         match instruction {
             Nop => (),
-            Halt => todo!(),
-            Stop => todo!(),
+            Halt => {
+                self.is_halted = true;
+            }
+            Stop => (),
             Di => {
                 self.ime = false;
             }
