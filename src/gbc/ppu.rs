@@ -47,15 +47,6 @@
 //! The combination of these two periods nets us ~60 fps.
 use crate::memory::{MemoryRead, MemoryWrite};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[repr(u8)]
-enum StatMode {
-    Hblank = 0,
-    Vblank,
-    OamScan,
-    OamRead,
-}
-
 /// Buffer that holds pixel data for a single frame.
 pub struct FrameBuffer {
     /// 160x144 pixels in a frame
@@ -139,6 +130,94 @@ impl std::fmt::Debug for Vram {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+struct LcdControl {
+    /// Raw register value
+    pub raw: u8,
+
+    pub lcd_display_enable: bool, // bit 7
+    pub window_tile_map_select: bool, // bit 6
+    pub window_display_enable: bool, // bit 5
+    pub bg_tile_data_select: bool, // bit 4
+    pub bg_tile_map_select: bool, // bit 3
+    pub sprite_size: bool, // bit 2
+    pub sprite_enable: bool, // bit 1
+    pub bg_priority: bool, // bit 0
+}
+
+impl LcdControl {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    pub fn set(&mut self, raw: u8) {
+        self.raw = raw;
+
+        self.lcd_display_enable = raw & (1 << 7) != 0;
+        self.window_tile_map_select = raw & (1 << 6) != 0;
+        self.window_display_enable = raw & (1 << 5) != 0;
+        self.bg_tile_data_select = raw & (1 << 4) != 0;
+        self.bg_tile_map_select = raw & (1 << 3) != 0;
+        self.sprite_size = raw & (1 << 2) != 0;
+        self.sprite_enable = raw & (1 << 1) != 0;
+        self.bg_priority = raw & (1 << 0) != 0;
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[repr(u8)]
+enum StatMode {
+    Hblank = 0,
+    Vblank,
+    OamScan,
+    OamRead,
+}
+
+/// LCD STAT register
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct LcdStat {
+    /// Raw register value
+    pub raw: u8,
+
+    pub ly_enabled: bool, // bit 6
+    pub oam_enabled: bool, // bit 5
+    pub vblank_enabled: bool, // bit 4
+    pub hblank_enabled: bool, // bit 3
+    pub coincidence: bool, // bit 2
+    pub mode: StatMode, // bits 0-1
+}
+
+impl LcdStat {
+    pub fn new() -> Self {
+        Self {
+            raw: 0,
+            mode: StatMode::OamScan,
+            coincidence: false,
+            hblank_enabled: false,
+            vblank_enabled: false,
+            oam_enabled: false,
+            ly_enabled: false,
+        }
+    }
+
+    pub fn set(&mut self, raw: u8) {
+        self.raw = raw;
+        self.mode = match raw & 0x3 {
+            0 => StatMode::Vblank,
+            1 => StatMode::Hblank,
+            2 => StatMode::OamScan,
+            3 => StatMode::OamRead,
+            _ => unreachable!(),
+        };
+
+        self.coincidence = self.raw & (1 << 2) != 0;
+        self.hblank_enabled = self.raw & (1 << 3) != 0;
+        self.vblank_enabled = self.raw & (1 << 4) != 0;
+        self.oam_enabled = self.raw & (1 << 5) != 0;
+        self.ly_enabled = self.raw & (1 << 6) != 0;
+    }
+}
+
 #[derive(Debug)]
 pub struct Ppu {
     /// Video RAM (0x8000 - 0x9FFF)
@@ -146,7 +225,7 @@ pub struct Ppu {
 
     /// OAM (0xFE00-0xFE9F)
     ///
-    /// 40 objects can be loaded into this RAM. Each 4-byte object
+    /// 40 sprites/objects can be loaded into this RAM. Each 4-byte object
     /// consists of:
     ///
     /// 1. y-coordinate (8 bits)
@@ -161,10 +240,10 @@ pub struct Ppu {
     oam: [u8; 160],
 
     /// LCD control register (0xFF40)
-    lcdc: u8,
+    lcdc: LcdControl,
 
     /// LCD status register (0xFF41)
-    stat: u8,
+    stat: LcdStat,
 
     /// Background position registers (0xFF42, 0xFF43)
     ///
@@ -194,15 +273,16 @@ pub struct Ppu {
     hblank_enabled: bool,
     ly_enabled: bool,
 
-    /// Latch stack
+    /// Register write stack
     ///
     /// Some of the registers, e.g., SCY and SCX, can be written to mid-scanline,
     /// but the write does not go into affect until the end of the scanline. This
     /// stack keeps track of these writes and flushes them on a scanline change.
-    latch_stack: Vec<(u16, u8)>,
+    write_stack: Vec<(u16, u8)>,
 }
 
 impl Ppu {
+    // Register addresses
     const LCDC_ADDR: u16 = 0xFF40;
     const STAT_ADDR: u16 = 0xFF41;
     const SCY_ADDR: u16 = 0xFF42;
@@ -211,6 +291,7 @@ impl Ppu {
     const LYC_ADDR: u16 = 0xFF45;
     const WY_ADDR: u16 = 0xFF4A;
     const WX_ADDR: u16 = 0xFF4B;
+
     const DOTS_PER_LINE: u32 = 456;
     const VBLANK_START_LINE: u8 = 144;
 
@@ -218,8 +299,8 @@ impl Ppu {
         Self {
             vram: Vram::new(cgb),
             oam: [0u8; 160],
-            lcdc: 0,
-            stat: 0,
+            lcdc: LcdControl::new(),
+            stat: LcdStat::new(),
             scy: 0,
             scx: 0,
             ly: 0,
@@ -234,7 +315,7 @@ impl Ppu {
             vblank_enabled: false,
             hblank_enabled: false,
             ly_enabled: false,
-            latch_stack: Vec::with_capacity(5), //  5 registers use this
+            write_stack: Vec::with_capacity(5), // 5 registers use this
         }
     }
 
@@ -254,17 +335,17 @@ impl Ppu {
 
         let line = (dot / Self::DOTS_PER_LINE) as u8;
 
-        // Update the internal PPU state
+        // Update the internal PPU status
         // The function returns which interrupts need to be triggered
-        let interrupts = self.update_state(dot, line);
+        let interrupts = self.update_status(dot, line);
 
         interrupts
     }
 
-    fn update_state(&mut self, dot: u32, line: u8) -> (bool, bool) {
-        // If we have a scanline change, flush the latch stack to memory
+    fn update_status(&mut self, dot: u32, line: u8) -> (bool, bool) {
+        // If we have a scanline change, flush the write stack to affected registers
         if line != self.ly {
-            while let Some((addr, value)) = self.latch_stack.pop() {
+            while let Some((addr, value)) = self.write_stack.pop() {
                 self.write(addr, value);
             }
         }
@@ -273,11 +354,11 @@ impl Ppu {
         self.ly = line;
 
         // Compute LY conincidence
-        let prev_ly_coincidence = (self.stat & 1 << 2) != 0;
+        let prev_ly_coincidence = self.stat.coincidence;
         let ly_coincidence = self.ly == self.lyc;
 
         // Figure out which stat mode we are in based on line and dot
-        let prev_mode = self.stat & 0x3;
+        let prev_mode = self.stat.mode;
         let mode = if line < Self::VBLANK_START_LINE {
             let dot = dot % Self::DOTS_PER_LINE;
             match dot {
@@ -290,25 +371,25 @@ impl Ppu {
             StatMode::Vblank
         };
 
-        // Update STAT register
         let mut stat = mode as u8;
         if ly_coincidence {
             stat |= 1 << 2;
         }
 
-        self.stat = stat;
+        // Update STAT register
+        self.stat.set(stat);
 
         // VBLANK interrupt is fired if the mode has changed and the current mode is VBLANK.
         //
         // Note: This is fired once per frame.
-        let vblank_interrupt = prev_mode != mode as u8 && mode == StatMode::Vblank;
+        let vblank_interrupt = prev_mode != mode && mode == StatMode::Vblank;
 
         // If any of the STAT interrupt conditions are met, fire an interrupt.
         //
         // 1. LY coincidence interrupt is enabled and changed from false to true
         // 2. STAT mode interrupt is enabled and has changed
         let stat_interrupt = (self.ly_enabled && !prev_ly_coincidence && ly_coincidence) || {
-            prev_mode != mode as u8 && match mode {
+            prev_mode != mode && match mode {
                 StatMode::Hblank => self.hblank_enabled,
                 StatMode::Vblank => self.vblank_enabled,
                 StatMode::OamScan | StatMode::OamRead => self.oam_enabled,
@@ -318,54 +399,21 @@ impl Ppu {
         (vblank_interrupt, stat_interrupt)
     }
 
-    fn lcd_display_enable(&self) -> bool {
-        self.lcdc & (1 << 7) != 0
-    }
-
-    /// Returns a slice pointing to the window tile map region in VRAM
-    fn window_tile_map(&mut self) -> &mut [u8] {
-        let bank_offset = self.vram.active_bank as usize * Vram::BANK_SIZE;
-
-        if self.lcdc & (1 << 6) == 0 {
-            let start = 0x9800 - Vram::BASE_ADDR as usize;
-            let end = 0x9BFF - Vram::BASE_ADDR as usize;
-            &mut self.vram.data[bank_offset + start..=bank_offset + end]
-        } else {
-            let start = 0x9C00 - Vram::BASE_ADDR as usize;
-            let end = 0x9FFF - Vram::BASE_ADDR as usize;
-            &mut self.vram.data[bank_offset + start..=bank_offset + end]
+    /// Returns `true` if VRAM is locked to CPU
+    fn vram_locked(&self) -> bool {
+        match self.stat.mode {
+            // Locked during OAM read (mode 3)
+            StatMode::OamRead => false,
+            _ => true,
         }
     }
 
-    fn window_display_enable(&self) -> bool {
-        self.lcdc & (1 << 5) != 0
-    }
-
-    fn tile_data(&mut self) -> &mut [u8] {
-        let bank_offset = self.vram.active_bank as usize * Vram::BANK_SIZE;
-
-        if self.lcdc & (1 << 4) == 0 {
-            let start = 0x8800 - Vram::BASE_ADDR as usize;
-            let end = 0x97FF - Vram::BASE_ADDR as usize;
-            &mut self.vram.data[bank_offset + start..=bank_offset + end]
-        } else {
-            let start = 0x8000 - Vram::BASE_ADDR as usize;
-            let end = 0x8FFF - Vram::BASE_ADDR as usize;
-            &mut self.vram.data[bank_offset + start..=bank_offset + end]
-        }
-    }
-
-    fn bg_tile_map(&mut self) -> &mut [u8] {
-        let bank_offset = self.vram.active_bank as usize * Vram::BANK_SIZE;
-
-        if self.lcdc & (1 << 4) == 0 {
-            let start = 0x8800 - Vram::BASE_ADDR as usize;
-            let end = 0x97FF - Vram::BASE_ADDR as usize;
-            &mut self.vram.data[bank_offset + start..=bank_offset + end]
-        } else {
-            let start = 0x8000 - Vram::BASE_ADDR as usize;
-            let end = 0x8FFF - Vram::BASE_ADDR as usize;
-            &mut self.vram.data[bank_offset + start..=bank_offset + end]
+    /// Returns `true` if OAM is locked to CPU
+    fn oam_locked(&self) -> bool {
+        match self.stat.mode {
+            // Unlocked only during Vblank and Hblank
+            StatMode::Vblank | StatMode::Hblank => false,
+            _ => true,
         }
     }
 
@@ -382,13 +430,20 @@ impl MemoryRead<u16, u8> for Ppu {
     #[inline]
     fn read(&self, addr: u16) -> u8 {
         match addr {
-            Vram::BASE_ADDR..=Vram::LAST_ADDR => self.vram.read(addr),
+            Vram::BASE_ADDR..=Vram::LAST_ADDR => {
+                if !self.vram_locked() {
+                    self.vram.read(addr)
+                } else {
+                    // PPU returns 0xFF if VRAM is locked
+                    0xFF
+                }
+            }
             0xFE00..=0xFE9F => {
                 let idx = (addr as usize) - 0xFE00;
                 self.oam[idx]
             }
-            Self::LCDC_ADDR => self.lcdc,
-            Self::STAT_ADDR => self.stat,
+            Self::LCDC_ADDR => self.lcdc.raw,
+            Self::STAT_ADDR => self.stat.raw,
             Self::SCY_ADDR => self.scy,
             Self::SCX_ADDR => self.scx,
             Self::LY_ADDR => self.ly,
@@ -408,22 +463,22 @@ impl MemoryWrite<u16, u8> for Ppu {
     #[inline]
     fn write(&mut self, addr: u16, value: u8) {
         match addr {
-            Vram::BASE_ADDR..=Vram::LAST_ADDR => self.vram.write(addr, value),
+            Vram::BASE_ADDR..=Vram::LAST_ADDR => {
+                if !self.vram_locked() {
+                    self.vram.write(addr, value);
+                }
+            }
             0xFE00..=0xFE9F => {
                 let idx = (addr as usize) - 0xFE00;
                 self.oam[idx] = value;
             }
-            Self::LCDC_ADDR => self.lcdc = value,
+            Self::LCDC_ADDR => self.lcdc.set(value),
             Self::STAT_ADDR => {
-                self.stat = value;
-                self.hblank_enabled = self.stat & (1 << 3) != 0;
-                self.vblank_enabled = self.stat & (1 << 4) != 0;
-                self.oam_enabled = self.stat & (1 << 5) != 0;
-                self.ly_enabled = self.stat & (1 << 6) != 0;
+                self.stat.set(value);
             }
             Self::SCY_ADDR | Self::SCX_ADDR | Self::LYC_ADDR | Self::WY_ADDR | Self::WX_ADDR => {
                 // Latch these writes until the next scanline change
-                self.latch_stack.push((addr, value));
+                self.write_stack.push((addr, value));
             }
             Self::LY_ADDR => {
                 if self.ly & (1 << 7) != 0 {
