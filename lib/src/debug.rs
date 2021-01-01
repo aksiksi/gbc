@@ -106,12 +106,25 @@ impl Debugger {
                     self.breakpoints[index].1 = false;
                 }
                 "l" | "list" => {
-                    // Print the last 5 instructions
-                    let mut i = (self.instructions.len() as i32 - 1) - 5;
+                    let count: usize = if line.len() < 2 {
+                        5
+                    } else {
+                        line[1].parse().unwrap()
+                    };
 
-                    while i >= 0 {
-                        println!("inst {}: {:x?}", i+1, self.instructions[i as usize]);
-                        i -= 1;
+                    let total = self.instructions.len();
+
+                    // Print the last 5 instructions we've hit
+                    let range = if total < count {
+                        0..total
+                    } else {
+                        total-count..total
+                    };
+
+                    let mut i: i32 = (total - count) as i32;
+                    for inst in self.instructions[range].iter() {
+                        println!("{}: {}", i, inst);
+                        i += 1;
                     }
                 }
                 "n" if line.len() == 2 => {
@@ -144,7 +157,7 @@ impl Debugger {
                 "info" if line.len() == 2 => {
                     match line[1] {
                         "r" | "reg" | "registers" => {
-                            dbg!(&cpu.registers);
+                            println!("{}", cpu.registers);
                         }
                         "b" | "break" | "breakpoints" => {
                             let mut i = 0;
@@ -160,6 +173,5 @@ impl Debugger {
                 unknown => eprintln!("Unknown command: {}", unknown),
             }
         }
-
     }
 }

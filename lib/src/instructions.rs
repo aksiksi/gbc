@@ -28,6 +28,23 @@ pub enum Arg {
     MemHl,
 }
 
+impl std::fmt::Display for Arg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use Arg::*;
+
+        match self {
+            Reg8(reg) => write!(f, "{}", reg),
+            Reg16(reg) => write!(f, "{}", reg),
+            Imm8(val) => write!(f, "{:#04X}", val),
+            Imm8i(val) => write!(f, "{:#04X}", val),
+            Imm16(val) => write!(f, "{:#06X}", val),
+            Mem(addr) => write!(f, "({})", addr),
+            MemImm(addr) => write!(f, "({:#06X})", addr),
+            MemHl => write!(f, "(HL)"),
+        }
+    }
+}
+
 impl From<u8> for Arg {
     fn from(n: u8) -> Self {
         Self::Imm8(n)
@@ -59,6 +76,20 @@ pub enum Cond {
     Zero,
     NotCarry,
     Carry,
+}
+
+impl std::fmt::Display for Cond {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use Cond::*;
+
+        match self {
+            None => write!(f, "N/A"),
+            NotZero => write!(f, "NZ"),
+            Zero => write!(f, "Z"),
+            NotCarry => write!(f, "NC"),
+            Carry => write!(f, "C"),
+        }
+    }
 }
 
 /// Represents a single CPU instruction.
@@ -926,6 +957,86 @@ impl Instruction {
         };
 
         (dst, bit)
+    }
+}
+
+/// Prettier display for all GBC instructions
+impl std::fmt::Display for Instruction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use Instruction::*;
+        match self {
+            Ld { dst, src } => write!(f, "ld {}, {}", dst, src),
+            LdAMemC => write!(f, "ld A, (0xFF00 + C)"),
+            LdMemCA => write!(f, "ld (0xFF00 + C), A"),
+            LddAMemHl => write!(f, "ld A, (HL-)"),
+            LddMemHlA => write!(f, "ld (HL-), A"),
+            LdiAMemHl => write!(f, "ld A, (HL+)"),
+            LdiMemHlA => write!(f, "ld (HL+), A"),
+            LdhA { offset } => write!(f, "ldh A, ({:#06X})", 0xFF00 + *offset as u16),
+            Ldh { offset } => write!(f, "ldh ({:#06X}), A", 0xFF00 + *offset as u16),
+            LdHlSpImm8i { offset } => write!(f, "ld (HL), (SP + {:#04x})", offset),
+            Push { src } => write!(f, "push {}", src),
+            Pop { dst } => write!(f, "pop {}", dst),
+            Add { src } => write!(f, "add A, {}", src),
+            Adc { src } => write!(f, "adc A, {}", src),
+            Sub { src } => write!(f, "sub A, {}", src),
+            Sbc { src } => write!(f, "sbc A, {}", src),
+            And { src } => write!(f, "and A, {}", src),
+            Or { src } => write!(f, "or A, {}", src),
+            Xor { src } => write!(f, "xor A, {}", src),
+            Cp { src } => write!(f, "cp A, {}", src),
+            Inc { dst } => write!(f, "inc {}", dst),
+            Dec { dst } => write!(f, "dec {}", dst),
+            AddHlReg16 { src } => write!(f, "add HL, {}", src),
+            AddSpImm8i { offset } => write!(f, "add SP, {:#04X}", offset),
+            Swap { dst } => write!(f, "swap {}", dst),
+            Daa => write!(f, "daa"),
+            Cpl => write!(f, "cpl"),
+            Ccf => write!(f, "ccf"),
+            Scf => write!(f, "scf"),
+            Nop => write!(f, "nop"),
+            Halt => write!(f, "halt"),
+            Stop => write!(f, "stop"),
+            Di => write!(f, "di"),
+            Ei => write!(f, "ei"),
+            Rst { offset } => write!(f, "rst {:#06X}", offset),
+            Rlc { dst } => write!(f, "rlc {}", dst),
+            Rl { dst } => write!(f, "rl {}", dst),
+            Rrc { dst } => write!(f, "rrc {}", dst),
+            Rr { dst } => write!(f, "rr {}", dst),
+            Sla { dst } => write!(f, "sla {}", dst),
+            Sra { dst } => write!(f, "sra {}", dst),
+            Srl { dst } => write!(f, "srl {}", dst),
+            Bit { dst, bit } => write!(f, "bit {}, {}", dst, bit),
+            Set { dst, bit } => write!(f, "set {}, {}", dst, bit),
+            Res { dst, bit } => write!(f, "res {}, {}", dst, bit),
+            Jp { addr, cond } => {
+                match cond {
+                    Cond::None => write!(f, "jp {:#06X}", addr),
+                    cond => write!(f, "jp {}, {:#06X}", cond, addr),
+                }
+            }
+            JpHl => write!(f, "jp (HL)"),
+            Jr { offset, cond } => {
+                match cond {
+                    Cond::None => write!(f, "jr {}", offset),
+                    cond => write!(f, "jr {}, {}", cond, offset),
+                }
+            }
+            Call { addr, cond } => {
+                match cond {
+                    Cond::None => write!(f, "call {:#06X}", addr),
+                    cond => write!(f, "call {}, {:#06X}", cond, addr),
+                }
+            }
+            Ret { cond } => {
+                match cond {
+                    Cond::None => write!(f, "ret"),
+                    cond => write!(f, "ret {}", cond),
+                }
+            }
+            RetI => write!(f, "reti"),
+        }
     }
 }
 

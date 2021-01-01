@@ -18,7 +18,6 @@ use cpu::Interrupt;
 use cartridge::Cartridge;
 pub use error::{Error, Result};
 use joypad::JoypadEvent;
-use memory::{MemoryRead, MemoryWrite};
 use ppu::FrameBuffer;
 
 /// Gameboy
@@ -62,8 +61,6 @@ impl Gameboy {
         let cycle_time = self.cpu.cycle_time();
         let num_cycles = Self::FRAME_DURATION / cycle_time;
 
-        let mut vblank = false;
-
         // Execute next instruction
         let mut cycle = 0;
         while cycle < num_cycles {
@@ -74,7 +71,7 @@ impl Gameboy {
             }
 
             // Execute a step of the CPU
-            let (cycles_taken, inst) = self.cpu.step();
+            let (cycles_taken, _) = self.cpu.step();
 
             // Execute a step of the PPU.
             //
@@ -82,7 +79,6 @@ impl Gameboy {
             let (trigger_vblank, trigger_stat) =
                 self.cpu.memory.ppu_mut().step(cycle + cycles_taken as u32, speed);
             if trigger_vblank {
-                vblank = true;
                 self.cpu.trigger_interrupt(Interrupt::Vblank);
             }
             if trigger_stat {

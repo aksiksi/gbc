@@ -12,6 +12,21 @@ pub enum Reg8 {
     L,
 }
 
+impl std::fmt::Display for Reg8 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Reg8::A => write!(f, "A"),
+            Reg8::F => write!(f, "F"),
+            Reg8::B => write!(f, "B"),
+            Reg8::C => write!(f, "C"),
+            Reg8::D => write!(f, "D"),
+            Reg8::E => write!(f, "E"),
+            Reg8::H => write!(f, "H"),
+            Reg8::L => write!(f, "L"),
+        }
+    }
+}
+
 /// 16-bit register names
 /// This includes the "combo" registers
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -23,6 +38,19 @@ pub enum Reg16 {
     HL,
     PC,
     SP,
+}
+
+impl std::fmt::Display for Reg16 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Reg16::AF => write!(f, "AF"),
+            Reg16::BC => write!(f, "BC"),
+            Reg16::DE => write!(f, "DE"),
+            Reg16::HL => write!(f, "HL"),
+            Reg16::PC => write!(f, "PC"),
+            Reg16::SP => write!(f, "SP"),
+        }
+    }
 }
 
 /// A trait that defines basic register operations.
@@ -232,6 +260,29 @@ impl RegisterOps<Reg16, u16> for RegisterFile {
             Reg16::PC => self.PC = value,
             Reg16::SP => self.SP = value,
         }
+    }
+}
+
+impl std::fmt::Display for RegisterFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f,
+               "A: {:#02X}\n\
+                F: {:#04X}\n\
+                B: {:#04X}\n\
+                C: {:#04X}\n\
+                D: {:#04X}\n\
+                E: {:#04X}\n\
+                H: {:#04X}\n\
+                L: {:#04X}\n\
+                PC: {:#06X}\n\
+                SP: {:#06X}\n\
+                Zero: {}\n\
+                Subtract: {}\n\
+                HalfCarry: {}\n\
+                Carry: {}", self.A, self.F, self.B,
+        self.C, self.D, self.E, self.H,
+        self.L, self.PC, self.SP, self.zero,
+        self.subtract, self.half_carry, self.carry)
     }
 }
 
