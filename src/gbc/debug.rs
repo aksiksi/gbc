@@ -26,7 +26,7 @@ impl Debugger {
         }
     }
 
-    pub fn triggered(&mut self, pc: u16) -> bool {
+    pub fn triggered(&mut self, cpu: &Cpu) -> bool {
         self.checks += 1;
 
         match self.mode {
@@ -35,7 +35,7 @@ impl Debugger {
                 (self.checks - self.steps) >= n
             }
             Mode::Continue => {
-                self.breakpoints.contains(&pc)
+                self.breakpoints.contains(&cpu.registers.PC)
             }
         }
     }

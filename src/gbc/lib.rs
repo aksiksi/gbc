@@ -67,6 +67,12 @@ impl Gameboy {
         // Execute next instruction
         let mut cycle = 0;
         while cycle < num_cycles {
+            #[cfg(feature = "debug")]
+            // If the debugger is triggered, step into the REPL.
+            if self.debugger.triggered(&self.cpu) {
+                self.debugger.repl(&self.cpu);
+            }
+
             // Execute a step of the CPU
             let (cycles_taken, inst) = self.cpu.step();
 
@@ -96,11 +102,6 @@ impl Gameboy {
             // TODO: This does not happen every cycle, right?
             if self.cpu.memory.io_mut().serial_interrupt() {
                 self.cpu.trigger_interrupt(Interrupt::Serial);
-            }
-
-            #[cfg(feature = "debug")]
-            if self.debugger.triggered(self.cpu.registers.PC) {
-                self.debugger.repl(&self.cpu);
             }
 
             cycle += cycles_taken as u32;
