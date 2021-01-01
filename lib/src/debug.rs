@@ -27,6 +27,11 @@ impl Debugger {
     }
 
     pub fn triggered(&mut self, cpu: &Cpu) -> bool {
+        // If the CPU is currently halted, keep waiting
+        if cpu.is_halted {
+            return false;
+        }
+
         self.checks += 1;
 
         match self.mode {

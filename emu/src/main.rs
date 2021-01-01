@@ -5,7 +5,6 @@ use std::time::Instant;
 use gbc::{Gameboy, Result};
 use gbc::joypad::{JoypadEvent, JoypadInput};
 
-use sdl2::rect::Rect;
 use sdl2::render::TextureAccess;
 use sdl2::pixels::Color;
 use sdl2::event::Event;

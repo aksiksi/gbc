@@ -1,0 +1,5 @@
+[package]
+name = "gbc"
+version = "0.1.0"
+authors = ["Assil Ksiksi <cyph0nik@gmail.com>"]
+edition = "2018"

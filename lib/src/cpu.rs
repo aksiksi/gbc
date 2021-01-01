@@ -60,7 +60,7 @@ pub struct Cpu {
 
     /// Global interrupt enable flag (Interrupt Master Enable)
     ime: bool,
-    is_halted: bool,
+    pub is_halted: bool,
 }
 
 impl Cpu {
