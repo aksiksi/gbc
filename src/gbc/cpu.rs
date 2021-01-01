@@ -109,6 +109,9 @@ impl Cpu {
         // Execute the instruction on this CPU
         self.execute(inst);
 
+        dbg!(pc);
+        dbg!(inst);
+
         let cycles = if pc == self.registers.PC {
             // If we did not execute a jump, proceed to next instruction as usual
             self.registers.PC = pc + size as u16;

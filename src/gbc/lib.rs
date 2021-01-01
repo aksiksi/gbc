@@ -24,6 +24,9 @@ use ppu::FrameBuffer;
 /// Gameboy
 pub struct Gameboy {
     cpu: Cpu,
+
+    #[cfg(feature = "debug")]
+    debugger: debug::Debugger,
 }
 
 impl Gameboy {
@@ -34,9 +37,18 @@ impl Gameboy {
         let memory = memory::MemoryBus::from_cartridge(cartridge)?;
         let cpu = Cpu::new(memory);
 
-        Ok(Self {
+        #[cfg(feature = "debug")]
+        let gameboy = Ok(Self {
             cpu,
-        })
+            debugger: debug::Debugger::new(),
+        });
+
+        #[cfg(not(feature = "debug"))]
+        let gameboy = Ok(Self {
+            cpu,
+        });
+
+        gameboy
     }
 
     /// Run Gameboy for a single frame.
@@ -84,6 +96,11 @@ impl Gameboy {
             // TODO: This does not happen every cycle, right?
             if self.cpu.memory.io_mut().serial_interrupt() {
                 self.cpu.trigger_interrupt(Interrupt::Serial);
+            }
+
+            #[cfg(feature = "debug")]
+            if self.debugger.triggered(self.cpu.registers.PC) {
+                self.debugger.repl(&self.cpu);
             }
 
             cycle += cycles_taken as u32;
