@@ -278,11 +278,18 @@ pub struct Ppu {
     wy: u8,
     wx: u8,
 
-    /// Color palette data registers (0xFF68-0xFF6B)
+    /// Color palette index registers (0xFF68-0xFF6B)
     bcps: u8,
-    bcpd: u8,
     ocps: u8,
-    ocpd: u8,
+
+    /// Color palette RAM:
+    ///
+    /// * 8 BG palettes     x 4 bytes per palette = 32 bytes
+    /// * 8 sprite palettes x 4 bytes per palette = 32 bytes
+    ///
+    /// Writes and reads to/from BCPD/OCPD go directly to this RAM area,
+    /// based on the current index in BCPS/OCPS.
+    palette_ram: [u8; 64],
 
     /// Buffer for the current frame
     frame_buffer: FrameBuffer,
@@ -331,9 +338,8 @@ impl Ppu {
             wy: 0,
             wx: 0,
             bcps: 0,
-            bcpd: 0,
             ocps: 0,
-            ocpd: 0,
+            palette_ram: [0u8; 64],
             frame_buffer: FrameBuffer::new(),
             oam_enabled: false,
             vblank_enabled: false,
@@ -490,6 +496,58 @@ impl Ppu {
         (vblank_interrupt, stat_interrupt)
     }
 
+    /// Compute the current palette RAM index based on value of BCPS
+    #[inline]
+    fn palette_index(&self, sprite: bool) -> u8 {
+        // Extract palette index information from BCPS
+        let byte = self.bcps & 0x1;
+        let palette_data_num = (self.bcps & (1 << 2 | 1 << 1)) >> 1;
+        let palette_num = (self.bcps & (1 << 5 | 1 << 4 | 1 << 3)) >> 3;
+
+        // Compute the index
+        let mut index = palette_num * 4 + palette_data_num + byte;
+        if sprite {
+            // Offset palette RAM index by 32 bytes in case of a sprite
+            index += 32;
+        }
+
+        index
+    }
+
+    /// Write a single byte of data to palette RAM.
+    ///
+    /// This handles writes to BCPD (0xFF69).
+    fn palette_write(&mut self, value: u8, sprite: bool) {
+        let auto_increment = self.bcps & (1 << 7) != 0;
+        let index = self.palette_index(sprite);
+
+        // Write the byte to palette RAM
+        self.palette_ram[index as usize] = value;
+
+        if auto_increment {
+            // Auto-increment BCPS/OCPS on write to BCPD (wrapping at bit 5)
+            let reg = if !sprite {
+                &mut self.bcps
+            } else {
+                &mut self.ocps
+            };
+
+            let mut index = (*reg & 0x3F) + 1;
+
+            if index > 0x3F {
+                index = 0x00;
+            }
+
+            *reg |= index;
+        }
+    }
+
+    /// Read a single byte from palette RAM.
+    fn palette_read(&self, sprite: bool) -> u8 {
+        let index = self.palette_index(sprite);
+        self.palette_ram[index as usize]
+    }
+
     /// Returns `true` if VRAM is locked to CPU
     fn vram_locked(&self) -> bool {
         match self.stat.mode {
@@ -547,9 +605,9 @@ impl MemoryRead<u16, u8> for Ppu {
             Self::WY_ADDR => self.wy,
             Self::WX_ADDR => self.wx,
             0xFF68 => self.bcps,
-            0xFF69 => self.bcpd,
+            0xFF69 => self.palette_read(false),
             0xFF6A => self.ocps,
-            0xFF6B => self.ocpd,
+            0xFF6B => self.palette_read(true),
             _ => panic!("Unexpected read from addr {}", addr),
         }
     }
@@ -590,21 +648,9 @@ impl MemoryWrite<u16, u8> for Ppu {
                 }
             }
             0xFF68 => self.bcps = value,
-            0xFF69 => {
-                self.bcpd = value;
-
-                if self.bcps & (1 << 7) != 0 {
-                    // Auto-increment BCPS on write to BCPD (wrapping at bit 5)
-                    let mut bcp_index = (self.bcps & 0x3F) + 1;
-                    if bcp_index > 0x3F {
-                        bcp_index = 0x00;
-                    }
-
-                    self.bcps |= bcp_index;
-                }
-            }
+            0xFF69 => self.palette_write(value, false),
             0xFF6A => self.ocps = value,
-            0xFF6B => self.ocpd = value,
+            0xFF6B => self.palette_write(value, true),
             _ => panic!("Unexpected write to addr {} value {}", addr, value),
         }
     }
