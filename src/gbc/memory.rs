@@ -410,6 +410,12 @@ impl MemoryRead<u16, u8> for MemoryBus {
                 self.controller.ram.as_ref().unwrap().read(addr)
             }
             Ram::BASE_ADDR..=Ram::LAST_ADDR => self.ram.read(addr),
+            Vram::BANK_SELECT_ADDR => {
+                // Reading the bank select register returns the active bank in bit 0,
+                // with all other bits set to 1
+                let bank = self.ppu().vram().active_bank;
+                bank | 0xFE
+            }
             0xFE00..=0xFE9F | 0xFF40..=0xFF4B | 0xFF68..=0xFF69 => self.ppu.read(addr),
             0xFF80..=0xFFFE => {
                 let addr = addr as usize - 0xFF80;

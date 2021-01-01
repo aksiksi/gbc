@@ -135,7 +135,7 @@ fn gui() {
         i = (i + 1) % 8;
         j = (j + 1) % 6;
 
-        gameboy.frame(event);
+        let frame_buffer = gameboy.frame(event);
 
         // TODO: Update texture(s) based on VRAM data
 

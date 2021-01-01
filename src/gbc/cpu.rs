@@ -1,5 +1,5 @@
 use crate::instructions::{Arg, Cond, Cycles, Instruction};
-use crate::memory::{Io, MemoryBus, MemoryRead, MemoryWrite};
+use crate::memory::{MemoryBus, MemoryRead, MemoryWrite};
 use crate::registers::{Flag, Reg16, Reg8, RegisterFile, RegisterOps};
 
 #[derive(Clone, Copy, Debug)]

@@ -47,22 +47,39 @@
 //! The combination of these two periods nets us ~60 fps.
 use crate::memory::{MemoryRead, MemoryWrite};
 
+#[derive(Debug)]
 /// Buffer that holds pixel data for a single frame.
 pub struct FrameBuffer {
-    /// 160x144 pixels in a frame
-    data: Box<[[u8; 160]; 144]>,
+    data: Box<[u8; Self::FRAME_SIZE]>,
+    pub ready: bool,
 }
 
 impl FrameBuffer {
+    /// 160x144 pixels in a frame
+    const FRAME_SIZE: usize = 160 * 144;
+
     pub fn new() -> Self {
         Self {
-            data: Box::new([[0; 160]; 144]),
+            data: Box::new([0u8; Self::FRAME_SIZE]),
+            ready: false,
         }
     }
 
+    /// Get a handle to the underlying frame data
+    pub fn data(&self) -> &[u8] {
+        &*self.data
+    }
+
     /// Write a single dot/pixel to the buffer.
-    pub fn write(&mut self, line: u8, dot: u8, data: u8) {
-        self.data[line as usize][dot as usize] = data;
+    pub fn write(&mut self, pos: usize, data: u8) {
+        self.data[pos] = data;
+    }
+
+    /// Reset this frame buffer
+    pub fn reset(&mut self) {
+        for pixel in self.data.iter_mut() {
+            *pixel = 0;
+        }
     }
 }
 
@@ -71,7 +88,7 @@ pub struct Vram {
     ///
     /// CGB mode
     data: Vec<u8>,
-    active_bank: u8,
+    pub active_bank: u8,
     cgb: bool,
 }
 
@@ -261,11 +278,14 @@ pub struct Ppu {
     wy: u8,
     wx: u8,
 
-    /// Color data registers (0xFF68-0xFF6B)
+    /// Color palette data registers (0xFF68-0xFF6B)
     bcps: u8,
     bcpd: u8,
     ocps: u8,
     ocpd: u8,
+
+    /// Buffer for the current frame
+    frame_buffer: FrameBuffer,
 
     /// Interrupt enable flags
     oam_enabled: bool,
@@ -279,6 +299,9 @@ pub struct Ppu {
     /// but the write does not go into affect until the end of the scanline. This
     /// stack keeps track of these writes and flushes them on a scanline change.
     write_stack: Vec<(u16, u8)>,
+
+    /// Last cycle processed
+    cycle: u32,
 }
 
 impl Ppu {
@@ -311,20 +334,32 @@ impl Ppu {
             bcpd: 0,
             ocps: 0,
             ocpd: 0,
+            frame_buffer: FrameBuffer::new(),
             oam_enabled: false,
             vblank_enabled: false,
             hblank_enabled: false,
             ly_enabled: false,
             write_stack: Vec::with_capacity(5), // 5 registers use this
+            cycle: 0,
         }
     }
 
-    /// Update the PPU status registers based on current cycle and cycle time.
+    /// Update the PPU status registers based on current cycle and CPU speed.
     ///
-    /// Returned tuple contains two interrupt flags: (Vblank, LcdStat)
+    /// This function is called once per CPU step from the main frame loop. The
+    /// function is called *after* the CPU step completes. The value passed in
+    /// for `cycle` includes the time spent by the CPU.
     ///
-    /// This function is called once per CPU step from the main frame loop.
+    /// The returned tuple contains two interrupt flags: (Vblank, LcdStat)
     pub fn step(&mut self, cycle: u32, speed: bool) -> (bool, bool) {
+        if cycle < self.cycle {
+            // New frame
+            // TODO: Does this need to happen?
+            self.frame_buffer.reset();
+        }
+
+        self.cycle = cycle;
+
         // Figure out the current dot and scan line
         let dot = if speed {
             // If we are in double-speed mode, we get a dot every 2 cycles
@@ -339,7 +374,63 @@ impl Ppu {
         // The function returns which interrupts need to be triggered
         let interrupts = self.update_status(dot, line);
 
+        // Render data to the frame, if applicable
+        self.render();
+
         interrupts
+    }
+
+    /// Render pixel data to the internal frame buffer
+    fn render(&mut self) {
+        // If the display is currently disabled, no rendering needs to be done
+        if !self.lcdc.lcd_display_enable {
+            return;
+        }
+
+        match self.stat.mode {
+            StatMode::Hblank => {
+                // If we are in a HBLANK, do one of the following:
+                if self.ly <= 143 {
+                    // 1. Render a scanline worth of BG and sprites to the frame buffer
+                    self.render_scanline();
+                } else {
+                    // 2. Indicate that the current frame is ready
+                    self.frame_buffer.ready = true;
+                }
+            }
+            _ => ()
+        }
+    }
+
+    /// Render a single scanline worth of pixel data to the frame buffer
+    ///
+    /// This is split into rendering BG/window tiles and rendering sprites. Note
+    /// that sprites are more often layered on top of the BG.
+    fn render_scanline(&mut self) {
+        if self.lcdc.bg_priority {
+            self.render_tiles();
+        }
+
+        if self.lcdc.sprite_enable {
+            self.render_sprites();
+        }
+    }
+
+    /// Render a scanline worth of BG/window tiles.
+    fn render_tiles(&mut self) {
+        let _scanline = self.ly;
+
+        // For each pixel in the current scanline, we need to do the following:
+        //
+        // 1. Figure out 
+        for _pixel in 0..160 {
+            // TODO: Compute the data for each pixel
+
+        }
+    }
+
+    fn render_sprites(&mut self) {
+        todo!()
     }
 
     fn update_status(&mut self, dot: u32, line: u8) -> (bool, bool) {
@@ -424,6 +515,11 @@ impl Ppu {
     pub fn vram_mut(&mut self) -> &mut Vram {
         &mut self.vram
     }
+
+    /// Get a reference to the frame buffer
+    pub fn frame_buffer(&self) -> &FrameBuffer {
+        &self.frame_buffer
+    }
 }
 
 impl MemoryRead<u16, u8> for Ppu {
@@ -469,8 +565,10 @@ impl MemoryWrite<u16, u8> for Ppu {
                 }
             }
             0xFE00..=0xFE9F => {
-                let idx = (addr as usize) - 0xFE00;
-                self.oam[idx] = value;
+                if !self.oam_locked() {
+                    let idx = (addr as usize) - 0xFE00;
+                    self.oam[idx] = value;
+                }
             }
             Self::LCDC_ADDR => self.lcdc.set(value),
             Self::STAT_ADDR => {

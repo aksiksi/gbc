@@ -19,6 +19,7 @@ use cartridge::Cartridge;
 pub use error::{Error, Result};
 use joypad::JoypadEvent;
 use memory::{MemoryRead, MemoryWrite};
+use ppu::FrameBuffer;
 
 /// Gameboy
 pub struct Gameboy {
@@ -41,7 +42,7 @@ impl Gameboy {
     /// Run Gameboy for a single frame.
     ///
     /// The frame takes in an optional joypad event as input.
-    pub fn frame(&mut self, joypad_event: Option<JoypadEvent>) {
+    pub fn frame(&mut self, joypad_event: Option<JoypadEvent>) -> &FrameBuffer {
         let now = Instant::now();
 
         // Figure out the number of clock cycles we can execute in a single frame
@@ -54,8 +55,14 @@ impl Gameboy {
         // Execute next instruction
         let mut cycle = 0;
         while cycle < num_cycles {
-            // Update internal PPU state based on current cycle and trigger any required interrupts
-            let (trigger_vblank, trigger_stat) = self.cpu.memory.ppu_mut().step(cycle, speed);
+            // Execute a step of the CPU
+            let (cycles_taken, inst) = self.cpu.step();
+
+            // Execute a step of the PPU.
+            //
+            // The PPU will "catch up" based on what happened in the CPU.
+            let (trigger_vblank, trigger_stat) =
+                self.cpu.memory.ppu_mut().step(cycle + cycles_taken as u32, speed);
             if trigger_vblank {
                 vblank = true;
                 self.cpu.trigger_interrupt(Interrupt::Vblank);
@@ -67,8 +74,6 @@ impl Gameboy {
             if vblank {
                 dbg!(self.cpu.registers.PC);
             }
-
-            let (cycles_taken, inst) = self.cpu.step();
 
             if vblank {
                 dbg!(inst);
@@ -94,6 +99,9 @@ impl Gameboy {
         }
 
         println!("Done in {:?}", now.elapsed());
+
+        // Return the rendered frame as a frame buffer
+        self.cpu.memory.ppu().frame_buffer()
     }
 
     pub fn cpu(&mut self) -> &mut Cpu {
