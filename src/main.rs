@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 use std::time::Duration;
+use std::time::Instant;
 
 use gbc::{Gameboy, Result};
 use gbc::joypad::{JoypadEvent, JoypadInput};
@@ -50,7 +51,7 @@ fn gui() {
     let video_subsystem = sdl_context.video().unwrap();
 
     // Setup an SDL2 Window
-    let window = video_subsystem.window("gbc", 800, 600)
+    let window = video_subsystem.window("gbc", 640, 576)
         .position_centered()
         .allow_highdpi()
         .build()
@@ -69,11 +70,8 @@ fn gui() {
     // We write raw pixel data here and copy it to the Canvas for rendering
     let mut texture = texture_creator.create_texture(None,
                                                      TextureAccess::Target,
-                                                     800,
-                                                     600).unwrap();
-
-    let mut i = 0;
-    let mut j = 0;
+                                                     160,
+                                                     144).unwrap();
 
     let mut gameboy = Gameboy::init("samples/cpu_instrs.gb").unwrap();
     let frame_duration = Duration::new(0, Gameboy::FRAME_DURATION);
@@ -106,6 +104,11 @@ fn gui() {
             None => None,
         };
 
+        // Run the Gameboy for a single frame and return the frame data
+        let frame_buffer = gameboy.frame(event);
+
+        let start = Instant::now();
+
         // Remember the texture we created above? That is basically a buffer in VRAM
         // With the following, we are setting that texture as a render target for
         // our main canvas. This allows us to use regular canvas drawing functions -
@@ -115,15 +118,15 @@ fn gui() {
         //
         // Helpful C example: https://wiki.libsdl.org/SDL_CreateTexture
         canvas.with_texture_canvas(&mut texture, |canvas| {
-            let rect = Rect::new(i * 100, i * 100, 100, 100);
-            canvas.set_draw_color(Color::YELLOW);
             canvas.clear();
-            canvas.draw_rect(rect).unwrap();
-            canvas.set_draw_color(Color::MAGENTA);
-            canvas.fill_rect(Some(rect)).unwrap();
 
-            for i in 300..500 {
-                canvas.draw_point((i, 100)).unwrap();
+            for row in 0..144 {
+                for col in 0..160 {
+                    let pixel = &frame_buffer.data[row][col];
+                    let color = Color::RGBA(pixel.red, pixel.green, pixel.blue, pixel.alpha);
+                    canvas.set_draw_color(color);
+                    canvas.draw_point((col as i32, row as i32)).unwrap();
+                }
             }
         }).unwrap();
 
@@ -132,12 +135,7 @@ fn gui() {
         canvas.copy(&texture, None, None).unwrap();
         canvas.present();
 
-        i = (i + 1) % 8;
-        j = (j + 1) % 6;
-
-        let frame_buffer = gameboy.frame(event);
-
-        // TODO: Update texture(s) based on VRAM data
+        println!("{:?}", start.elapsed());
 
         std::thread::sleep(frame_duration);
     }

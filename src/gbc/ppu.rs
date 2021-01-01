@@ -47,38 +47,63 @@
 //! The combination of these two periods nets us ~60 fps.
 use crate::memory::{MemoryRead, MemoryWrite};
 
+#[derive(Clone, Copy, Debug)]
+pub struct Rgba {
+    pub red: u8,
+    pub green: u8,
+    pub blue: u8,
+    pub alpha: u8,
+}
+
+impl Rgba {
+    pub fn white() -> Self {
+        Self {
+            red: 0xFF,
+            green: 0xFF,
+            blue: 0xFF,
+            alpha: 0xFF,
+        }
+    }
+}
+
 #[derive(Debug)]
 /// Buffer that holds pixel data for a single frame.
+///
+/// Each pixel is encoded in RGBA8888 format, starting from lowest address:
+///
+/// * Red (1 byte)
+/// * Green (1 byte)
+/// * Blue (1 byte)
+/// * Alpha (1 byte)
 pub struct FrameBuffer {
-    data: Box<[u8; Self::FRAME_SIZE]>,
+    pub data: Box<[[Rgba; Self::COLS]; Self::ROWS]>,
     pub ready: bool,
 }
 
 impl FrameBuffer {
     /// 160x144 pixels in a frame
-    const FRAME_SIZE: usize = 160 * 144;
+    const COLS: usize = 160;
+    const ROWS: usize = 144;
 
     pub fn new() -> Self {
         Self {
-            data: Box::new([0u8; Self::FRAME_SIZE]),
+            data: Box::new([[Rgba::white(); Self::COLS]; Self::ROWS]),
             ready: false,
         }
     }
 
-    /// Get a handle to the underlying frame data
-    pub fn data(&self) -> &[u8] {
-        &*self.data
-    }
-
-    /// Write a single dot/pixel to the buffer.
-    pub fn write(&mut self, pos: usize, data: u8) {
-        self.data[pos] = data;
+    /// Write a single pixel to the buffer.
+    pub fn write(&mut self, row: usize, col: usize, pixel: Rgba) {
+        self.data[row][col] = pixel;
+        println!("Wrote pixel to frame buffer");
     }
 
     /// Reset this frame buffer
     pub fn reset(&mut self) {
-        for pixel in self.data.iter_mut() {
-            *pixel = 0;
+        for col in self.data.iter_mut() {
+            for pixel in col.iter_mut() {
+                *pixel = Rgba::white();
+            }
         }
     }
 }
@@ -119,13 +144,21 @@ impl Vram {
         assert!(self.cgb && bank < 2);
         self.active_bank = bank;
     }
+
+    /// Read a byte from a specific bank
+    pub fn read_bank(&self, bank: u8, addr: u16) -> u8 {
+        let addr = (addr - Self::BASE_ADDR) as usize;
+        let bank_offset = bank as usize * Self::BANK_SIZE;
+        self.data[bank_offset + addr]
+    }
 }
 
 impl MemoryRead<u16, u8> for Vram {
     #[inline]
     fn read(&self, addr: u16) -> u8 {
         let addr = (addr - Self::BASE_ADDR) as usize;
-        self.data[addr]
+        let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
+        self.data[bank_offset + addr]
     }
 }
 
@@ -424,14 +457,109 @@ impl Ppu {
 
     /// Render a scanline worth of BG/window tiles.
     fn render_tiles(&mut self) {
-        let _scanline = self.ly;
+        let scanline = self.ly;
+
+        // Select base address for BG tile map based on LCDC register
+        let tile_map_base: u16 = if !self.lcdc.bg_tile_map_select {
+            0x9800
+        } else {
+            0x9C00
+        };
+
+        // Select base address for BG tile data based on LCDC register
+        let tile_data_base: u16 = if !self.lcdc.bg_tile_data_select {
+            0x8000
+        } else {
+            0x8800
+        };
 
         // For each pixel in the current scanline, we need to do the following:
         //
-        // 1. Figure out 
-        for _pixel in 0..160 {
-            // TODO: Compute the data for each pixel
+        // 1. Figure out the x and y pixel positions in the BG (256x256 pixels, 32x32 tiles).
+        // 2. Using the BG pixel positions, determine the BG tile map x and y.
+        // 3. Using the tile coordinates, compute an index into the BG tile map.
+        // 4. Get the tile data index (bank 0) and tile attributes (bank 1) from VRAM.
+        // 5. Extract tile attributes.
+        // 6. Read the actual tile data (16 bytes) from the relevant VRAM bank.
+        // 7. Compute the pixel's index within the 8x8 pixel tile, and adjust if flips are
+        //    present in this tile.
+        // 8. Compute the pixel's color palette index (2 bits).
+        // 9. Finally, using the tile's palette number and the index from (8),
+        //    compute the RGB value for the pixel.
+        for pixel in 0u8..160 {
+            // (1)
+            let bg_pixel_x = pixel.wrapping_add(self.scx);
+            let bg_pixel_y = scanline.wrapping_add(self.scy);
 
+            // (2) and (3)
+            let bg_tile_x = bg_pixel_x % 32;
+            let bg_tile_y = bg_pixel_y % 32;
+            let tile_map_index = (bg_tile_y * 32 + bg_tile_x) as u16;
+
+            // (4)
+            let tile_data_index = self.vram.read_bank(0, tile_map_base + tile_map_index) as u16;
+            let tile_data_attr = self.vram.read_bank(1, tile_map_base + tile_map_index);
+
+            // (5)
+            let tile_palette_num = tile_data_attr & 0x07; // bits 0-2
+            let tile_data_bank = (tile_data_attr & (1 << 3)) >> 3; // bit 3
+            let horizontal_flip = (tile_data_attr & (1 << 5)) != 0; // bit 5
+            let vertical_flip = (tile_data_attr & (1 << 6)) != 0; // bit 6
+            let _bg_priority = (tile_data_attr & (1 << 7)) != 0; // bit 7
+
+            // (6)
+            let mut tile_data = [0u8; 16];
+            for i in 0..tile_data.len() as u16 {
+                tile_data[i as usize] = self.vram.read_bank(tile_data_bank,
+                                                            tile_data_base + tile_data_index + i);
+            }
+
+            // (7)
+            let mut tile_pixel_x = bg_pixel_x - bg_tile_x * 8;
+            let mut tile_pixel_y = bg_pixel_y - bg_tile_y * 8;
+
+            // Handle flipped pixels
+            if horizontal_flip {
+                tile_pixel_x = 7 - tile_pixel_x;
+            }
+
+            if vertical_flip {
+                tile_pixel_y = 7 - tile_pixel_y;
+            }
+
+            // (8)
+            //
+            // The y position of the pixel maps to the "line" (2 bytes) in the tile data
+            // The x position maps to the bit we need to check in the upper and lower nibbles of the line
+            // Note that the x position is *inverted*: e.g., the leftmost pixel is tracked in bit 7 of each nibble
+            let line_idx = tile_pixel_y as usize * 2;
+            let lower = tile_data[line_idx];
+            let upper = tile_data[line_idx + 1];
+            let pixel_pos = 7 - tile_pixel_x; // This corrects the inversion noted above
+
+            let lower_bit = (lower & 1 << pixel_pos) >> pixel_pos;
+            let upper_bit = (upper & 1 << pixel_pos) >> pixel_pos;
+            let color_index = upper_bit << 1 | lower_bit;
+
+            // (9)
+            let palette_index = (tile_palette_num * 4 + color_index) as usize;
+            let pixel_color = (self.palette_ram[palette_index + 1] as u16) << 8 |
+                              self.palette_ram[palette_index] as u16;
+
+            let red = (pixel_color & 0x001F) as u8;
+            let green = ((pixel_color & 0x03E0) >> 5) as u8;
+            let blue = ((pixel_color & 0x7F00) >> 10) as u8;
+            let alpha = 0xFF; // BG is always opaque
+
+            // Finally, push the pixel to the frame buffer
+            let pixel_data = Rgba {
+                red,
+                blue,
+                green,
+                alpha,
+            };
+
+            self.frame_buffer.write(scanline as usize, pixel as usize, pixel_data);
         }
     }
 

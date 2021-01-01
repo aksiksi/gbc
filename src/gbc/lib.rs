@@ -71,13 +71,13 @@ impl Gameboy {
                 self.cpu.trigger_interrupt(Interrupt::LcdStat);
             }
 
-            if vblank {
-                dbg!(self.cpu.registers.PC);
-            }
+            // if vblank {
+            //     dbg!(self.cpu.registers.PC);
+            // }
 
-            if vblank {
-                dbg!(inst);
-            }
+            // if vblank {
+            //     dbg!(inst);
+            // }
 
             // Check if a serial interrupt needs to be triggered
             //
