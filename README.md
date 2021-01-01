@@ -24,3 +24,26 @@ Since we statically link against `libsdl` on all platforms to avoid having to sh
 2. Install `rustup` (this also installs `rustc` and `cargo`): https://www.rust-lang.org/tools/install
 3. Install CMake: https://cmake.org/download/
 4. `cargo build`
+
+## Debugger
+
+The emulator comes with a simple GDB-like debugger CLI. Note that the debugger is not included by default.
+
+To build the emulator with debugger support:
+
+```
+cargo build --manifest-path emu/Cargo.toml --features debug
+```
+
+As soon as you run the emulator, it will jump into the REPL. The following commands are available:
+
+* `n`: Step to the next instruction.
+* `n <num>`: Skip the next `num` instructions.
+* `info [r]egs`: Dump all registers.
+* `p <addr>`: Print the byte at the specified memory address.
+* `b <addr>`: Set a breakpoint on an instruction address. Note that you can have multiple active breakpoints.
+* `info [b]reak`: List all breakpoints that have been set.
+* `disable <index>`: Disable the breakpoint with the given index.
+* `d <index>`: Delete the breakpoint with the given address.
+* `r`: Continue running the emulator until the next breakpoint is hit.
+* `[l]ist`: Dump the last five instructions, including the current one.

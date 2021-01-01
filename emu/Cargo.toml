@@ -4,6 +4,9 @@ version = "0.1.0"
 authors = ["Assil Ksiksi <cyph0nik@gmail.com>"]
 edition = "2018"
 
+[features]
+debug = ["gbc/debug"]
+
 [dependencies]
 gbc = { path = "../lib" }
 sdl2 = { version = "0.34.3", features = [ "bundled", "static-link" ] }

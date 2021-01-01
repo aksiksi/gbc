@@ -109,9 +109,6 @@ impl Cpu {
         // Execute the instruction on this CPU
         self.execute(inst);
 
-        dbg!(pc);
-        dbg!(inst);
-
         let cycles = if pc == self.registers.PC {
             // If we did not execute a jump, proceed to next instruction as usual
             self.registers.PC = pc + size as u16;
@@ -125,7 +122,8 @@ impl Cpu {
         (int_cycles + cycles, inst)
     }
 
-    fn fetch(&self) -> (Instruction, u8, Cycles) {
+    /// Fetch the next instruction and return it
+    pub fn fetch(&self) -> (Instruction, u8, Cycles) {
         let pc = self.registers.PC;
 
         // Read the next 3 bytes from memory, starting from PC.
