@@ -79,7 +79,6 @@ impl Ram {
             }
             RamSize::NotPresent => {
                 // TODO: logging
-                eprintln!("No cartridge RAM should be created");
                 None
             }
             // Otherwise, we have banked RAM

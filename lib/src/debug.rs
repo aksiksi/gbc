@@ -58,6 +58,18 @@ impl Debugger {
         }
     }
 
+    fn parse_address(input: &str) -> Option<u16> {
+        let addr: Option<u16>;
+
+        if input.contains("0x") | input.contains("0X") {
+            addr = u16::from_str_radix(&input[2..], 16).ok();
+        } else {
+            addr = u16::from_str_radix(input, 10).ok();
+        }
+
+        addr
+    }
+
     pub fn repl(&mut self, cpu: &Cpu) {
         self.steps += 1;
 
@@ -75,16 +87,17 @@ impl Debugger {
                     std::process::exit(0);
                 }
                 "b" if line.len() == 2 => {
-                    let addr: u16 = match line[1].parse() {
-                        Err(_) => {
-                            eprintln!("Invalid address specified");
+                    let addr = match Self::parse_address(line[1]) {
+                        Some(v) => v,
+                        None => {
+                            eprintln!("Invalid address specified: {}", line[1]);
                             continue;
                         }
-                        Ok(v) => v,
                     };
 
                     self.breakpoints.push((addr, true));
                 }
+                "b" => eprintln!("'b' requires at least 1 argument"),
                 "d" if line.len() == 2 => {
                     // Delete a breakpoint
                     let index: usize = line[1].parse().unwrap();
@@ -95,6 +108,7 @@ impl Debugger {
 
                     self.breakpoints.remove(index);
                 }
+                "d" => eprintln!("'d' requires at least 1 argument"),
                 "disable" if line.len() == 2 => {
                     // Disable a breakpoint
                     let index: usize = line[1].parse().unwrap();
@@ -105,6 +119,7 @@ impl Debugger {
 
                     self.breakpoints[index].1 = false;
                 }
+                "disable" => eprintln!("'disable' requires at least 1 argument"),
                 "l" | "list" => {
                     let count: usize = if line.len() < 2 {
                         5
@@ -113,6 +128,9 @@ impl Debugger {
                     };
 
                     let total = self.instructions.len();
+                    if total == 0 {
+                        continue;
+                    }
 
                     // Print the last 5 instructions we've hit
                     let range = if total < count {
@@ -141,19 +159,19 @@ impl Debugger {
                     return;
                 }
                 "p" if line.len() == 2 => {
-                    // TODO: Parse address in decimal or hex
-                    let addr: u16 = match line[1].parse() {
-                        Err(_) => {
-                            eprintln!("Invalid address specified");
+                    let addr = match Self::parse_address(line[1]) {
+                        Some(v) => v,
+                        None => {
+                            eprintln!("Invalid address specified: {}", line[1]);
                             continue;
                         }
-                        Ok(v) => v,
                     };
 
                     let value = cpu.memory.read(addr);
 
                     println!("{:#X}", value);
                 }
+                "p" => eprintln!("'p' requires at least 1 argument"),
                 "info" if line.len() == 2 => {
                     match line[1] {
                         "r" | "reg" | "registers" => {
@@ -162,7 +180,7 @@ impl Debugger {
                         "b" | "break" | "breakpoints" => {
                             let mut i = 0;
                             for (addr, enabled) in &self.breakpoints {
-                                println!("breakpoint {}: addr = {:#X}, enabled = {}", i, addr, enabled);
+                                println!("{}: addr = {:#06X}, enabled = {}", i, addr, enabled);
                                 i += 1;
                             }
                         }

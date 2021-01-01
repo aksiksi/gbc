@@ -25,6 +25,8 @@ Since we statically link against `libsdl` on all platforms to avoid having to sh
 3. Install CMake: https://cmake.org/download/
 4. `cargo build`
 
+The full build in release mode on a 10 core Windows VM takes ~1 min.
+
 ## Debugger
 
 The emulator comes with a simple GDB-like debugger CLI. Note that the debugger is not included by default.
@@ -38,7 +40,7 @@ cargo build --manifest-path emu/Cargo.toml --features debug
 As soon as you run the emulator, it will jump into the REPL. The following commands are available:
 
 * `n`: Step to the next instruction.
-* `n <num>`: Skip the next `num` instructions.
+    * `n <num>`: Skip the next `num` instructions.
 * `info [r]egs`: Dump all registers.
 * `p <addr>`: Print the byte at the specified memory address.
 * `b <addr>`: Set a breakpoint on an instruction address. Note that you can have multiple active breakpoints.
@@ -47,3 +49,4 @@ As soon as you run the emulator, it will jump into the REPL. The following comma
 * `d <index>`: Delete the breakpoint with the given address.
 * `r`: Continue running the emulator until the next breakpoint is hit.
 * `[l]ist`: Dump the last five instructions, including the current one.
+    * `[l]ist <count>`: Dump the last `count` instructions, including the current one.
