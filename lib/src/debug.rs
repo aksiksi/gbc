@@ -35,15 +35,13 @@ impl Debugger {
             return false;
         }
 
-        self.checks += 1;
-
         let pc = cpu.registers.PC;
 
         // Keep track of each instruction the CPU executes
         let (inst, _, _) = cpu.fetch(None);
         self.instructions.push((inst, pc));
 
-        match self.mode {
+        let res = match self.mode {
             Mode::Step => true,
             Mode::StepN(n) => {
                 (self.checks - self.steps) >= n
@@ -57,7 +55,18 @@ impl Debugger {
 
                 false
             }
+        };
+
+        self.checks += 1;
+
+        if res {
+            // When a breakpoint is hit, print the last executed instruction
+            if self.instructions.len() > 1 {
+                println!("{}", self.instructions[self.instructions.len()-2].0);
+            }
         }
+
+        res
     }
 
     fn parse_address(input: &str) -> Option<u16> {
@@ -85,6 +94,7 @@ impl Debugger {
             let line: Vec<&str> = line.trim().split(" ").collect();
 
             match line[0] {
+                "" => (),
                 "q" | "quit" => {
                     std::process::exit(0);
                 }
@@ -130,15 +140,15 @@ impl Debugger {
                     };
 
                     let total = self.instructions.len();
-                    if total == 0 {
+                    if total < 2 {
                         continue;
                     }
 
                     // Print the last 5 instructions we've hit
                     let range = if total < count {
-                        0..total
+                        0..total-1
                     } else {
-                        total-count..total
+                        total-count-1..total-1
                     };
 
                     for (inst, pc) in self.instructions[range].iter() {
@@ -146,13 +156,21 @@ impl Debugger {
                     }
                 }
                 "l" | "list" => {
-                    let count: usize = if line.len() < 2 {
-                        5
-                    } else {
+                    // Number of instructions to disassemble, startng from address below
+                    let count: usize = if line.len() >= 2 {
                         line[1].parse().unwrap()
+                    } else {
+                        5
                     };
 
-                    for (inst, addr) in cpu.disassemble(count, None) {
+                    // Start address - defaults to PC
+                    let addr = if line.len() == 3 {
+                        Self::parse_address(line[2])
+                    } else {
+                        Some(cpu.registers.PC)
+                    };
+
+                    for (inst, addr) in cpu.disassemble(count, addr) {
                         println!("{:#06x}: {}", addr, inst);
                     }
                 }

@@ -50,5 +50,5 @@ As soon as you run the emulator, it will jump into the REPL. The following comma
 * `r`: Continue running the emulator until the next breakpoint is hit.
 * `[l]ist`: Disassemble the next five instructions, starting from the current one.
     * `[l]ist <count>`: Disassemble the next `count` instructions, starting from the current one.
-* `[h]ist`: Dump the last five executed instructions, including the current one.
-    * `[h]ist <count>`: Dump the last `count` executed instructions, including the current one.
+* `[h]ist`: Dump the last five *executed* instructions.
+    * `[h]ist <count>`: Dump the last `count` *executed* instructions.
