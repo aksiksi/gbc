@@ -15,7 +15,7 @@ pub struct Debugger {
     checks: u32,
     steps: u32,
     breakpoints: Vec<(u16, bool)>,
-    instructions: Vec<Instruction>,
+    instructions: Vec<(Instruction, u16)>,
 }
 
 impl Debugger {
@@ -37,9 +37,11 @@ impl Debugger {
 
         self.checks += 1;
 
+        let pc = cpu.registers.PC;
+
         // Keep track of each instruction the CPU executes
-        let (inst, _, _) = cpu.fetch();
-        self.instructions.push(inst);
+        let (inst, _, _) = cpu.fetch(None);
+        self.instructions.push((inst, pc));
 
         match self.mode {
             Mode::Step => true,
@@ -48,7 +50,7 @@ impl Debugger {
             }
             Mode::Continue => {
                 for (addr, enabled) in &self.breakpoints {
-                    if *enabled && cpu.registers.PC == *addr {
+                    if *enabled && pc == *addr {
                         return true;
                     }
                 }
@@ -83,7 +85,7 @@ impl Debugger {
             let line: Vec<&str> = line.trim().split(" ").collect();
 
             match line[0] {
-                "q" => {
+                "q" | "quit" => {
                     std::process::exit(0);
                 }
                 "b" if line.len() == 2 => {
@@ -120,7 +122,7 @@ impl Debugger {
                     self.breakpoints[index].1 = false;
                 }
                 "disable" => eprintln!("'disable' requires at least 1 argument"),
-                "l" | "list" => {
+                "h" | "hist" => {
                     let count: usize = if line.len() < 2 {
                         5
                     } else {
@@ -139,10 +141,19 @@ impl Debugger {
                         total-count..total
                     };
 
-                    let mut i: i32 = (total - count) as i32;
-                    for inst in self.instructions[range].iter() {
-                        println!("{}: {}", i, inst);
-                        i += 1;
+                    for (inst, pc) in self.instructions[range].iter() {
+                        println!("{:#06x}: {}", pc, inst);
+                    }
+                }
+                "l" | "list" => {
+                    let count: usize = if line.len() < 2 {
+                        5
+                    } else {
+                        line[1].parse().unwrap()
+                    };
+
+                    for (inst, addr) in cpu.disassemble(count, None) {
+                        println!("{:#06x}: {}", addr, inst);
                     }
                 }
                 "n" if line.len() == 2 => {

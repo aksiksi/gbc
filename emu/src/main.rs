@@ -1,6 +1,6 @@
 #![allow(dead_code)]
-use std::time::Duration;
-use std::time::Instant;
+use std::path::Path;
+use std::time::{Instant, Duration};
 
 use gbc::{Gameboy, Result};
 use gbc::joypad::{JoypadEvent, JoypadInput};
@@ -72,7 +72,8 @@ fn gui() {
                                                      160,
                                                      144).unwrap();
 
-    let mut gameboy = Gameboy::init("samples/cpu_instrs.gb").unwrap();
+    let rom_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../samples/cpu_instrs.gb");
+    let mut gameboy = Gameboy::init(rom_path).unwrap();
     let frame_duration = Duration::new(0, Gameboy::FRAME_DURATION);
 
     // Start the event loop

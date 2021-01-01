@@ -103,8 +103,8 @@ impl Cpu {
 
         let pc = self.registers.PC;
 
-        // Fetch and decode the next instruction
-        let (inst, size, cycles) = self.fetch();
+        // Fetch and decode the next instruction at PC
+        let (inst, size, cycles) = self.fetch(None);
 
         // Execute the instruction on this CPU
         self.execute(inst);
@@ -123,21 +123,35 @@ impl Cpu {
     }
 
     /// Fetch the next instruction and return it
-    pub fn fetch(&self) -> (Instruction, u8, Cycles) {
-        let pc = self.registers.PC;
+    pub fn fetch(&self, addr: Option<u16>) -> (Instruction, u8, Cycles) {
+        let addr = addr.unwrap_or(self.registers.PC);
 
         // Read the next 3 bytes from memory, starting from PC.
         // This is what we will use to decode the next instruction.
         //
         // TODO: Evaluate the boundary cases
         let data: [u8; 3] = [
-            self.memory.read(pc),
-            self.memory.read(pc+1),
-            self.memory.read(pc+2),
+            self.memory.read(addr),
+            self.memory.read(addr+1),
+            self.memory.read(addr+2),
         ];
 
         // Decode the instruction
         Instruction::decode(data)
+    }
+
+    /// Disassemble the next `count` instructions, starting at the given address.
+    pub fn disassemble(&self, count: usize, addr: Option<u16>) -> Vec<(Instruction, u16)> {
+        let mut addr = addr.unwrap_or(self.registers.PC);
+        let mut result = Vec::new();
+
+        for _ in  0..count {
+            let (inst, size, _) = self.fetch(Some(addr));
+            result.push((inst, addr));
+            addr = addr.wrapping_add(size as u16);
+        }
+
+        result
     }
 
     /// Figure out which interrupts are pending and service the one with the

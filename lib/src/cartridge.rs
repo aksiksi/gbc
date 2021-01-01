@@ -764,6 +764,7 @@ mod test {
     #[test]
     fn parse_cartridge_header() {
         let sample_rom_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
             .join("samples")
             .join("pokemon_gold.gbc");
 

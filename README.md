@@ -25,7 +25,7 @@ Since we statically link against `libsdl` on all platforms to avoid having to sh
 3. Install CMake: https://cmake.org/download/
 4. `cargo build`
 
-The full build in release mode on a 10 core Windows VM takes ~1 min.
+The full build in release mode (including SDL) on a 10 core Windows VM takes ~1 min.
 
 ## Debugger
 
@@ -48,5 +48,7 @@ As soon as you run the emulator, it will jump into the REPL. The following comma
 * `disable <index>`: Disable the breakpoint with the given index.
 * `d <index>`: Delete the breakpoint with the given address.
 * `r`: Continue running the emulator until the next breakpoint is hit.
-* `[l]ist`: Dump the last five instructions, including the current one.
-    * `[l]ist <count>`: Dump the last `count` instructions, including the current one.
+* `[l]ist`: Disassemble the next five instructions, starting from the current one.
+    * `[l]ist <count>`: Disassemble the next `count` instructions, starting from the current one.
+* `[h]ist`: Dump the last five executed instructions, including the current one.
+    * `[h]ist <count>`: Dump the last `count` executed instructions, including the current one.
