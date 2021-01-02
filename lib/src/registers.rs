@@ -99,7 +99,7 @@ impl RegisterFile {
     /// TODO: do we want to mimic the internal ROM?
     pub fn new() -> Self {
         Self {
-            A: 0xB0,
+            A: 0x11,
             F: 0x01,
             B: 0x13,
             C: 0x00,
