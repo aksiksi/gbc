@@ -96,7 +96,6 @@ impl FrameBuffer {
     /// `x` is the "column", `y` is the "row".
     pub fn write(&mut self, x: usize, y: usize, pixel: Rgba) {
         self.data[y][x] = pixel;
-        println!("Wrote pixel to frame buffer");
     }
 
     /// Reset this frame buffer
@@ -420,15 +419,14 @@ impl Ppu {
         }
 
         match self.stat.mode {
-            StatMode::Hblank => {
-                // If we are in a HBLANK, do one of the following:
-                if self.ly <= 143 {
-                    // 1. Render a scanline worth of BG and sprites to the frame buffer
-                    self.render_scanline();
-                } else {
-                    // 2. Indicate that the current frame is ready
-                    self.frame_buffer.ready = true;
-                }
+            StatMode::Hblank if self.ly <= 143 => {
+                // If we are at the end of a HBLANK, render a scanline worth
+                // of BG and sprites to the frame buffer
+                self.render_scanline();
+            }
+            StatMode::Vblank if self.ly == 144 => {
+                // At the start of VBLANK, indicate that the current frame is ready
+                self.frame_buffer.ready = true;
             }
             _ => ()
         }
@@ -485,9 +483,9 @@ impl Ppu {
             let bg_pixel_y = scanline.wrapping_add(self.scy);
 
             // (2) and (3)
-            let bg_tile_x = bg_pixel_x % 32;
-            let bg_tile_y = bg_pixel_y % 32;
-            let tile_map_index = (bg_tile_y * 32 + bg_tile_x) as u16;
+            let bg_tile_x = bg_pixel_x / 8;
+            let bg_tile_y = bg_pixel_y / 8;
+            let tile_map_index = (bg_tile_y as u16 * 32 + bg_tile_x as u16) as u16;
 
             // (4)
             let tile_data_index = self.vram.read_bank(0, tile_map_base + tile_map_index) as u16;
@@ -564,7 +562,14 @@ impl Ppu {
         // If we have a scanline change, flush the write stack to affected registers
         if line != self.ly {
             while let Some((addr, value)) = self.write_stack.pop() {
-                self.write(addr, value);
+                match addr {
+                    Self::SCY_ADDR => self.scy = value,
+                    Self::SCX_ADDR => self.scx = value,
+                    Self::LYC_ADDR => self.lyc = value,
+                    Self::WY_ADDR => self.wy = value,
+                    Self::WX_ADDR => self.wy = value,
+                    _ => unreachable!("Unexpected address on stack: {}", addr),
+                }
             }
         }
 
@@ -575,7 +580,9 @@ impl Ppu {
         let prev_ly_coincidence = self.stat.coincidence;
         let ly_coincidence = self.ly == self.lyc;
 
-        // Figure out which stat mode we are in based on line and dot
+        // Figure out which stat mode we are in based on line and dot.
+        //
+        // Recall that we have 456 dots in a line.
         let prev_mode = self.stat.mode;
         let mode = if line < Self::VBLANK_START_LINE {
             let dot = dot % Self::DOTS_PER_LINE;
