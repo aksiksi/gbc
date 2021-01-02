@@ -1126,4 +1126,18 @@ mod test {
             assert_eq!(expected_cycles, &cycles);
         }
     }
+
+    /// Small test for `jr`. The tricky part is that you need to include the size of the `jr` instruction.
+    #[test]
+    fn decode_jr() {
+        let raw: [u8; 3] = [0x20, 0xdd, 0x00];
+        let (inst, _, _) = Instruction::decode(raw);
+
+        if let Jr { offset, cond } = inst {
+            assert_eq!(offset, -0x21);
+            assert_eq!(cond, Cond::NotZero);
+        } else {
+            assert!(false, "Invalid instruction decode");
+        }
+    }
 }
