@@ -521,6 +521,7 @@ impl Instruction {
         let (inst, size, cycles) = match data[0] {
             0x00 => (Nop, 1, 4.into()),
             0x10 => (Stop, 2, 4.into()),
+            0x76 => (Halt, 1, 4.into()),
 
             // CB-prefixed instructions are decoded in a seperate function
             0xCB => Self::decode_cb(data[1]),
@@ -574,7 +575,6 @@ impl Instruction {
             0x46 => (Ld { dst: Arg::Reg8(Reg8::B), src: Arg::Mem(Reg16::HL) }, 1, 8.into()),
             0x56 => (Ld { dst: Arg::Reg8(Reg8::D), src: Arg::Mem(Reg16::HL) }, 1, 8.into()),
             0x66 => (Ld { dst: Arg::Reg8(Reg8::H), src: Arg::Mem(Reg16::HL) }, 1, 8.into()),
-            0x76 => (Halt, 1, 4.into()),
             0x47 => (Ld { dst: Arg::Reg8(Reg8::B), src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
             0x57 => (Ld { dst: Arg::Reg8(Reg8::D), src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
             0x67 => (Ld { dst: Arg::Reg8(Reg8::H), src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
@@ -760,11 +760,11 @@ impl Instruction {
             0xF5 => (Push { src: Reg16::AF.into() }, 1, 16.into()),
 
             // Jump
-            0x18 => (Jr { offset: arg8 as i8, cond: Cond::None }, 2, Cycles(12, 8)),
-            0x20 => (Jr { offset: arg8 as i8, cond: Cond::NotZero }, 2, Cycles(12, 8)),
-            0x28 => (Jr { offset: arg8 as i8, cond: Cond::Zero }, 2, Cycles(12, 8)),
-            0x30 => (Jr { offset: arg8 as i8, cond: Cond::NotCarry }, 2, Cycles(12, 8)),
-            0x38 => (Jr { offset: arg8 as i8, cond: Cond::Carry }, 2, Cycles(12, 8)),
+            0x18 => (Jr { offset: arg8 as i8 + 2, cond: Cond::None }, 2, Cycles(12, 8)),
+            0x20 => (Jr { offset: arg8 as i8 + 2, cond: Cond::NotZero }, 2, Cycles(12, 8)),
+            0x28 => (Jr { offset: arg8 as i8 + 2, cond: Cond::Zero }, 2, Cycles(12, 8)),
+            0x30 => (Jr { offset: arg8 as i8 + 2, cond: Cond::NotCarry }, 2, Cycles(12, 8)),
+            0x38 => (Jr { offset: arg8 as i8 + 2, cond: Cond::Carry }, 2, Cycles(12, 8)),
             0xC2 => (Jp { addr: arg16, cond: Cond::NotZero }, 3, Cycles(16, 12)),
             0xCA => (Jp { addr: arg16, cond: Cond::Zero }, 3, Cycles(16, 12)),
             0xD2 => (Jp { addr: arg16, cond: Cond::NotCarry }, 3, Cycles(16, 12)),
