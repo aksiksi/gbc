@@ -305,6 +305,11 @@ pub struct Ppu {
     ly: u8,
     lyc: u8,
 
+    /// Monochrome palette registers (0xFF47-0xFF49)
+    bgp: u8,
+    obp0: u8,
+    obp1: u8,
+
     /// Window position registers (0xFF4A, 0xFF4B)
     ///
     /// Ranges: 0 <= WY <= 143 and 7 <= WX <= 166
@@ -368,6 +373,9 @@ impl Ppu {
             scx: 0,
             ly: 0,
             lyc: 0,
+            bgp: 0,
+            obp0: 0,
+            obp1: 0,
             wy: 0,
             wx: 0,
             bcps: 0,
@@ -725,6 +733,9 @@ impl MemoryRead<u16, u8> for Ppu {
             Self::SCX_ADDR => self.scx,
             Self::LY_ADDR => self.ly,
             Self::LYC_ADDR => self.lyc,
+            0xFF47 => self.bgp,
+            0xFF48 => self.obp0,
+            0xFF49 => self.obp1,
             Self::WY_ADDR => self.wy,
             Self::WX_ADDR => self.wx,
             0xFF68 => self.bcps,
@@ -770,6 +781,9 @@ impl MemoryWrite<u16, u8> for Ppu {
                     self.ly = value;
                 }
             }
+            0xFF47 => self.bgp = value,
+            0xFF48 => self.obp0 = value,
+            0xFF49 => self.obp1 = value,
             0xFF68 => self.bcps = value,
             0xFF69 => self.palette_write(value, false),
             0xFF6A => self.ocps = value,
