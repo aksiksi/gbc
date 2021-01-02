@@ -253,8 +253,8 @@ impl LcdStat {
     pub fn set(&mut self, raw: u8) {
         self.raw = raw;
         self.mode = match raw & 0x3 {
-            0 => StatMode::Vblank,
-            1 => StatMode::Hblank,
+            0 => StatMode::Hblank,
+            1 => StatMode::Vblank,
             2 => StatMode::OamScan,
             3 => StatMode::OamRead,
             _ => unreachable!(),
@@ -391,12 +391,6 @@ impl Ppu {
     ///
     /// The returned tuple contains two interrupt flags: (Vblank, LcdStat)
     pub fn step(&mut self, cycle: u32, speed: bool) -> (bool, bool) {
-        if cycle < self.cycle {
-            // New frame
-            // TODO: Does this need to happen?
-            self.frame_buffer.reset();
-        }
-
         self.cycle = cycle;
 
         // Figure out the current dot and scan line
@@ -666,7 +660,8 @@ impl Ppu {
                 index = 0x00;
             }
 
-            *reg |= index;
+            // Replace lower 5 bits of BCPS/OCPS with new index
+            *reg = (*reg & !0x3F) | index;
         }
     }
 
@@ -680,17 +675,17 @@ impl Ppu {
     fn vram_locked(&self) -> bool {
         match self.stat.mode {
             // Locked during OAM read (mode 3)
-            StatMode::OamRead => false,
-            _ => true,
+            StatMode::OamRead => true,
+            _ => false,
         }
     }
 
     /// Returns `true` if OAM is locked to CPU
     fn oam_locked(&self) -> bool {
         match self.stat.mode {
-            // Unlocked only during Vblank and Hblank
+            // Locked during Scan and Read
+            StatMode::OamScan | StatMode::OamRead => true,
             StatMode::Vblank | StatMode::Hblank => false,
-            _ => true,
         }
     }
 
