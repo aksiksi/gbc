@@ -47,7 +47,7 @@
 //! The combination of these two periods nets us ~60 fps.
 use crate::memory::{MemoryRead, MemoryWrite};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Rgba {
     pub red: u8,
     pub green: u8,
@@ -67,15 +67,8 @@ impl Rgba {
 }
 
 /// Buffer that holds pixel data for a single frame.
-///
-/// Each pixel is encoded in RGBA8888 format, starting from lowest address:
-///
-/// * Red (1 byte)
-/// * Green (1 byte)
-/// * Blue (1 byte)
-/// * Alpha (1 byte)
 pub struct FrameBuffer {
-    pub data: Box<[[Rgba; Self::WIDTH]; Self::HEIGHT]>,
+    pub data: Box<[Rgba; Self::WIDTH * Self::HEIGHT]>,
     pub ready: bool,
 }
 
@@ -86,7 +79,7 @@ impl FrameBuffer {
 
     pub fn new() -> Self {
         Self {
-            data: Box::new([[Rgba::white(); Self::WIDTH]; Self::HEIGHT]),
+            data: Box::new([Rgba::white(); Self::WIDTH * Self::HEIGHT]),
             ready: false,
         }
     }
@@ -95,16 +88,7 @@ impl FrameBuffer {
     ///
     /// `x` is the "column", `y` is the "row".
     pub fn write(&mut self, x: usize, y: usize, pixel: Rgba) {
-        self.data[y][x] = pixel;
-    }
-
-    /// Reset this frame buffer
-    pub fn reset(&mut self) {
-        for col in self.data.iter_mut() {
-            for pixel in col.iter_mut() {
-                *pixel = Rgba::white();
-            }
-        }
+        self.data[y * Self::WIDTH + x] = pixel;
     }
 }
 
@@ -402,25 +386,100 @@ impl Ppu {
         let line = (dot / Self::DOTS_PER_LINE) as u8;
 
         // Update the internal PPU status
-        // The function returns which interrupts need to be triggered
-        let interrupts = self.update_status(dot, line);
+        //
+        // This also returns which interrupts need to be triggered
+        let (stat_mode_change, vblank_interrupt, stat_interrupt) = self.update_status(dot, line);
 
-        // Render data to the frame, if applicable
-        self.render();
+        // Render data to the frame
+        self.render(stat_mode_change);
 
-        interrupts
+        (vblank_interrupt, stat_interrupt)
+    }
+
+    /// Returns: (stat_mode_change, vblank_interrupt, stat_interrupt)
+    fn update_status(&mut self, dot: u32, line: u8) -> (bool, bool, bool) {
+        // If we have a scanline change, flush the write stack to affected registers
+        if line != self.ly {
+            while let Some((addr, value)) = self.write_stack.pop() {
+                match addr {
+                    Self::SCY_ADDR => self.scy = value,
+                    Self::SCX_ADDR => self.scx = value,
+                    Self::LYC_ADDR => self.lyc = value,
+                    Self::WY_ADDR => self.wy = value,
+                    Self::WX_ADDR => self.wy = value,
+                    _ => unreachable!("Unexpected address on stack: {}", addr),
+                }
+            }
+        }
+
+        // Set LY to current scan line
+        self.ly = line;
+
+        // Compute LY conincidence
+        let prev_ly_coincidence = self.stat.coincidence;
+        let ly_coincidence = self.ly == self.lyc;
+
+        // Figure out which stat mode we are in based on line and dot.
+        //
+        // Recall that we have 456 dots in a line.
+        let prev_mode = self.stat.mode;
+        let mode = if line < Self::VBLANK_START_LINE {
+            let dot = dot % Self::DOTS_PER_LINE;
+            match dot {
+                0..=79 => StatMode::OamScan,
+                80..=329 => StatMode::OamRead,
+                _ => StatMode::Hblank,
+            }
+        } else {
+            // VBLANK
+            StatMode::Vblank
+        };
+
+        let mut stat = mode as u8;
+        if ly_coincidence {
+            stat |= 1 << 2;
+        }
+
+        // Update STAT register
+        self.stat.set(stat);
+
+        let stat_mode_change = prev_mode != mode;
+
+        // VBLANK interrupt is fired if the mode has changed and the current mode is VBLANK.
+        //
+        // Note: This is fired once per frame.
+        let vblank_interrupt = stat_mode_change && mode == StatMode::Vblank;
+
+        // If any of the STAT interrupt conditions are met, fire an interrupt.
+        //
+        // 1. LY coincidence interrupt is enabled and changed from false to true
+        // 2. STAT mode interrupt is enabled and has changed
+        let stat_interrupt = (self.ly_enabled && !prev_ly_coincidence && ly_coincidence) || {
+            stat_mode_change && match mode {
+                StatMode::Hblank => self.hblank_enabled,
+                StatMode::Vblank => self.vblank_enabled,
+                StatMode::OamScan | StatMode::OamRead => self.oam_enabled,
+            }
+        };
+
+        (stat_mode_change, vblank_interrupt, stat_interrupt)
     }
 
     /// Render pixel data to the internal frame buffer
-    fn render(&mut self) {
+    fn render(&mut self, stat_mode_change: bool) {
         // If the display is currently disabled, no rendering needs to be done
         if !self.lcdc.lcd_display_enable {
             return;
         }
 
+        // If we are not at the start of a stat mode, we have nothing to do
+        if !stat_mode_change {
+            return;
+        }
+
         match self.stat.mode {
             StatMode::Hblank if self.ly <= 143 => {
-                // If we are at the end of a HBLANK, render a scanline worth
+                // If we are at the start of HBLANK, render a scanline worth
                 // of BG and sprites to the frame buffer
                 self.render_scanline();
             }
@@ -556,72 +615,6 @@ impl Ppu {
 
     fn render_sprites(&mut self) {
         todo!()
-    }
-
-    fn update_status(&mut self, dot: u32, line: u8) -> (bool, bool) {
-        // If we have a scanline change, flush the write stack to affected registers
-        if line != self.ly {
-            while let Some((addr, value)) = self.write_stack.pop() {
-                match addr {
-                    Self::SCY_ADDR => self.scy = value,
-                    Self::SCX_ADDR => self.scx = value,
-                    Self::LYC_ADDR => self.lyc = value,
-                    Self::WY_ADDR => self.wy = value,
-                    Self::WX_ADDR => self.wy = value,
-                    _ => unreachable!("Unexpected address on stack: {}", addr),
-                }
-            }
-        }
-
-        // Set LY to current scan line
-        self.ly = line;
-
-        // Compute LY conincidence
-        let prev_ly_coincidence = self.stat.coincidence;
-        let ly_coincidence = self.ly == self.lyc;
-
-        // Figure out which stat mode we are in based on line and dot.
-        //
-        // Recall that we have 456 dots in a line.
-        let prev_mode = self.stat.mode;
-        let mode = if line < Self::VBLANK_START_LINE {
-            let dot = dot % Self::DOTS_PER_LINE;
-            match dot {
-                0..=79 => StatMode::OamScan,
-                80..=329 => StatMode::OamRead,
-                _ => StatMode::Hblank,
-            }
-        } else {
-            // VBLANK
-            StatMode::Vblank
-        };
-
-        let mut stat = mode as u8;
-        if ly_coincidence {
-            stat |= 1 << 2;
-        }
-
-        // Update STAT register
-        self.stat.set(stat);
-
-        // VBLANK interrupt is fired if the mode has changed and the current mode is VBLANK.
-        //
-        // Note: This is fired once per frame.
-        let vblank_interrupt = prev_mode != mode && mode == StatMode::Vblank;
-
-        // If any of the STAT interrupt conditions are met, fire an interrupt.
-        //
-        // 1. LY coincidence interrupt is enabled and changed from false to true
-        // 2. STAT mode interrupt is enabled and has changed
-        let stat_interrupt = (self.ly_enabled && !prev_ly_coincidence && ly_coincidence) || {
-            prev_mode != mode && match mode {
-                StatMode::Hblank => self.hblank_enabled,
-                StatMode::Vblank => self.vblank_enabled,
-                StatMode::OamScan | StatMode::OamRead => self.oam_enabled,
-            }
-        };
-
-        (vblank_interrupt, stat_interrupt)
     }
 
     /// Compute the current palette RAM index based on value of BCPS

@@ -62,13 +62,15 @@ fn gui() {
                            .build()
                            .unwrap();
 
+    dbg!(canvas.info());
+
     // Get a handle to the Canvas texture creator
     let texture_creator = canvas.texture_creator();
 
     // Create a Texture
     // We write raw pixel data here and copy it to the Canvas for rendering
     let mut texture = texture_creator.create_texture(None,
-                                                     TextureAccess::Target,
+                                                     TextureAccess::Streaming,
                                                      160,
                                                      144).unwrap();
 
@@ -104,10 +106,10 @@ fn gui() {
             None => None,
         };
 
+        let start = Instant::now();
+
         // Run the Gameboy for a single frame and return the frame data
         let frame_buffer = gameboy.frame(event);
-
-        let start = Instant::now();
 
         // Remember the texture we created above? That is basically a buffer in VRAM
         // With the following, we are setting that texture as a render target for
@@ -117,16 +119,18 @@ fn gui() {
         // Once this closure ends, the canvas target is reset back for us.
         //
         // Helpful C example: https://wiki.libsdl.org/SDL_CreateTexture
-        canvas.with_texture_canvas(&mut texture, |canvas| {
-            canvas.clear();
+        canvas.set_draw_color(Color::GREEN);
+        canvas.clear();
 
-            for y in 0..144 {
-                for x in 0..160 {
-                    let pixel = &frame_buffer.data[y][x];
-                    let color = Color::RGBA(pixel.red, pixel.green, pixel.blue, pixel.alpha);
-                    canvas.set_draw_color(color);
-                    canvas.draw_point((x as i32, y as i32)).unwrap();
-                }
+        texture.with_lock(None, |pixels, _pitch|{
+            for i in 0..pixels.len() / 4 {
+                let color = frame_buffer.data[i];
+
+                // ARGB8888
+                pixels[i] = color.blue;
+                pixels[i+1] = color.green;
+                pixels[i+2] = color.red;
+                pixels[i+3] = color.alpha;
             }
         }).unwrap();
 
@@ -138,10 +142,6 @@ fn gui() {
         let elapsed = start.elapsed();
 
         // println!("{:?}, {:?}", frame_duration, elapsed);
-
-        if elapsed < frame_duration {
-            std::thread::sleep(frame_duration - elapsed);
-        }
     }
 }
 
