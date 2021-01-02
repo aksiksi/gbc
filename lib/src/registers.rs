@@ -82,15 +82,14 @@ pub struct RegisterFile {
     L: u8,
     pub PC: u16,
     pub SP: u16,
-
-    // Individual flag bits
-    zero: bool,
-    subtract: bool,
-    half_carry: bool,
-    carry: bool,
 }
 
 impl RegisterFile {
+    const ZERO_MASK: u8 = 1 << 7;
+    const SUBTRACT_MASK: u8 = 1 << 6;
+    const HALF_CARRY_MASK: u8 = 1 << 5;
+    const CARRY_MASK: u8 = 1 << 4;
+
     /// Returns a new register file
     ///
     /// * Registers are initialized to some values on boot
@@ -110,10 +109,6 @@ impl RegisterFile {
             L: 0x01,
             PC: 0x0100,
             SP: 0xFFFE,
-            zero: false,
-            subtract: false,
-            half_carry: false,
-            carry: false,
         }
     }
 
@@ -122,48 +117,18 @@ impl RegisterFile {
         // Build a bit mask for this flag
         let mask: u8 = 1 << flag as u8;
 
-        match flag {
-            Flag::Zero => {
-                self.zero = value;
-            }
-            Flag::Subtract => {
-                self.subtract = value;
-            }
-            Flag::HalfCarry => {
-                self.half_carry = value;
-            }
-            Flag::Carry => {
-                self.carry = value;
-            }
-        }
-
         // Update the flags register accordingly
         if value {
             self.F |= mask;
         } else {
             self.F &= !mask;
         }
-}
+    }
 
     /// Clear a flag
     pub fn clear(&mut self, flag: Flag) {
         // Build a bit mask for this flag
         let mask: u8 = 1 << flag as u8;
-
-        match flag {
-            Flag::Zero => {
-                self.zero = false;
-            }
-            Flag::Subtract => {
-                self.subtract = false;
-            }
-            Flag::HalfCarry => {
-                self.half_carry = false;
-            }
-            Flag::Carry => {
-                self.carry = false;
-            }
-        }
 
         // Update the flags register accordingly
         self.F &= !mask;
@@ -171,10 +136,6 @@ impl RegisterFile {
 
     /// Clear all flags
     pub fn clear_all(&mut self) {
-        self.zero = false;
-        self.subtract = false;
-        self.half_carry = false;
-        self.carry = false;
         self.F = 0;
     }
 
@@ -183,19 +144,19 @@ impl RegisterFile {
     }
 
     pub fn zero(&self) -> bool {
-        self.zero
+        (self.F & Self::ZERO_MASK) != 0
     }
 
     pub fn subtract(&self) -> bool {
-        self.subtract
+        (self.F & Self::SUBTRACT_MASK) != 0
     }
 
     pub fn half_carry(&self) -> bool {
-        self.half_carry
+        (self.F & Self::HALF_CARRY_MASK) != 0
     }
 
     pub fn carry(&self) -> bool {
-        self.carry
+        (self.F & Self::CARRY_MASK) != 0
     }
 }
 
@@ -281,8 +242,8 @@ impl std::fmt::Display for RegisterFile {
                 HalfCarry: {}\n\
                 Carry: {}", self.A, self.F, self.B,
         self.C, self.D, self.E, self.H,
-        self.L, self.PC, self.SP, self.zero,
-        self.subtract, self.half_carry, self.carry)
+        self.L, self.PC, self.SP, self.zero(),
+        self.subtract(), self.half_carry(), self.carry())
     }
 }
 
