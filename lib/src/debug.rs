@@ -108,7 +108,17 @@ impl Debugger {
                         }
                     };
 
-                    self.breakpoints.push((addr, true));
+                    let mut found = false;
+                    for (other, exists) in self.breakpoints.iter_mut() {
+                        if *other == addr {
+                            *exists = true;
+                            found = true;
+                        }
+                    }
+
+                    if !found {
+                        self.breakpoints.push((addr, true));
+                    }
                 }
                 "b" => eprintln!("'b' requires at least 1 argument"),
                 "d" if line.len() == 2 => {
