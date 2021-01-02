@@ -1,5 +1,5 @@
 /// 8-bit register names
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 #[allow(non_snake_case)]
 pub enum Reg8 {
     A,
@@ -29,7 +29,7 @@ impl std::fmt::Display for Reg8 {
 
 /// 16-bit register names
 /// This includes the "combo" registers
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 #[allow(non_snake_case)]
 pub enum Reg16 {
     AF,

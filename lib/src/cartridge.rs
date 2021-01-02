@@ -7,7 +7,7 @@ use crate::error::{Error, Result};
 use crate::memory::{MemoryRead, MemoryWrite};
 
 // Cartridge RAM size
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 #[repr(u8)]
 pub enum RamSize {
     NotPresent,
@@ -148,7 +148,7 @@ impl MemoryWrite<u16, u8> for Ram {
 }
 
 /// ROM size
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 #[repr(u8)]
 pub enum RomSize {
     _32K,
@@ -453,7 +453,7 @@ impl MemoryWrite<u16, u8> for Controller {
 }
 
 /// GB/GBC cartridge types
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 #[repr(u8)]
 pub enum CartridgeType {
     Rom,
