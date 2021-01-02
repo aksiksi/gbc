@@ -2,7 +2,7 @@ use std::io::Write;
 
 use crate::cpu::Cpu;
 use crate::instructions::Instruction;
-use crate::memory::MemoryRead;
+use crate::memory::{MemoryRead, MemoryWrite};
 
 pub enum Mode {
     Step,
@@ -41,14 +41,17 @@ impl Debugger {
         let (inst, _, _) = cpu.fetch(None);
         self.instructions.push((inst, pc));
 
+        self.checks += 1;
+
         let res = match self.mode {
             Mode::Step => true,
             Mode::StepN(n) => {
-                (self.checks - self.steps) >= n
+                (self.checks - self.steps) == n - 1
             }
             Mode::Continue => {
                 for (addr, enabled) in &self.breakpoints {
                     if *enabled && pc == *addr {
+                        self.steps = self.checks;
                         return true;
                     }
                 }
@@ -56,8 +59,6 @@ impl Debugger {
                 false
             }
         };
-
-        self.checks += 1;
 
         if res {
             // When a breakpoint is hit, print the last executed instruction
@@ -69,7 +70,7 @@ impl Debugger {
         res
     }
 
-    fn parse_address(input: &str) -> Option<u16> {
+    fn parse_u16(input: &str) -> Option<u16> {
         let addr: Option<u16>;
 
         if input.contains("0x") | input.contains("0X") {
@@ -81,7 +82,7 @@ impl Debugger {
         addr
     }
 
-    pub fn repl(&mut self, cpu: &Cpu) {
+    pub fn repl(&mut self, cpu: &mut Cpu) {
         self.steps += 1;
 
         loop {
@@ -99,7 +100,7 @@ impl Debugger {
                     std::process::exit(0);
                 }
                 "b" if line.len() == 2 => {
-                    let addr = match Self::parse_address(line[1]) {
+                    let addr = match Self::parse_u16(line[1]) {
                         Some(v) => v,
                         None => {
                             eprintln!("Invalid address specified: {}", line[1]);
@@ -155,6 +156,9 @@ impl Debugger {
                         println!("{:#06x}: {}", pc, inst);
                     }
                 }
+                "count" => {
+                    println!("{}", self.instructions.len());
+                }
                 "l" | "list" => {
                     // Number of instructions to disassemble, startng from address below
                     let count: usize = if line.len() >= 2 {
@@ -165,7 +169,7 @@ impl Debugger {
 
                     // Start address - defaults to PC
                     let addr = if line.len() == 3 {
-                        Self::parse_address(line[2])
+                        Self::parse_u16(line[2])
                     } else {
                         Some(cpu.registers.PC)
                     };
@@ -188,7 +192,7 @@ impl Debugger {
                     return;
                 }
                 "p" if line.len() == 2 => {
-                    let addr = match Self::parse_address(line[1]) {
+                    let addr = match Self::parse_u16(line[1]) {
                         Some(v) => v,
                         None => {
                             eprintln!("Invalid address specified: {}", line[1]);
@@ -201,6 +205,20 @@ impl Debugger {
                     println!("{:#X}", value);
                 }
                 "p" => eprintln!("'p' requires at least 1 argument"),
+                "w" if line.len() == 3 => {
+                    let addr = match Self::parse_u16(line[1]) {
+                        Some(v) => v,
+                        None => {
+                            eprintln!("Invalid address specified: {}", line[1]);
+                            continue;
+                        }
+                    };
+
+                    let value = Self::parse_u16(line[2]).unwrap();
+
+                    cpu.memory.write(addr, value);
+                }
+                "w" => eprintln!("'w' requires at least 2 arguments"),
                 "info" if line.len() == 2 => {
                     match line[1] {
                         "r" | "reg" | "registers" => {

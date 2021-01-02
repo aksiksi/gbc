@@ -303,7 +303,6 @@ impl Cpu {
                 let a = self.registers.read(Reg8::A);
                 self.memory.write(0xFF00 + offset as u16, a);
             }
-
             LdHlSpImm8i { offset } | AddSpImm8i { offset } => {
                 let offset = offset as u16;
                 let val = self.registers.read(Reg16::SP);
@@ -323,7 +322,6 @@ impl Cpu {
                 self.registers.set(Flag::HalfCarry, half_carry);
                 self.registers.set(Flag::Carry, carry);
             }
-
             Inc { dst } => self.inc(dst),
             Dec { dst } => self.dec(dst),
             Add { src } => self.add(src),

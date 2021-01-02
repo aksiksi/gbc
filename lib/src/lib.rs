@@ -67,7 +67,7 @@ impl Gameboy {
             #[cfg(feature = "debug")]
             // If the debugger is triggered, step into the REPL.
             if self.debugger.triggered(&self.cpu) {
-                self.debugger.repl(&self.cpu);
+                self.debugger.repl(&mut self.cpu);
             }
 
             // Execute a step of the CPU
