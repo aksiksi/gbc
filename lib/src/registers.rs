@@ -1,5 +1,5 @@
 /// 8-bit register names
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 #[allow(non_snake_case)]
 pub enum Reg8 {
     A,
@@ -29,7 +29,7 @@ impl std::fmt::Display for Reg8 {
 
 /// 16-bit register names
 /// This includes the "combo" registers
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 #[allow(non_snake_case)]
 pub enum Reg16 {
     AF,
@@ -59,7 +59,7 @@ pub trait RegisterOps<R, V> {
     fn write(&mut self, reg: R, value: V);
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 #[repr(u8)]
 pub enum Flag {
     Zero = 7,
@@ -68,7 +68,6 @@ pub enum Flag {
     Carry = 4,
 }
 
-#[derive(Debug)]
 #[allow(non_snake_case)]
 pub struct RegisterFile {
     // Registers

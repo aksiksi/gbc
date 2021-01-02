@@ -7,7 +7,7 @@ use crate::error::{Error, Result};
 use crate::memory::{MemoryRead, MemoryWrite};
 
 // Cartridge RAM size
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, PartialEq)]
 #[repr(u8)]
 pub enum RamSize {
     NotPresent,
@@ -147,30 +147,8 @@ impl MemoryWrite<u16, u8> for Ram {
     }
 }
 
-impl std::fmt::Debug for Ram {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Unbanked { data: _, ram_size } => f
-                .debug_struct("CartridgeRam::Unbanked")
-                .field("ram_size", &ram_size)
-                .finish(),
-            Self::Banked {
-                data: _,
-                active_bank,
-                num_banks,
-                ram_size,
-            } => f
-                .debug_struct("CartridgeRam::Banked")
-                .field("active_bank", &active_bank)
-                .field("num_banks", &num_banks)
-                .field("ram_size", &ram_size)
-                .finish(),
-        }
-    }
-}
-
 /// ROM size
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, PartialEq)]
 #[repr(u8)]
 pub enum RomSize {
     _32K,
@@ -242,9 +220,6 @@ pub struct Rom {
 
     /// Total number of banks
     num_banks: u16,
-
-    /// ROM size
-    rom_size: RomSize,
 }
 
 impl Rom {
@@ -269,7 +244,6 @@ impl Rom {
             bank1,
             active_bank: 0,
             num_banks: num_banks as u16,
-            rom_size,
         }
     }
 
@@ -303,6 +277,7 @@ impl MemoryRead<u16, u8> for Rom {
             0x4000..=0x7FFF => {
                 // Bank 1 (dynamic)
                 let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
+                assert!(bank_offset < self.num_banks as usize);
                 self.bank1[bank_offset + addr]
             }
             _ => unreachable!("Unexpected read from: {}", addr),
@@ -324,6 +299,7 @@ impl MemoryWrite<u16, u8> for Rom {
             0x4000..=0x7FFF => {
                 // Bank 1 (dynamic)
                 let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
+                assert!(bank_offset < self.num_banks as usize);
                 self.bank1[bank_offset + addr] = value;
             }
             _ => unreachable!("Unexpected read from: {}", addr),
@@ -331,20 +307,7 @@ impl MemoryWrite<u16, u8> for Rom {
     }
 }
 
-impl std::fmt::Debug for Rom {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Rom")
-            .field("bank0", &self.bank0[0])
-            .field("bank1", &self.bank1[0])
-            .field("active_bank", &self.active_bank)
-            .field("num_banks", &self.num_banks)
-            .field("rom_size", &self.rom_size)
-            .finish()
-    }
-}
-
 /// Cartridge ROM + RAM controller.
-#[derive(Debug)]
 pub struct Controller {
     /// Cartridge ROM
     pub rom: Rom,
@@ -490,7 +453,7 @@ impl MemoryWrite<u16, u8> for Controller {
 }
 
 /// GB/GBC cartridge types
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, PartialEq)]
 #[repr(u8)]
 pub enum CartridgeType {
     Rom,
@@ -622,7 +585,6 @@ impl TryFrom<u8> for CartridgeType {
     }
 }
 
-#[derive(Debug)]
 pub struct Cartridge {
     /// ROM file
     pub rom_file: File,

@@ -113,4 +113,3 @@ impl Joypad {
         };
     }
 }
-

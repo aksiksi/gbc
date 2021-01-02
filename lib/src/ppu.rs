@@ -47,7 +47,7 @@
 //! The combination of these two periods nets us ~60 fps.
 use crate::memory::{MemoryRead, MemoryWrite};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct Rgba {
     pub red: u8,
     pub green: u8,
@@ -66,7 +66,6 @@ impl Rgba {
     }
 }
 
-#[derive(Debug)]
 /// Buffer that holds pixel data for a single frame.
 ///
 /// Each pixel is encoded in RGBA8888 format, starting from lowest address:
@@ -171,16 +170,7 @@ impl MemoryWrite<u16, u8> for Vram {
     }
 }
 
-impl std::fmt::Debug for Vram {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Vram::Banked")
-            .field("vram_size", &self.data.len())
-            .field("active_bank", &self.active_bank)
-            .finish()
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Default)]
 struct LcdControl {
     /// Raw register value
     pub raw: u8,
@@ -214,7 +204,7 @@ impl LcdControl {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 #[repr(u8)]
 enum StatMode {
     Hblank = 0,
@@ -224,7 +214,7 @@ enum StatMode {
 }
 
 /// LCD STAT register
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 struct LcdStat {
     /// Raw register value
     pub raw: u8,
@@ -268,7 +258,6 @@ impl LcdStat {
     }
 }
 
-#[derive(Debug)]
 pub struct Ppu {
     /// Video RAM (0x8000 - 0x9FFF)
     vram: Vram,

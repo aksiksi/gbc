@@ -1,7 +1,7 @@
 use crate::registers::{Reg16, Reg8};
 
 /// A single argument to an instruction.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum Arg {
     /// 8-bit register
     Reg8(Reg8),
@@ -69,7 +69,7 @@ impl From<Reg16> for Arg {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum Cond {
     None,
     NotZero,
@@ -95,7 +95,7 @@ impl std::fmt::Display for Cond {
 /// Represents a single CPU instruction.
 ///
 /// Tuple contains either: (source) or (dest) or (dest, source)
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum Instruction {
     /// Load an 8-bit or 16-bit value from `src` into `dst`
     ///
@@ -483,7 +483,7 @@ pub enum Instruction {
 ///
 /// If this is a conditional instruction, the second arg represents the number of
 /// cycles consumed if the path is not taken (faster).
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 pub struct Cycles(pub u8, pub u8);
 
 impl Cycles {

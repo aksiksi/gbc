@@ -118,26 +118,9 @@ impl MemoryWrite<u16, u8> for Ram {
     }
 }
 
-impl std::fmt::Debug for Ram {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Unbanked { data } => f
-                .debug_struct("Ram::Unbanked")
-                .field("size", &data.len())
-                .finish(),
-            Self::Banked { data, active_bank } => f
-                .debug_struct("CartridgeRam::Banked")
-                .field("size", &data.len())
-                .field("active_bank", &active_bank)
-                .finish(),
-        }
-    }
-}
-
 /// Memory-mapped I/O registers and buffers
 ///
 /// TODO: Move some stuff to PPU
-#[derive(Debug)]
 pub struct Io {
     /// Joypad register: 0xFF00
     joypad: Joypad,
@@ -317,7 +300,6 @@ impl MemoryWrite<u16, u8> for Io {
 }
 
 /// 64K memory map for the GBC
-#[derive(Debug)]
 pub struct MemoryBus {
     /// ROM:       0x0000 - 0x7FFF
     /// Cart RAM:  0xA000 - 0xBFFF

@@ -2,7 +2,7 @@ use crate::instructions::{Arg, Cond, Cycles, Instruction};
 use crate::memory::{MemoryBus, MemoryRead, MemoryWrite};
 use crate::registers::{Flag, Reg16, Reg8, RegisterFile, RegisterOps};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 #[repr(u8)]
 pub enum Interrupt {
     Vblank = 0,
@@ -53,7 +53,6 @@ impl HalfCarry<u16> for u16 {
     }
 }
 
-#[derive(Debug)]
 pub struct Cpu {
     pub registers: RegisterFile,
     pub memory: MemoryBus,
@@ -263,7 +262,7 @@ impl Cpu {
                     let value = self.memory.read(src);
                     self.registers.write(dst, value);
                 }
-                _ => unreachable!("Unexpected dst and src: {:?}, {:?}", dst, src),
+                _ => unreachable!("Unexpected dst and src: {}, {}", dst, src),
             },
             LdMemCA => {
                 let addr = 0xFF00 + self.registers.read(Reg8::C) as u16;
@@ -435,7 +434,7 @@ impl Cpu {
                         self.memory.write(addr, value);
                         value
                     }
-                    _ => unreachable!("Unexpected dst: {:?}", dst),
+                    _ => unreachable!("Unexpected dst: {}", dst),
                 };
 
                 self.registers.set(Flag::Zero, result == 0);
@@ -452,7 +451,7 @@ impl Cpu {
                         let addr = self.registers.read(Reg16::HL);
                         self.memory.read(addr)
                     }
-                    _ => unreachable!("Unexpected dst: {:?}", dst),
+                    _ => unreachable!("Unexpected dst: {}", dst),
                 };
 
                 let result = value & (1 << bit);
@@ -492,7 +491,7 @@ impl Cpu {
                 let addr = self.registers.read(Reg16::HL);
                 self.memory.read(addr)
             }
-            _ => unreachable!("Unexpected dst: {:?}", dst),
+            _ => unreachable!("Unexpected dst: {}", dst),
         };
 
         let prev_carry = self.registers.carry();
@@ -533,7 +532,7 @@ impl Cpu {
                 let addr = self.registers.read(Reg16::HL);
                 self.memory.write(addr, value);
             }
-            _ => unreachable!("Unexpected dst: {:?}", dst),
+            _ => unreachable!("Unexpected dst: {}", dst),
         }
 
         // Flags
@@ -553,7 +552,7 @@ impl Cpu {
                 let addr = self.registers.read(Reg16::HL);
                 self.memory.read(addr)
             }
-            _ => unreachable!("Unexpected dst: {:?}", dst),
+            _ => unreachable!("Unexpected dst: {}", dst),
         };
 
         let carry;
@@ -583,7 +582,7 @@ impl Cpu {
                 let addr = self.registers.read(Reg16::HL);
                 self.memory.write(addr, value);
             }
-            _ => unreachable!("Unexpected dst: {:?}", dst),
+            _ => unreachable!("Unexpected dst: {}", dst),
         }
 
         // Flags
@@ -632,7 +631,7 @@ impl Cpu {
                 let val = self.memory.read(addr);
                 val
             }
-            _ => unreachable!("Unexpected src: {:?}", src),
+            _ => unreachable!("Unexpected src: {}", src),
         };
 
         let half_carry = a.half_carry(val);
@@ -658,7 +657,7 @@ impl Cpu {
                 let val = self.memory.read(addr);
                 val
             }
-            _ => unreachable!("Unexpected src: {:?}", src),
+            _ => unreachable!("Unexpected src: {}", src),
         };
 
         let curr_carry = if self.registers.carry() { 1u8 } else { 0u8 };
@@ -711,7 +710,7 @@ impl Cpu {
                 let val = self.memory.read(addr);
                 val
             }
-            _ => unreachable!("Unexpected src: {:?}", src),
+            _ => unreachable!("Unexpected src: {}", src),
         };
 
         let half_carry = a.half_carry_sub(val);
@@ -740,7 +739,7 @@ impl Cpu {
                 let val = self.memory.read(addr);
                 val
             }
-            _ => unreachable!("Unexpected src: {:?}", src),
+            _ => unreachable!("Unexpected src: {}", src),
         };
 
         let curr_carry = if self.registers.carry() { 1u8 } else { 0u8 };
@@ -774,7 +773,7 @@ impl Cpu {
                 let val = self.memory.read(addr);
                 val
             }
-            _ => unreachable!("Unexpected src: {:?}", src),
+            _ => unreachable!("Unexpected src: {}", src),
         };
 
         let result = match op {
@@ -825,7 +824,7 @@ impl Cpu {
                 self.memory.write(addr, result);
                 result as u16
             }
-            _ => unreachable!("Unexpected dst: {:?}", dst),
+            _ => unreachable!("Unexpected dst: {}", dst),
         };
 
         if update_flags {
@@ -870,7 +869,7 @@ impl Cpu {
 
                 (result as u16, borrow)
             }
-            _ => unreachable!("Unexpected dst: {:?}", dst),
+            _ => unreachable!("Unexpected dst: {}", dst),
         };
 
         if update_flags {
@@ -889,7 +888,7 @@ impl Cpu {
                 let addr = self.registers.read(Reg16::HL);
                 self.memory.read(addr)
             }
-            _ => unreachable!("Unexpected dst: {:?}", dst),
+            _ => unreachable!("Unexpected dst: {}", dst),
         };
 
         let result;
@@ -906,7 +905,7 @@ impl Cpu {
                 let addr = self.registers.read(Reg16::HL);
                 self.memory.write(addr, result);
             }
-            _ => unreachable!("Unexpected dst: {:?}", dst),
+            _ => unreachable!("Unexpected dst: {}", dst),
         }
     }
 
