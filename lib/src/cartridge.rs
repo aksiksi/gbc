@@ -276,8 +276,8 @@ impl MemoryRead<u16, u8> for Rom {
             }
             0x4000..=0x7FFF => {
                 // Bank 1 (dynamic)
+                assert!(self.active_bank < self.num_banks);
                 let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
-                assert!(bank_offset < self.num_banks as usize);
                 self.bank1[bank_offset + addr]
             }
             _ => unreachable!("Unexpected read from: {}", addr),

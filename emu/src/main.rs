@@ -120,12 +120,12 @@ fn gui() {
         canvas.with_texture_canvas(&mut texture, |canvas| {
             canvas.clear();
 
-            for row in 0..144 {
-                for col in 0..160 {
-                    let pixel = &frame_buffer.data[row][col];
+            for y in 0..144 {
+                for x in 0..160 {
+                    let pixel = &frame_buffer.data[y][x];
                     let color = Color::RGBA(pixel.red, pixel.green, pixel.blue, pixel.alpha);
                     canvas.set_draw_color(color);
-                    canvas.draw_point((col as i32, row as i32)).unwrap();
+                    canvas.draw_point((x as i32, y as i32)).unwrap();
                 }
             }
         }).unwrap();
@@ -135,9 +135,13 @@ fn gui() {
         canvas.copy(&texture, None, None).unwrap();
         canvas.present();
 
-        println!("{:?}", start.elapsed());
+        let elapsed = start.elapsed();
 
-        std::thread::sleep(frame_duration);
+        // println!("{:?}, {:?}", frame_duration, elapsed);
+
+        if elapsed < frame_duration {
+            std::thread::sleep(frame_duration - elapsed);
+        }
     }
 }
 

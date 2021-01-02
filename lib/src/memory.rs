@@ -254,10 +254,8 @@ impl MemoryWrite<u16, u8> for Io {
             0xFF02 => {
                 // Serial control
                 self.serial[1] = value;
-
-                // Debug
                 if value == 0x81 {
-                    dbg!(self.serial[0]);
+                    print!("{}", self.serial[0] as char);
                 }
             }
             0xFF04..=0xFF07 => {

@@ -112,7 +112,7 @@ impl Gameboy {
             self.cpu.memory.joypad().handle_event(event);
         }
 
-        println!("Done in {:?}", now.elapsed());
+        // println!("Done in {:?}", now.elapsed());
 
         // Return the rendered frame as a frame buffer
         self.cpu.memory.ppu().frame_buffer()
