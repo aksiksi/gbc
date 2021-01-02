@@ -75,25 +75,27 @@ impl Rgba {
 /// * Blue (1 byte)
 /// * Alpha (1 byte)
 pub struct FrameBuffer {
-    pub data: Box<[[Rgba; Self::COLS]; Self::ROWS]>,
+    pub data: Box<[[Rgba; Self::WIDTH]; Self::HEIGHT]>,
     pub ready: bool,
 }
 
 impl FrameBuffer {
     /// 160x144 pixels in a frame
-    const COLS: usize = 160;
-    const ROWS: usize = 144;
+    const WIDTH: usize = 160;
+    const HEIGHT: usize = 144;
 
     pub fn new() -> Self {
         Self {
-            data: Box::new([[Rgba::white(); Self::COLS]; Self::ROWS]),
+            data: Box::new([[Rgba::white(); Self::WIDTH]; Self::HEIGHT]),
             ready: false,
         }
     }
 
     /// Write a single pixel to the buffer.
-    pub fn write(&mut self, row: usize, col: usize, pixel: Rgba) {
-        self.data[row][col] = pixel;
+    ///
+    /// `x` is the "column", `y` is the "row".
+    pub fn write(&mut self, x: usize, y: usize, pixel: Rgba) {
+        self.data[y][x] = pixel;
         println!("Wrote pixel to frame buffer");
     }
 
@@ -550,7 +552,7 @@ impl Ppu {
                 alpha,
             };
 
-            self.frame_buffer.write(scanline as usize, pixel as usize, pixel_data);
+            self.frame_buffer.write(pixel as usize, scanline as usize, pixel_data);
         }
     }
 
