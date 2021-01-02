@@ -618,7 +618,7 @@ impl Instruction {
             0xEA => (Ld { dst: Arg::MemImm(arg16), src: Arg::Reg8(Reg8::A) }, 3, 16.into()),
             0xFA => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::MemImm(arg16) }, 3, 16.into()),
             0xF8 => (LdHlSpImm8i { offset: arg8 as i8 }, 2, 12.into()),
-            0xF9 => (Ld { dst: Reg16::SP.into(), src: Reg16::SP.into() }, 1, 8.into()),
+            0xF9 => (Ld { dst: Reg16::SP.into(), src: Reg16::HL.into() }, 1, 8.into()),
 
             // Misc
             0x27 => (Daa, 1, 4.into()),
@@ -968,10 +968,10 @@ impl std::fmt::Display for Instruction {
             Ld { dst, src } => write!(f, "ld {}, {}", dst, src),
             LdAMemC => write!(f, "ld A, (0xFF00 + C)"),
             LdMemCA => write!(f, "ld (0xFF00 + C), A"),
-            LddAMemHl => write!(f, "ld A, (HL-)"),
-            LddMemHlA => write!(f, "ld (HL-), A"),
-            LdiAMemHl => write!(f, "ld A, (HL+)"),
-            LdiMemHlA => write!(f, "ld (HL+), A"),
+            LddAMemHl => write!(f, "ldd A, (HL)"),
+            LddMemHlA => write!(f, "ldd (HL), A"),
+            LdiAMemHl => write!(f, "ldi A, (HL)"),
+            LdiMemHlA => write!(f, "ldi (HL), A"),
             LdhA { offset } => write!(f, "ldh A, ({:#06X})", 0xFF00 + *offset as u16),
             Ldh { offset } => write!(f, "ldh ({:#06X}), A", 0xFF00 + *offset as u16),
             LdHlSpImm8i { offset } => write!(f, "ld (HL), (SP + {:#04x})", offset),

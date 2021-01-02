@@ -262,6 +262,10 @@ impl Cpu {
                     let value = self.memory.read(src);
                     self.registers.write(dst, value);
                 }
+                (Arg::Reg16(Reg16::SP), Arg::Reg16(Reg16::HL)) => {
+                    let value = self.registers.read(Reg16::HL);
+                    self.registers.write(Reg16::SP, value);
+                }
                 _ => unreachable!("Unexpected dst and src: {}, {}", dst, src),
             },
             LdMemCA => {
@@ -341,7 +345,6 @@ impl Cpu {
                 self.push(value);
             }
             Ret { cond } => {
-                let addr = self.pop();
                 let ok = match cond {
                     Cond::None => true,
                     Cond::NotZero if !self.registers.zero() => true,
@@ -352,7 +355,8 @@ impl Cpu {
                 };
 
                 if ok {
-                    self.registers.PC = addr;
+                    // Pop address from the stack iff the condition is met
+                    self.registers.PC = self.pop();
                 }
             }
             RetI => {
@@ -366,13 +370,6 @@ impl Cpu {
                 self.registers.PC = 0x0000 + offset as u16;
             }
             Jp { addr, cond } | Call { addr, cond } => {
-                // If this is a CALL, push the *next* PC to the stack
-                if let Call { .. } = instruction {
-                    // CALL is always 3 bytes long
-                    let next = self.registers.PC + 3;
-                    self.push(next);
-                }
-
                 let ok = match cond {
                     Cond::None => true,
                     Cond::NotZero if !self.registers.zero() => true,
@@ -383,6 +380,13 @@ impl Cpu {
                 };
 
                 if ok {
+                    // If this is a CALL, push the *next* PC to the stack
+                    if let Call { .. } = instruction {
+                        // CALL is always 3 bytes long
+                        let next = self.registers.PC + 3;
+                        self.push(next);
+                    }
+
                     self.registers.PC = addr;
                 }
             }
