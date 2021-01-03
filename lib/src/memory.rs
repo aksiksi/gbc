@@ -441,7 +441,7 @@ impl MemoryWrite<u16, u16> for MemoryBus {
     fn write(&mut self, addr: u16, value: u16) {
         let value = value.to_le_bytes();
         self.write(addr, value[0]);
-        self.write(addr, value[1]);
+        self.write(addr+1, value[1]);
     }
 }
 
