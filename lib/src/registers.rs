@@ -176,7 +176,7 @@ impl RegisterOps<Reg8, u8> for RegisterFile {
     fn write(&mut self, reg: Reg8, value: u8) {
         match reg {
             Reg8::A => self.A = value,
-            Reg8::F => self.F = value,
+            Reg8::F => self.F = value & 0xF0, // Lower 4 bits are unused
             Reg8::B => self.B = value,
             Reg8::C => self.C = value,
             Reg8::D => self.D = value,
@@ -203,7 +203,7 @@ impl RegisterOps<Reg16, u16> for RegisterFile {
         match reg {
             Reg16::AF => {
                 self.A = (value >> 8) as u8;
-                self.F = value as u8;
+                self.F = value as u8 & 0xF0; // Lower 4 bits are unused
             }
             Reg16::BC => {
                 self.B = (value >> 8) as u8;
@@ -256,7 +256,7 @@ mod test {
 
         regs.write(Reg8::A, 0x10);
         regs.write(Reg8::F, 0xFF);
-        assert_eq!(regs.read(Reg16::AF), 0x10FF);
+        assert_eq!(regs.read(Reg16::AF), 0x10F0);
 
         regs.write(Reg16::BC, 0xBEEF);
         assert_eq!(regs.read(Reg8::B), 0xBE);

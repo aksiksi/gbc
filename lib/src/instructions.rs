@@ -256,9 +256,9 @@ pub enum Instruction {
     ///
     /// ### Flags
     ///
-    /// * Zero: set if result 0
+    /// * Zero: unchanged
     /// * Subtract: reset
-    /// * HalfCarry: set if carry from bit 7
+    /// * HalfCarry: set if carry from bit 11
     /// * Carry: set if carry from bit 15
     AddHlReg16 { src: Reg16 },
 
@@ -268,7 +268,7 @@ pub enum Instruction {
     ///
     /// * Zero: reset
     /// * Subtract: reset
-    /// * HalfCarry: set if carry from bit 7
+    /// * HalfCarry: set if carry from bit 11
     /// * Carry: set if carry from bit 15
     AddSpImm8i { offset: i8 },
 

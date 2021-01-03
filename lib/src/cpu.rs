@@ -45,7 +45,7 @@ impl HalfCarry<u8> for u8 {
 
 impl HalfCarry<u16> for u16 {
     fn half_carry(&self, other: u16) -> bool {
-        ((self & 0x00FF) + (other & 0x00FF)) & 0x100 == 0x100
+        ((self & 0x0FFF) + (other & 0x0FFF)) & 0x1000 == 0x1000
     }
 
     fn half_carry_sub(&self, other: u16) -> bool {
@@ -100,21 +100,19 @@ impl Cpu {
             return (0, Instruction::Nop);
         }
 
-        let pc = self.registers.PC;
-
         // Fetch and decode the next instruction at PC
         let (inst, size, cycles) = self.fetch(None);
 
         // Execute the instruction on this CPU
-        self.execute(inst);
+        let (jump, taken) = self.execute(inst);
+        let cycles = if !jump || jump && !taken {
+            // For regular instructions and jumps that are *not* taken,
+            // update the PC based on the size of this instruction
+            self.registers.PC += size as u16;
 
-        let cycles = if pc == self.registers.PC {
-            // If we did not execute a jump, proceed to next instruction as usual
-            self.registers.PC = pc + size as u16;
             cycles.not_taken()
         } else {
-            // If we did jump, do not update the PC, and return the correct number
-            // of cycles.
+            // For jumps that are taken, the PC is updated within `execute()`
             cycles.taken()
         };
 
@@ -216,8 +214,16 @@ impl Cpu {
     }
 
     /// Execute a single instruction on this CPU
-    pub fn execute(&mut self, instruction: Instruction) {
+    ///
+    /// This method returns a tuple of: (jump, taken)
+    ///
+    /// * `jump`: Whether or not this was a jump-type instruction (e.g., jp, ret, call)
+    /// * `taken`: Whether or not the jump was taken. If this is not a jump, returns `false`
+    pub fn execute(&mut self, instruction: Instruction) -> (bool, bool) {
         use Instruction::*;
+
+        let mut jump = false;
+        let mut taken = false;
 
         match instruction {
             Nop => (),
@@ -357,20 +363,27 @@ impl Cpu {
                     Cond::Carry => self.registers.carry(),
                 };
 
+                jump = true;
+
                 if ok {
                     // Pop address from the stack iff the condition is met
                     self.registers.PC = self.pop();
+                    taken = true;
                 }
             }
             RetI => {
                 let addr = self.pop();
                 self.registers.PC = addr;
                 self.ime = true;
+                jump = true;
+                taken = true;
             }
             Rst { offset } => {
                 // Push next PC onto stack, then jump to offset
                 self.push(self.registers.PC + 1);
                 self.registers.PC = 0x0000 + offset as u16;
+                jump = true;
+                taken = true;
             }
             Jp { addr, cond } | Call { addr, cond } => {
                 let ok = match cond {
@@ -381,6 +394,8 @@ impl Cpu {
                     Cond::Carry => self.registers.carry(),
                 };
 
+                jump = true;
+
                 if ok {
                     // If this is a CALL, push the *next* PC to the stack
                     if let Call { .. } = instruction {
@@ -390,11 +405,14 @@ impl Cpu {
                     }
 
                     self.registers.PC = addr;
+                    taken = true;
                 }
             }
             JpHl => {
                 let addr = self.registers.read(Reg16::HL);
                 self.registers.PC = addr;
+                jump = true;
+                taken = true;
             }
             Jr { offset, cond } => {
                 let ok = match cond {
@@ -405,10 +423,13 @@ impl Cpu {
                     Cond::Carry => self.registers.carry(),
                 };
 
+                jump = true;
+
                 if ok {
                     // Numeric casts from signed to unsigned will sign extend
                     let offset = offset as u16;
                     self.registers.PC = self.registers.PC.wrapping_add(offset);
+                    taken = true;
                 }
             }
 
@@ -484,6 +505,8 @@ impl Cpu {
                 self.registers.set(Flag::Carry, true);
             }
         }
+
+        (jump, taken)
     }
 
     /// Handle rotate instructions
@@ -698,7 +721,6 @@ impl Cpu {
 
         self.registers.write(Reg16::HL, result);
 
-        self.registers.set(Flag::Zero, result == 0);
         self.registers.set(Flag::Subtract, false);
         self.registers.set(Flag::HalfCarry, half_carry);
         self.registers.set(Flag::Carry, carry);
@@ -1062,6 +1084,8 @@ mod test {
     fn add_hl() {
         let mut cpu = get_cpu();
 
+        let old_zero = cpu.registers.zero();
+
         cpu.registers.write(Reg8::A, 0);
         cpu.registers.write(Reg16::HL, 0);
         cpu.registers.write(Reg16::DE, 0x1234);
@@ -1071,7 +1095,7 @@ mod test {
         // Normal add
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg16::HL), 0x1234);
-        assert!(!cpu.registers.zero());
+        assert!(cpu.registers.zero() == old_zero);
         assert!(!cpu.registers.subtract());
         assert!(!cpu.registers.half_carry());
         assert!(!cpu.registers.carry());
@@ -1080,7 +1104,7 @@ mod test {
         cpu.registers.write(Reg16::DE, 0xEDCC);
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg16::HL), 0x0);
-        assert!(cpu.registers.zero());
+        assert!(cpu.registers.zero() == old_zero);
         assert!(!cpu.registers.subtract());
         assert!(cpu.registers.half_carry());
         assert!(cpu.registers.carry());
@@ -1315,7 +1339,7 @@ mod test {
         let inst = Instruction::Pop { dst: Reg16::AF.into() };
         cpu.execute(inst);
         assert_eq!(cpu.registers.SP, 0xFFFE);
-        assert_eq!(cpu.registers.read(Reg16::AF), 0x1234);
+        assert_eq!(cpu.registers.read(Reg16::AF), 0x1230);
     }
 
     #[test]
