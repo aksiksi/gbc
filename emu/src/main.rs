@@ -82,6 +82,8 @@ fn gui() {
     // Start the event loop
     let mut event_pump = sdl_context.event_pump().unwrap();
     'running: loop {
+        let frame_start = Instant::now();
+
         // List of pending key events
         let mut latest_event = None;
 
@@ -106,8 +108,6 @@ fn gui() {
             Some(e) => event_to_joypad(e),
             None => None,
         };
-
-        let start = Instant::now();
 
         // Run the Gameboy for a single frame and return the frame data
         let frame_buffer = gameboy.frame(event);
@@ -139,7 +139,10 @@ fn gui() {
         canvas.copy(&texture, None, None).unwrap();
         canvas.present();
 
-        let elapsed = start.elapsed();
+        let elapsed = frame_start.elapsed();
+        if elapsed < frame_duration {
+            std::thread::sleep(frame_duration - elapsed);
+        }
 
         // println!("{:?}, {:?}", frame_duration, elapsed);
     }

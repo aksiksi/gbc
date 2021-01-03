@@ -647,7 +647,7 @@ impl Ppu {
             // (9)
             let palette_index = (tile_palette_num * 4 + color_index) as usize;
             let pixel_color = (self.bg_palette_ram[palette_index + 1] as u16) << 8 |
-                              self.bg_palette_ram[palette_index] as u16;
+                               self.bg_palette_ram[palette_index] as u16;
 
             let red = (pixel_color & 0x001F) as u8;
             let green = ((pixel_color & 0x03E0) >> 5) as u8;

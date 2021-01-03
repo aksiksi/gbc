@@ -55,14 +55,10 @@ impl Gameboy {
     ///
     /// The frame takes in an optional joypad event as input.
     pub fn frame(&mut self, joypad_event: Option<JoypadEvent>) -> &FrameBuffer {
-
         // Figure out the number of clock cycles we can execute in a single frame
         let speed = self.cpu.speed();
         let cycle_time = self.cpu.cycle_time();
         let num_cycles = Self::FRAME_DURATION / cycle_time;
-
-        // let now = Instant::now();
-        // let mut iters = 0;
 
         // Execute next instruction
         let mut cycle = 0;
@@ -88,14 +84,6 @@ impl Gameboy {
                 self.cpu.trigger_interrupt(Interrupt::LcdStat);
             }
 
-            // if vblank {
-            //     dbg!(self.cpu.registers.PC);
-            // }
-
-            // if vblank {
-            //     dbg!(inst);
-            // }
-
             // Check if a serial interrupt needs to be triggered
             //
             // TODO: This does not happen every cycle, right?
@@ -104,21 +92,12 @@ impl Gameboy {
             }
 
             cycle += cycles_taken as u32;
-            // iters += 1;
         }
-
-        // println!("Done: {:?}, Iters: {}", now.elapsed(), iters);
-
-        // TODO: Update PPU
-
-        // TODO: Update sound
 
         // Update joypad, if needed
         if let Some(event) = joypad_event {
             self.cpu.memory.joypad().handle_event(event);
         }
-
-        // println!("Done in {:?}", now.elapsed());
 
         // Return the rendered frame as a frame buffer
         self.cpu.memory.ppu().frame_buffer()
