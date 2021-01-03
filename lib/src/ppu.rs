@@ -45,17 +45,19 @@
 //! This is when VRAM data can be accessed.
 //!
 //! The combination of these two periods nets us ~60 fps.
+use std::collections::VecDeque;
+
 use crate::memory::{MemoryRead, MemoryWrite};
 
 #[derive(Clone, Copy, Debug)]
-pub struct Rgba {
+pub struct GameboyRgba {
     pub red: u8,
     pub green: u8,
     pub blue: u8,
     pub alpha: u8,
 }
 
-impl Rgba {
+impl GameboyRgba {
     pub fn white() -> Self {
         Self {
             red: 0xFF,
@@ -64,11 +66,21 @@ impl Rgba {
             alpha: 0xFF,
         }
     }
+
+    /// Scale this color to regular RGB (0-255).
+    ///
+    /// Note that Gameboy colors have a range of 0-31 (5 bits).
+    pub fn scale_to_rgb(&mut self) {
+        self.red = ((self.red as u32 * 255) / 31) as u8;
+        self.blue = ((self.blue as u32 * 255) / 31) as u8;
+        self.green = ((self.green as u32 * 255) / 31) as u8;
+        self.alpha = ((self.alpha as u32 * 255) / 31) as u8;
+    }
 }
 
 /// Buffer that holds pixel data for a single frame.
 pub struct FrameBuffer {
-    pub data: Box<[Rgba; Self::WIDTH * Self::HEIGHT]>,
+    pub data: Box<[GameboyRgba; Self::WIDTH * Self::HEIGHT]>,
     pub ready: bool,
 }
 
@@ -79,7 +91,7 @@ impl FrameBuffer {
 
     pub fn new() -> Self {
         Self {
-            data: Box::new([Rgba::white(); Self::WIDTH * Self::HEIGHT]),
+            data: Box::new([GameboyRgba::white(); Self::WIDTH * Self::HEIGHT]),
             ready: false,
         }
     }
@@ -87,7 +99,7 @@ impl FrameBuffer {
     /// Write a single pixel to the buffer.
     ///
     /// `x` is the "column", `y` is the "row".
-    pub fn write(&mut self, x: usize, y: usize, pixel: Rgba) {
+    pub fn write(&mut self, x: usize, y: usize, pixel: GameboyRgba) {
         self.data[y * Self::WIDTH + x] = pixel;
     }
 }
@@ -187,7 +199,7 @@ impl LcdControl {
     }
 
     pub fn bg_tile_data_select(&self) -> bool {
-        self.raw & (1 << 4) != 0
+        self.raw & (1 << 4) == 0
     }
 
     pub fn bg_tile_map_select(&self) -> bool {
@@ -316,14 +328,16 @@ pub struct Ppu {
     bcps: u8,
     ocps: u8,
 
-    /// Color palette RAM:
+    /// BG color palette RAM:
     ///
-    /// * 8 BG palettes     x 4 bytes per palette = 32 bytes
-    /// * 8 sprite palettes x 4 bytes per palette = 32 bytes
+    /// * 8 BG palettes     x 4 colors x 2 bytes per color = 64 bytes
     ///
-    /// Writes and reads to/from BCPD/OCPD go directly to this RAM area,
-    /// based on the current index in BCPS/OCPS.
-    palette_ram: [u8; 64],
+    /// Writes and reads to and from BCPD go directly to this RAM area,
+    /// based on the current index in BCPS.
+    bg_palette_ram: [u8; 64],
+
+    /// Same as above, but for sprites
+    sprite_palette_ram: [u8; 64],
 
     /// Buffer for the current frame
     frame_buffer: FrameBuffer,
@@ -339,7 +353,7 @@ pub struct Ppu {
     /// Some of the registers, e.g., SCY and SCX, can be written to mid-scanline,
     /// but the write does not go into affect until the end of the scanline. This
     /// stack keeps track of these writes and flushes them on a scanline change.
-    write_stack: Vec<(u16, u8)>,
+    write_stack: VecDeque<(u16, u8)>,
 
     /// Last cycle processed
     cycle: u32,
@@ -377,13 +391,14 @@ impl Ppu {
             wx: 0,
             bcps: 0,
             ocps: 0,
-            palette_ram: [0u8; 64],
+            bg_palette_ram: [0xFF; 64],
+            sprite_palette_ram: [0xFF; 64],
             frame_buffer: FrameBuffer::new(),
             oam_enabled: false,
             vblank_enabled: false,
             hblank_enabled: false,
             ly_enabled: false,
-            write_stack: Vec::with_capacity(5), // 5 registers use this
+            write_stack: VecDeque::with_capacity(5), // 5 registers use this
             cycle: 0,
         }
     }
@@ -423,7 +438,7 @@ impl Ppu {
     fn update_status(&mut self, dot: u32, line: u8) -> (bool, bool, bool) {
         // If we have a scanline change, flush the write stack to affected registers
         if line != self.ly {
-            while let Some((addr, value)) = self.write_stack.pop() {
+            while let Some((addr, value)) = self.write_stack.pop_back() {
                 match addr {
                     Self::SCY_ADDR => self.scy = value,
                     Self::SCX_ADDR => self.scx = value,
@@ -540,10 +555,10 @@ impl Ppu {
         };
 
         // Select base address for BG tile data based on LCDC register
-        let tile_data_base: u16 = if !self.lcdc.bg_tile_data_select() {
-            0x8000
+        let (tile_data_base, tile_data_index_signed) = if !self.lcdc.bg_tile_data_select() {
+            (0x8000, false)
         } else {
-            0x8800
+            (0x9000, true)
         };
 
         // For each pixel in the current scanline, we need to do the following:
@@ -570,7 +585,7 @@ impl Ppu {
             let tile_map_index = (bg_tile_y as u16 * 32 + bg_tile_x as u16) as u16;
 
             // (4)
-            let tile_data_index = self.vram.read_bank(0, tile_map_base + tile_map_index) as u16;
+            let tile_number = self.vram.read_bank(0, tile_map_base + tile_map_index);
             let tile_data_attr = self.vram.read_bank(1, tile_map_base + tile_map_index);
 
             // (5)
@@ -583,8 +598,23 @@ impl Ppu {
             // (6)
             let mut tile_data = [0u8; 16];
             for i in 0..tile_data.len() as u16 {
-                tile_data[i as usize] = self.vram.read_bank(tile_data_bank,
-                                                            tile_data_base + tile_data_index + i);
+                let addr;
+
+                if !tile_data_index_signed || tile_number <= 127 {
+                    // If we are in 8000 mode OR 8800 mode with tile number <= 127,
+                    // just add the index to the base address as normal.
+                    let tile_data_index = tile_number as u16 * 16 + i;
+                    addr = tile_data_base + tile_data_index;
+                } else {
+                    // For "signed" tiles in 8800 mode:
+                    //
+                    // * Tile 128 -> 0x8800-0x880F
+                    // * Tile 255 -> 0x8FF0-0x8FFF
+                    let tile_data_index = (tile_number as u16 - 128) * 16 + i;
+                    addr = 0x8800 + tile_data_index;
+                }
+
+                tile_data[i as usize] = self.vram.read_bank(tile_data_bank, addr);
             }
 
             // (7)
@@ -616,8 +646,8 @@ impl Ppu {
 
             // (9)
             let palette_index = (tile_palette_num * 4 + color_index) as usize;
-            let pixel_color = (self.palette_ram[palette_index + 1] as u16) << 8 |
-                              self.palette_ram[palette_index] as u16;
+            let pixel_color = (self.bg_palette_ram[palette_index + 1] as u16) << 8 |
+                              self.bg_palette_ram[palette_index] as u16;
 
             let red = (pixel_color & 0x001F) as u8;
             let green = ((pixel_color & 0x03E0) >> 5) as u8;
@@ -625,12 +655,14 @@ impl Ppu {
             let alpha = 0xFF; // BG is always opaque
 
             // Finally, push the pixel to the frame buffer
-            let pixel_data = Rgba {
+            let mut pixel_data = GameboyRgba {
                 red,
                 blue,
                 green,
                 alpha,
             };
+
+            pixel_data.scale_to_rgb();
 
             self.frame_buffer.write(pixel as usize, scanline as usize, pixel_data);
         }
@@ -640,36 +672,29 @@ impl Ppu {
         //todo!()
     }
 
-    /// Compute the current palette RAM index based on value of BCPS
-    #[inline]
-    fn palette_index(&self, sprite: bool) -> u8 {
-        // Extract palette index information from BCPS
-        let byte = self.bcps & 0x1;
-        let palette_data_num = (self.bcps & (1 << 2 | 1 << 1)) >> 1;
-        let palette_num = (self.bcps & (1 << 5 | 1 << 4 | 1 << 3)) >> 3;
-
-        // Compute the index
-        let mut index = palette_num * 4 + palette_data_num + byte;
-        if sprite {
-            // Offset palette RAM index by 32 bytes in case of a sprite
-            index += 32;
-        }
-
-        index
-    }
-
     /// Write a single byte of data to palette RAM.
     ///
-    /// This handles writes to BCPD (0xFF69).
+    /// This handles writes to BCPD (0xFF69) and OCPD (0xFF6B).
     fn palette_write(&mut self, value: u8, sprite: bool) {
-        let auto_increment = self.bcps & (1 << 7) != 0;
-        let index = self.palette_index(sprite);
+        let auto_increment;
+        let index;
+        let palette_ram;
 
-        // Write the byte to palette RAM
-        self.palette_ram[index as usize] = value;
+        if !sprite {
+            auto_increment = self.bcps & (1 << 7) != 0;
+            index = (self.bcps & 0x3F) as usize;
+            palette_ram = &mut self.bg_palette_ram;
+        } else {
+            auto_increment = self.ocps & (1 << 7) != 0;
+            index = (self.ocps & 0x3F) as usize;
+            palette_ram = &mut self.sprite_palette_ram;
+        }
+
+        // Write the byte to relevant palette RAM
+        palette_ram[index] = value;
 
         if auto_increment {
-            // Auto-increment BCPS/OCPS on write to BCPD (wrapping at bit 5)
+            // Auto-increment BCPS/OCPS on write (wrapping at bit 5)
             let reg = if !sprite {
                 &mut self.bcps
             } else {
@@ -689,8 +714,12 @@ impl Ppu {
 
     /// Read a single byte from palette RAM.
     fn palette_read(&self, sprite: bool) -> u8 {
-        let index = self.palette_index(sprite);
-        self.palette_ram[index as usize]
+        let index = (self.bcps & 0x3F) as usize;
+        if !sprite {
+            self.bg_palette_ram[index]
+        } else {
+            self.sprite_palette_ram[index]
+        }
     }
 
     /// Returns `true` if VRAM is locked to CPU
@@ -782,8 +811,8 @@ impl MemoryWrite<u16, u8> for Ppu {
                 self.stat.set(value);
             }
             Self::SCY_ADDR | Self::SCX_ADDR | Self::LYC_ADDR | Self::WY_ADDR | Self::WX_ADDR => {
-                // Latch these writes until the next scanline change
-                self.write_stack.push((addr, value));
+                // Latch these writes until the next scanline change (FIFO)
+                self.write_stack.push_front((addr, value));
             }
             Self::LY_ADDR => {
                 if self.ly & (1 << 7) != 0 {

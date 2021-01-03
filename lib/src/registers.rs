@@ -99,7 +99,7 @@ impl RegisterFile {
     pub fn new() -> Self {
         Self {
             A: 0x11,
-            F: 0x10,
+            F: 0x80,
             B: 0x00,
             C: 0x13,
             D: 0x00,

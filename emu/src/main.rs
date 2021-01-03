@@ -70,7 +70,7 @@ fn gui() {
     // Create a Texture
     // We write raw pixel data here and copy it to the Canvas for rendering
     let mut texture = texture_creator.create_texture(None,
-                                                     TextureAccess::Streaming,
+                                                     TextureAccess::Target,
                                                      160,
                                                      144).unwrap();
 
@@ -112,30 +112,29 @@ fn gui() {
         // Run the Gameboy for a single frame and return the frame data
         let frame_buffer = gameboy.frame(event);
 
-        // Remember the texture we created above? That is basically a buffer in VRAM
+        // Remember the texture we created above? That is basically a buffer in VRAM.
+        // Writes to the texture need to be copied to VRAM, which is fairly expensive.
+        //
         // With the following, we are setting that texture as a render target for
         // our main canvas. This allows us to use regular canvas drawing functions -
-        // e.g., rect, point - to update the GPU texture buffer.
+        // e.g., rect, point - to update the GPU texture. Note that the texture will be
+        // updated only when all canvas operations are complete.
         //
         // Once this closure ends, the canvas target is reset back for us.
         //
         // Helpful C example: https://wiki.libsdl.org/SDL_CreateTexture
-        canvas.set_draw_color(Color::GREEN);
-        canvas.clear();
-
-        texture.with_lock(None, |pixels, _pitch|{
-            for i in 0..pixels.len() / 4 {
-                let color = frame_buffer.data[i];
-
-                // ARGB8888
-                pixels[i] = color.blue;
-                pixels[i+1] = color.green;
-                pixels[i+2] = color.red;
-                pixels[i+3] = color.alpha;
+        canvas.with_texture_canvas(&mut texture, |canvas| {
+            canvas.clear();
+            for x in 0..160 {
+                for y in 0..144 {
+                    let color = frame_buffer.data[y * 160 + x];
+                    canvas.set_draw_color(Color::RGBA(color.red, color.green, color.blue, color.alpha));
+                    canvas.draw_point((x as i32, y as i32)).unwrap();
+                }
             }
         }).unwrap();
 
-        // Once we've completed our texture operations, we need to copy the texture
+        // Once we've completed our texture operations in VRAM, we need to copy the texture
         // back to the canvas and present it.
         canvas.copy(&texture, None, None).unwrap();
         canvas.present();
