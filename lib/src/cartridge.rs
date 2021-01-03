@@ -277,6 +277,7 @@ impl MemoryRead<u16, u8> for Rom {
             0x4000..=0x7FFF => {
                 // Bank 1 (dynamic)
                 assert!(self.active_bank < self.num_banks);
+                let addr = addr - 0x4000;
                 let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
                 self.bank1[bank_offset + addr]
             }
@@ -298,8 +299,9 @@ impl MemoryWrite<u16, u8> for Rom {
             }
             0x4000..=0x7FFF => {
                 // Bank 1 (dynamic)
+                assert!(self.active_bank < self.num_banks);
+                let addr = addr - 0x4000;
                 let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
-                assert!(bank_offset < self.num_banks as usize);
                 self.bank1[bank_offset + addr] = value;
             }
             _ => unreachable!("Unexpected read from: {}", addr),
@@ -371,6 +373,10 @@ impl MemoryWrite<u16, u8> for Controller {
     #[inline]
     fn write(&mut self, addr: u16, value: u8) {
         match addr {
+            0x0000..=0x1FFF if self.cartridge_type.is_mbc1() => {
+                // Cartridge RAM enable/disable
+                println!("RAM enable/disable");
+            }
             0x2000..=0x3FFF if self.cartridge_type.is_mbc1() => {
                 // MBC1 ROM bank select (5 bit register)
                 let value = value & 0b00011111;
@@ -411,6 +417,10 @@ impl MemoryWrite<u16, u8> for Controller {
                     self.rom.active_bank = value as u16;
                 }
             }
+            0x0000..=0x1FFF if self.cartridge_type.is_mbc3() => {
+                // Cartridge RAM and RTC enable/disable
+                println!("RAM/RTC enable/disable");
+            }
             0x2000..=0x3FFF if self.cartridge_type.is_mbc3() => {
                 // MBC3 ROM bank select (7 bit register)
                 let value = value & 0b01111111;
@@ -429,6 +439,10 @@ impl MemoryWrite<u16, u8> for Controller {
             }
             0x6000..=0x7FFF if self.cartridge_type.is_mbc3() => {
                 todo!("Latch clock data, write only")
+            }
+            0x0000..=0x1FFF if self.cartridge_type.is_mbc5() => {
+                // Cartridge RAM enable/disable
+                println!("RAM enable/disable");
             }
             0x2000..=0x2FFF if self.cartridge_type.is_mbc5() => {
                 // MBC5 ROM bank select (lower 8 bits)

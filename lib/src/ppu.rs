@@ -279,6 +279,9 @@ pub struct Ppu {
     ly: u8,
     lyc: u8,
 
+    /// OAM DMA (0xFF46)
+    oam_dma: u8,
+
     /// Monochrome palette registers (0xFF47-0xFF49)
     bgp: u8,
     obp0: u8,
@@ -347,6 +350,7 @@ impl Ppu {
             scx: 0,
             ly: 0,
             lyc: 0,
+            oam_dma: 0,
             bgp: 0,
             obp0: 0,
             obp1: 0,
@@ -614,7 +618,7 @@ impl Ppu {
     }
 
     fn render_sprites(&mut self) {
-        todo!()
+        //todo!()
     }
 
     /// Compute the current palette RAM index based on value of BCPS
@@ -724,6 +728,7 @@ impl MemoryRead<u16, u8> for Ppu {
             Self::SCX_ADDR => self.scx,
             Self::LY_ADDR => self.ly,
             Self::LYC_ADDR => self.lyc,
+            0xFF46 => self.oam_dma,
             0xFF47 => self.bgp,
             0xFF48 => self.obp0,
             0xFF49 => self.obp1,
@@ -772,6 +777,7 @@ impl MemoryWrite<u16, u8> for Ppu {
                     self.ly = value;
                 }
             }
+            0xFF46 => self.oam_dma = value,
             0xFF47 => self.bgp = value,
             0xFF48 => self.obp0 = value,
             0xFF49 => self.obp1 = value,
