@@ -40,7 +40,7 @@ impl Gameboy {
         let gameboy = Ok(Self {
             cpu,
             // Dump all instructions to a file
-            debugger: debug::Debugger::new(false),
+            debugger: debug::Debugger::new(),
         });
 
         #[cfg(not(feature = "debug"))]

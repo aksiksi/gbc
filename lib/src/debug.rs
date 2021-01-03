@@ -5,6 +5,8 @@ use crate::cpu::Cpu;
 use crate::instructions::Instruction;
 use crate::memory::{MemoryRead, MemoryWrite};
 
+const DEBUG_DUMP_FILE: &str = "dump.txt";
+
 pub enum Mode {
     Step,
     StepN(u32),
@@ -21,20 +23,14 @@ pub struct Debugger {
 }
 
 impl Debugger {
-    pub fn new(dump: bool) -> Self {
-        let instruction_dump = if dump {
-            Some(File::create("out.txt").unwrap())
-        } else {
-            None
-        };
-
+    pub fn new() -> Self {
         Self {
             mode: Mode::Step,
             steps: 0,
             checks: 0,
             breakpoints: Vec::new(),
             instructions: Vec::new(),
-            instruction_dump,
+            instruction_dump: None,
         }
     }
 
@@ -157,6 +153,16 @@ impl Debugger {
                     self.breakpoints[index].1 = false;
                 }
                 "disable" => eprintln!("'disable' requires at least 1 argument"),
+                "dump" if line.len() == 2 => {
+                    let flag: u32 = line[1].parse().unwrap();
+                    if flag == 0 {
+                        let _ = self.instruction_dump.take();
+                        println!("Disabled instruction dumping");
+                    } else {
+                        self.instruction_dump = Some(File::create(DEBUG_DUMP_FILE).unwrap());
+                        println!("Dumping instructions to {}", DEBUG_DUMP_FILE);
+                    }
+                }
                 "h" | "hist" => {
                     let count: usize = if line.len() < 2 {
                         5
