@@ -58,7 +58,9 @@ fn gui() {
 
     // Convert the Window into a Canvas
     // This is what we will use to render content in the Window
+    // TODO: Add flag for software vs. GPU
     let mut canvas = window.into_canvas()
+                           .software()
                            .build()
                            .unwrap();
 
@@ -112,13 +114,14 @@ fn gui() {
         // Run the Gameboy for a single frame and return the frame data
         let frame_buffer = gameboy.frame(event);
 
-        // Remember the texture we created above? That is basically a buffer in VRAM.
-        // Writes to the texture need to be copied to VRAM, which is fairly expensive.
-        //
-        // With the following, we are setting that texture as a render target for
+        // With the following, we are setting the texture as a render target for
         // our main canvas. This allows us to use regular canvas drawing functions -
-        // e.g., rect, point - to update the GPU texture. Note that the texture will be
-        // updated only when all canvas operations are complete.
+        // e.g., rect, point - to update the underlyinh texture. Note that the texture
+        // will be updated only when all canvas operations are complete.
+        //
+        // Note that, if GPU rendering is enabled, the texture lives in GPU VRAM. If
+        // this is the case, updates are fairly expensive, as we need to round-trip
+        // to GPU VRAM on every frame (?).
         //
         // Once this closure ends, the canvas target is reset back for us.
         //
@@ -134,38 +137,20 @@ fn gui() {
             }
         }).unwrap();
 
-        // Once we've completed our texture operations in VRAM, we need to copy the texture
-        // back to the canvas and present it.
+        // Once we've completed our texture operations, we need to copy the texture
+        // back to the canvas to be able to present it.
         canvas.copy(&texture, None, None).unwrap();
         canvas.present();
 
         let elapsed = frame_start.elapsed();
+
         if elapsed < frame_duration {
             std::thread::sleep(frame_duration - elapsed);
         }
-
-        // println!("{:?}, {:?}", frame_duration, elapsed);
     }
 }
 
 fn main() -> Result<()> {
-    // let mut gameboy = Gameboy::init("samples/pokemon_gold.gbc")?;
-    // gameboy.run();
-
     gui();
-
-    // let cpu = gameboy.cpu();
-    // cpu.step();
-    // cpu.step();
-    // cpu.step();
-    // cpu.step();
-    // cpu.step();
-    // cpu.step();
-    // cpu.step();
-    // cpu.step();
-    // cpu.step();
-    // cpu.step();
-    // cpu.step();
-
     Ok(())
 }
