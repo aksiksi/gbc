@@ -155,37 +155,56 @@ impl MemoryWrite<u16, u8> for Vram {
     }
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 struct LcdControl {
     /// Raw register value
     pub raw: u8,
-
-    pub lcd_display_enable: bool, // bit 7
-    pub window_tile_map_select: bool, // bit 6
-    pub window_display_enable: bool, // bit 5
-    pub bg_tile_data_select: bool, // bit 4
-    pub bg_tile_map_select: bool, // bit 3
-    pub sprite_size: bool, // bit 2
-    pub sprite_enable: bool, // bit 1
-    pub bg_priority: bool, // bit 0
 }
 
 impl LcdControl {
     pub fn new() -> Self {
-        Default::default()
+        Self {
+            raw: 0x91,
+        }
     }
 
     pub fn set(&mut self, raw: u8) {
         self.raw = raw;
+    }
 
-        self.lcd_display_enable = raw & (1 << 7) != 0;
-        self.window_tile_map_select = raw & (1 << 6) != 0;
-        self.window_display_enable = raw & (1 << 5) != 0;
-        self.bg_tile_data_select = raw & (1 << 4) != 0;
-        self.bg_tile_map_select = raw & (1 << 3) != 0;
-        self.sprite_size = raw & (1 << 2) != 0;
-        self.sprite_enable = raw & (1 << 1) != 0;
-        self.bg_priority = raw & (1 << 0) != 0;
+    pub fn lcd_display_enable(&self) -> bool {
+        self.raw & (1 << 7) != 0
+    }
+
+    #[allow(unused)]
+    pub fn window_tile_map_select(&self) -> bool {
+        self.raw & (1 << 6) != 0
+    }
+
+    #[allow(unused)]
+    pub fn window_display_enable(&self) -> bool {
+        self.raw & (1 << 5) != 0
+    }
+
+    pub fn bg_tile_data_select(&self) -> bool {
+        self.raw & (1 << 4) != 0
+    }
+
+    pub fn bg_tile_map_select(&self) -> bool {
+        self.raw & (1 << 3) != 0
+    }
+
+    #[allow(unused)]
+    pub fn sprite_size(&self) -> bool {
+        self.raw & (1 << 2) != 0
+    }
+
+    pub fn sprite_enable(&self) -> bool {
+        self.raw & (1 << 1) != 0
+    }
+
+    pub fn bg_priority(&self) -> bool {
+        self.raw & (1 << 0) != 0
     }
 }
 
@@ -351,9 +370,9 @@ impl Ppu {
             ly: 0,
             lyc: 0,
             oam_dma: 0,
-            bgp: 0,
-            obp0: 0,
-            obp1: 0,
+            bgp: 0xFC,
+            obp0: 0xFF,
+            obp1: 0xFF,
             wy: 0,
             wx: 0,
             bcps: 0,
@@ -472,7 +491,7 @@ impl Ppu {
     /// Render pixel data to the internal frame buffer
     fn render(&mut self, stat_mode_change: bool) {
         // If the display is currently disabled, no rendering needs to be done
-        if !self.lcdc.lcd_display_enable {
+        if !self.lcdc.lcd_display_enable() {
             return;
         }
 
@@ -500,11 +519,11 @@ impl Ppu {
     /// This is split into rendering BG/window tiles and rendering sprites. Note
     /// that sprites are more often layered on top of the BG.
     fn render_scanline(&mut self) {
-        if self.lcdc.bg_priority {
+        if self.lcdc.bg_priority() {
             self.render_tiles();
         }
 
-        if self.lcdc.sprite_enable {
+        if self.lcdc.sprite_enable() {
             self.render_sprites();
         }
     }
@@ -514,14 +533,14 @@ impl Ppu {
         let scanline = self.ly;
 
         // Select base address for BG tile map based on LCDC register
-        let tile_map_base: u16 = if !self.lcdc.bg_tile_map_select {
+        let tile_map_base: u16 = if !self.lcdc.bg_tile_map_select() {
             0x9800
         } else {
             0x9C00
         };
 
         // Select base address for BG tile data based on LCDC register
-        let tile_data_base: u16 = if !self.lcdc.bg_tile_data_select {
+        let tile_data_base: u16 = if !self.lcdc.bg_tile_data_select() {
             0x8000
         } else {
             0x8800

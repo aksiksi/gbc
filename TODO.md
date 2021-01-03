@@ -6,9 +6,11 @@
 - [x] Get basic GUI up and running
 - [x] Work on I/O emulation
 - [x] Figure out which data to render to GUI
+- [ ] Debug the bad BG rendering using BGB as a comparison
 - [ ] Look into bad instruction in CPU test
+    - [ ] Use BGB to compare the flow
 - [ ] Look into inconsistent rendering
-- [ ] Migrate to software rendering
+- [x] Migrate to software rendering
 - [ ] Get regular OAM DMA working
     - Wiki on how OAM DMA works: https://gbdev.gg8.se/wiki/articles/OAM_DMA_tutorial
 - [ ] Get OAM HDMA working
