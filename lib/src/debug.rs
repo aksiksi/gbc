@@ -1,3 +1,4 @@
+use std::fs::File;
 use std::io::Write;
 
 use crate::cpu::Cpu;
@@ -16,16 +17,24 @@ pub struct Debugger {
     steps: u32,
     breakpoints: Vec<(u16, bool)>,
     instructions: Vec<(Instruction, u16)>,
+    instruction_dump: Option<File>,
 }
 
 impl Debugger {
-    pub fn new() -> Self {
+    pub fn new(dump: bool) -> Self {
+        let instruction_dump = if dump {
+            Some(File::create("out.txt").unwrap())
+        } else {
+            None
+        };
+
         Self {
             mode: Mode::Step,
             steps: 0,
             checks: 0,
             breakpoints: Vec::new(),
             instructions: Vec::new(),
+            instruction_dump,
         }
     }
 
@@ -40,6 +49,11 @@ impl Debugger {
         // Keep track of each instruction the CPU executes
         let (inst, _, _) = cpu.fetch(None);
         self.instructions.push((inst, pc));
+
+        // Dump each instruction to a file
+        if let Some(f) = self.instruction_dump.as_mut() {
+            write!(f, "{:#06x}: {}\n", pc, inst).unwrap();
+        }
 
         self.checks += 1;
 

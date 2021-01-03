@@ -39,7 +39,8 @@ impl Gameboy {
         #[cfg(feature = "debug")]
         let gameboy = Ok(Self {
             cpu,
-            debugger: debug::Debugger::new(),
+            // Dump all instructions to a file
+            debugger: debug::Debugger::new(false),
         });
 
         #[cfg(not(feature = "debug"))]
@@ -60,8 +61,8 @@ impl Gameboy {
         let cycle_time = self.cpu.cycle_time();
         let num_cycles = Self::FRAME_DURATION / cycle_time;
 
-        let now = Instant::now();
-        let mut iters = 0;
+        // let now = Instant::now();
+        // let mut iters = 0;
 
         // Execute next instruction
         let mut cycle = 0;
@@ -103,7 +104,7 @@ impl Gameboy {
             }
 
             cycle += cycles_taken as u32;
-            iters += 1;
+            // iters += 1;
         }
 
         // println!("Done: {:?}, Iters: {}", now.elapsed(), iters);

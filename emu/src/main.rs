@@ -75,6 +75,7 @@ fn gui() {
                                                      144).unwrap();
 
     let rom_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../samples/cpu_instrs.gb");
+    // let rom_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../samples/opus5.gb");
     let mut gameboy = Gameboy::init(rom_path).unwrap();
     let frame_duration = Duration::new(0, Gameboy::FRAME_DURATION);
 
