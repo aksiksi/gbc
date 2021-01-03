@@ -252,6 +252,10 @@ impl Cpu {
                     let addr = self.registers.read(dst);
                     self.memory.write(addr, self.registers.read(src));
                 }
+                (Arg::Mem(dst), Arg::Imm8(src)) => {
+                    let addr = self.registers.read(dst);
+                    self.memory.write(addr, src);
+                }
                 (Arg::MemImm(dst), Arg::Reg8(src)) => {
                     self.memory.write(dst, self.registers.read(src));
                 }
@@ -347,11 +351,10 @@ impl Cpu {
             Ret { cond } => {
                 let ok = match cond {
                     Cond::None => true,
-                    Cond::NotZero if !self.registers.zero() => true,
-                    Cond::Zero if self.registers.zero() => true,
-                    Cond::NotCarry if !self.registers.carry() => true,
-                    Cond::Carry if self.registers.carry() => true,
-                    _ => false,
+                    Cond::NotZero => !self.registers.zero(),
+                    Cond::Zero => self.registers.zero(),
+                    Cond::NotCarry => !self.registers.carry(),
+                    Cond::Carry => self.registers.carry(),
                 };
 
                 if ok {
@@ -372,11 +375,10 @@ impl Cpu {
             Jp { addr, cond } | Call { addr, cond } => {
                 let ok = match cond {
                     Cond::None => true,
-                    Cond::NotZero if !self.registers.zero() => true,
-                    Cond::Zero if self.registers.zero() => true,
-                    Cond::NotCarry if !self.registers.carry() => true,
-                    Cond::Carry if self.registers.carry() => true,
-                    _ => false,
+                    Cond::NotZero => !self.registers.zero(),
+                    Cond::Zero => self.registers.zero(),
+                    Cond::NotCarry => !self.registers.carry(),
+                    Cond::Carry => self.registers.carry(),
                 };
 
                 if ok {
@@ -397,11 +399,10 @@ impl Cpu {
             Jr { offset, cond } => {
                 let ok = match cond {
                     Cond::None => true,
-                    Cond::NotZero if !self.registers.zero() => true,
-                    Cond::Zero if self.registers.zero() => true,
-                    Cond::NotCarry if !self.registers.carry() => true,
-                    Cond::Carry if self.registers.carry() => true,
-                    _ => false,
+                    Cond::NotZero => !self.registers.zero(),
+                    Cond::Zero => self.registers.zero(),
+                    Cond::NotCarry => !self.registers.carry(),
+                    Cond::Carry => self.registers.carry(),
                 };
 
                 if ok {
