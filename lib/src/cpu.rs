@@ -729,7 +729,7 @@ impl Cpu {
 
         let (result, carry) = {
             let val = self.registers.read(src);
-            half_carry = val.half_carry(hl);
+            half_carry = hl.half_carry(val);
             hl.overflowing_add(val)
         };
 
@@ -839,7 +839,7 @@ impl Cpu {
     /// Increment instruction
     fn inc(&mut self, dst: Arg) {
         let mut update_flags = true;
-        let half_carry: bool;
+        let mut half_carry = false;
 
         let result = match dst {
             Arg::Reg8(dst) => {
@@ -852,7 +852,6 @@ impl Cpu {
             Arg::Reg16(dst) => {
                 let curr = self.registers.read(dst);
                 let result = curr.wrapping_add(1);
-                half_carry = false;
                 update_flags = false;
                 self.registers.write(dst, result);
                 result
@@ -880,35 +879,35 @@ impl Cpu {
         let mut update_flags = true;
         let mut half_carry = false;
 
-        let (result, carry) = match dst {
+        let result = match dst {
             Arg::Reg8(dst) => {
                 let curr = self.registers.read(dst);
 
                 // If lower nibble == 0, set the half-carry bit
                 half_carry = curr & 0x0F == 0;
 
-                let (result, borrow) = curr.overflowing_sub(1);
+                let result = curr.wrapping_sub(1);
                 self.registers.write(dst, result);
 
-                (result as u16, borrow)
+                result as u16
             }
             Arg::Reg16(dst) => {
                 update_flags = false; // 16-bit variant does not touch flags
                 let result = self.registers.read(dst).wrapping_sub(1);
                 self.registers.write(dst, result);
-                (result, false)
+                result
             }
             Arg::MemHl => {
                 let addr = self.registers.read(Reg16::HL);
                 let curr = self.memory.read(addr);
 
                 // If lower nibble == 0, set the half-carry bit
-                half_carry = curr & 0xFF == 0;
+                half_carry = curr & 0x0F == 0;
 
-                let (result, borrow) = curr.overflowing_sub(1);
+                let result = curr.wrapping_sub(1);
                 self.memory.write(addr, result);
 
-                (result as u16, borrow)
+                result as u16
             }
             _ => unreachable!("Unexpected dst: {}", dst),
         };
@@ -917,7 +916,6 @@ impl Cpu {
             self.registers.set(Flag::Zero, result == 0);
             self.registers.set(Flag::Subtract, true);
             self.registers.set(Flag::HalfCarry, half_carry);
-            self.registers.set(Flag::Carry, carry);
         }
     }
 

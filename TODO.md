@@ -11,6 +11,8 @@
     - [x] Use BGB to compare the flow
 - [x] Look into inconsistent rendering
 - [x] Migrate to software rendering
+- [ ] Move debugger into CPU
+    - [ ] Wrap all memory operations to be able to break on reads/writes in debugger
 - [ ] Get regular OAM DMA working
     - Wiki on how OAM DMA works: https://gbdev.gg8.se/wiki/articles/OAM_DMA_tutorial
 - [ ] Get OAM HDMA working
