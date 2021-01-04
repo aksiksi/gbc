@@ -58,10 +58,10 @@ impl Ram {
     pub fn update_bank(&mut self, bank: u8) {
         match self {
             Self::Banked {
-                data: _,
-                active_bank,
+                active_bank, ..
             } => {
-                *active_bank = bank;
+                // Mask out the selected bank based on number of banks
+                *active_bank = bank & 0b0111;
             }
             _ => panic!("Received RAM bank change request on unbanked RAM"),
         }

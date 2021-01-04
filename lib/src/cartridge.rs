@@ -57,7 +57,7 @@ pub enum Ram {
     Banked {
         data: Vec<u8>,
         active_bank: u8,
-        num_banks: u16,
+        num_banks: u8,
         ram_size: RamSize,
     },
 }
@@ -86,7 +86,7 @@ impl Ram {
                 // Get raw RAM size in bytes
                 let size = usize::from(ram_size);
                 let data = vec![0u8; size];
-                let num_banks = (size / Self::BANK_SIZE) as u16;
+                let num_banks = (size / Self::BANK_SIZE) as u8;
 
                 Some(Self::Banked {
                     data,
@@ -102,9 +102,10 @@ impl Ram {
     pub fn set_bank(&mut self, bank: u8) {
         match self {
             Self::Banked {
-                data: _, active_bank, ..
+                active_bank, num_banks, ..
             } => {
-                *active_bank = bank;
+                // Mask out the selected bank based on number of banks
+                *active_bank = bank & (*num_banks - 1);
             }
             _ => (),
         }
@@ -262,6 +263,10 @@ impl Rom {
 
         Ok(rom)
     }
+
+    pub fn update_bank(&mut self, bank: u16) {
+        self.active_bank = bank & (self.num_banks - 1);
+    }
 }
 
 impl MemoryRead<u16, u8> for Rom {
@@ -381,7 +386,7 @@ impl MemoryWrite<u16, u8> for Controller {
                 // MBC1 ROM bank select (5 bit register)
                 let value = value & 0b00011111;
                 let value = if value == 0 { 1 } else { value };
-                self.rom.active_bank = value as u16;
+                self.rom.update_bank(value as u16);
             }
             0x4000..=0x5FFF if self.cartridge_type.is_mbc1() => {
                 // MBC1 RAM bank select OR upper 2 bits of ROM bank (2 bit register)
@@ -392,7 +397,8 @@ impl MemoryWrite<u16, u8> for Controller {
                     self.ram.as_mut().unwrap().set_bank(value);
                 } else if usize::from(self.rom_size) >= RomSize::_1M.into() {
                     // Set as upper two bits of ROM bank
-                    self.rom.active_bank |= (value as u16) << 5;
+                    let value = self.rom.active_bank | (value as u16) << 5;
+                    self.rom.update_bank(value);
                 }
             }
             0x6000..=0x7FFF if self.cartridge_type.is_mbc1() => {
@@ -414,7 +420,7 @@ impl MemoryWrite<u16, u8> for Controller {
                     // we have a valid ROM bank select request
                     let value = value & 0xF;
                     let value = if value == 0 { 1 } else { value };
-                    self.rom.active_bank = value as u16;
+                    self.rom.update_bank(value as u16);
                 }
             }
             0x0000..=0x1FFF if self.cartridge_type.is_mbc3() => {
@@ -425,7 +431,7 @@ impl MemoryWrite<u16, u8> for Controller {
                 // MBC3 ROM bank select (7 bit register)
                 let value = value & 0b01111111;
                 let value = if value == 0 { 1 } else { value };
-                self.rom.active_bank = value as u16;
+                self.rom.update_bank(value as u16);
             }
             0x4000..=0x5FFF if self.cartridge_type.is_mbc3() => {
                 // MBC3 RAM bank select OR RTC register select (2 bits)
@@ -446,12 +452,14 @@ impl MemoryWrite<u16, u8> for Controller {
             }
             0x2000..=0x2FFF if self.cartridge_type.is_mbc5() => {
                 // MBC5 ROM bank select (lower 8 bits)
-                self.rom.active_bank |= value as u16;
+                let value = self.rom.active_bank | value as u16;
+                self.rom.update_bank(value);
             }
             0x3000..=0x3FFF if self.cartridge_type.is_mbc5() => {
                 // MBC5 ROM bank select (9th bit)
                 let value = (value & 0x1) as u16;
-                self.rom.active_bank |= value << 8;
+                let value = self.rom.active_bank | value << 8;
+                self.rom.update_bank(value);
             }
             0x4000..=0x5FFF if self.cartridge_type.is_mbc5() => {
                 // MBC5 RAM bank select (4 bits)
