@@ -1,3 +1,5 @@
+use crate::cartridge::Cartridge;
+use crate::error::Result;
 use crate::instructions::{Arg, Cond, Cycles, Instruction};
 use crate::memory::{MemoryBus, MemoryRead, MemoryWrite};
 use crate::registers::{Flag, Reg16, Reg8, RegisterFile, RegisterOps};
@@ -55,6 +57,7 @@ impl HalfCarry<u16> for u16 {
 
 pub struct Cpu {
     pub registers: RegisterFile,
+    pub cartridge: Cartridge,
     pub memory: MemoryBus,
 
     /// Global interrupt enable flag (Interrupt Master Enable)
@@ -63,14 +66,17 @@ pub struct Cpu {
 }
 
 impl Cpu {
-    pub fn new(memory: MemoryBus) -> Self {
+    pub fn new(mut cartridge: Cartridge) -> Result<Self> {
         let registers = RegisterFile::new();
-        Self {
+        let memory = MemoryBus::from_cartridge(&mut cartridge)?;
+
+        Ok(Self {
             registers,
+            cartridge,
             memory,
             ime: false,
             is_halted: false,
-        }
+        })
     }
 
     /// Returns `true` if this CPU is in double-speed mode.
@@ -86,6 +92,14 @@ impl Cpu {
         } else {
             238
         }
+    }
+
+    /// Reset this CPU to initial state
+    pub fn reset(&mut self) {
+        self.registers = RegisterFile::new();
+        self.is_halted = false;
+        self.ime = false;
+        self.memory = MemoryBus::from_cartridge(&mut self.cartridge).unwrap();
     }
 
     /// Executes the next instruction and returns the number of cycles it
@@ -974,10 +988,6 @@ impl Cpu {
 
     pub fn memory(&self) -> &MemoryBus {
         &self.memory
-    }
-
-    pub fn reset(&mut self) {
-        unimplemented!()
     }
 }
 

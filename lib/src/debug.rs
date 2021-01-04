@@ -56,17 +56,23 @@ impl Debugger {
         let res = match self.mode {
             Mode::Step => true,
             Mode::StepN(n) => {
-                (self.checks - self.steps) == n - 1
+                if self.checks - self.steps == n {
+                    self.steps = self.checks - 1;
+                    true
+                } else {
+                    false
+                }
             }
             Mode::Continue => {
+                let mut breakpoint_hit = false;
                 for (addr, enabled) in &self.breakpoints {
                     if *enabled && pc == *addr {
-                        self.steps = self.checks;
-                        return true;
+                        self.steps = self.checks - 1;
+                        breakpoint_hit = true;
                     }
                 }
 
-                false
+                breakpoint_hit
             }
         };
 
@@ -188,6 +194,14 @@ impl Debugger {
                 }
                 "count" => {
                     println!("{}", self.instructions.len());
+                }
+                "reset" => {
+                    // Reset the CPU
+                    cpu.reset();
+                    self.checks = 0;
+                    self.steps = 0;
+                    self.instructions.clear();
+                    println!("CPU reset");
                 }
                 "l" | "list" => {
                     // Number of instructions to disassemble, startng from address below

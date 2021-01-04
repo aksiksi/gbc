@@ -335,7 +335,7 @@ impl MemoryBus {
         }
     }
 
-    pub fn from_cartridge(cartridge: Cartridge) -> Result<Self> {
+    pub fn from_cartridge(cartridge: &mut Cartridge) -> Result<Self> {
         let controller = Controller::from_cartridge(cartridge)?;
 
         Ok(Self {

@@ -32,9 +32,8 @@ impl Gameboy {
     pub const FRAME_DURATION: u32 = 16_666_666; // in ns
 
     pub fn init<P: AsRef<Path>>(rom_path: P) -> Result<Self> {
-        let cartridge = Cartridge::from_file(rom_path).unwrap();
-        let memory = memory::MemoryBus::from_cartridge(cartridge)?;
-        let cpu = Cpu::new(memory);
+        let cartridge = Cartridge::from_file(rom_path)?;
+        let cpu = Cpu::new(cartridge)?;
 
         #[cfg(feature = "debug")]
         let gameboy = Ok(Self {
