@@ -31,23 +31,30 @@ pub struct Gameboy {
 impl Gameboy {
     pub const FRAME_DURATION: u32 = 16_666_666; // in ns
 
-    pub fn init<P: AsRef<Path>>(rom_path: P) -> Result<Self> {
-        let cartridge = Cartridge::from_file(rom_path)?;
+    /// Initialize the emulator with an optional ROM.
+    ///
+    /// If no ROM is provided, the emulator will boot into the CGB BIOS ROM. You can
+    /// use `Self::insert` to load a cartridge later.
+    pub fn init<P: AsRef<Path>>(rom_path: Option<P>) -> Result<Self> {
+        let cartridge = match rom_path {
+            Some(p) => Some(Cartridge::from_file(p)?),
+            None => None,
+        };
+
         let cpu = Cpu::new(cartridge)?;
 
         #[cfg(feature = "debug")]
-        let gameboy = Ok(Self {
+        let gameboy = Self {
             cpu,
-            // Dump all instructions to a file
             debugger: debug::Debugger::new(),
-        });
+        };
 
         #[cfg(not(feature = "debug"))]
-        let gameboy = Ok(Self {
+        let gameboy = Self {
             cpu,
-        });
+        };
 
-        gameboy
+        Ok(gameboy)
     }
 
     /// Run Gameboy for a single frame.
@@ -100,6 +107,24 @@ impl Gameboy {
 
         // Return the rendered frame as a frame buffer
         self.cpu.memory.ppu().frame_buffer()
+    }
+
+    /// Insert a new cartridge and reset the emulator
+    pub fn insert<P: AsRef<Path>>(&mut self, rom_path: P) -> Result<()> {
+        let cartridge = Some(Cartridge::from_file(rom_path)?);
+        self.cpu = Cpu::new(cartridge)?;
+        Ok(())
+    }
+
+    /// Eject the inserted cartridge, if any, and reset the CPU
+    pub fn eject(&mut self) {
+        self.cpu = Cpu::new(None).unwrap();
+    }
+
+    /// Reset the emulator
+    pub fn reset(&mut self) -> Result<()> {
+        // Reset the CPU
+        self.cpu.reset()
     }
 
     pub fn cpu(&mut self) -> &mut Cpu {

@@ -57,7 +57,6 @@ impl HalfCarry<u16> for u16 {
 
 pub struct Cpu {
     pub registers: RegisterFile,
-    pub cartridge: Cartridge,
     pub memory: MemoryBus,
 
     /// Global interrupt enable flag (Interrupt Master Enable)
@@ -66,13 +65,16 @@ pub struct Cpu {
 }
 
 impl Cpu {
-    pub fn new(mut cartridge: Cartridge) -> Result<Self> {
+    pub fn new(cartridge: Option<Cartridge>) -> Result<Self> {
         let registers = RegisterFile::new();
-        let memory = MemoryBus::from_cartridge(&mut cartridge)?;
+
+        let memory = match cartridge {
+            Some(c) => MemoryBus::from_cartridge(c)?,
+            None => MemoryBus::new(),
+        };
 
         Ok(Self {
             registers,
-            cartridge,
             memory,
             ime: false,
             is_halted: false,
@@ -95,11 +97,21 @@ impl Cpu {
     }
 
     /// Reset this CPU to initial state
-    pub fn reset(&mut self) {
+    pub fn reset(&mut self) -> Result<()> {
         self.registers = RegisterFile::new();
         self.is_halted = false;
         self.ime = false;
-        self.memory = MemoryBus::from_cartridge(&mut self.cartridge).unwrap();
+
+        // If a cartridge is inserted, rebuild memory from the cartridge
+        // Otherwise, build a "default" memory bus
+        let memory = match self.memory.cartridge.take() {
+            Some(c) => MemoryBus::from_cartridge(c)?,
+            None => MemoryBus::new(),
+        };
+
+        self.memory = memory;
+
+        Ok(())
     }
 
     /// Executes the next instruction and returns the number of cycles it
