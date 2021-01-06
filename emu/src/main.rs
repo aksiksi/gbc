@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use std::path::Path;
+use std::path::PathBuf;
 use std::time::{Instant, Duration};
 
 use gbc::{Gameboy, Result};
@@ -9,6 +9,17 @@ use sdl2::render::TextureAccess;
 use sdl2::pixels::Color;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
+
+use structopt::StructOpt;
+
+#[derive(Debug, StructOpt)]
+struct Cli {
+    #[structopt(parse(from_os_str))]
+    rom_file: Option<PathBuf>,
+
+    #[structopt(long)]
+    headless: bool,
+}
 
 fn keycode_to_joypad_input(keycode: Option<Keycode>) -> Option<JoypadInput> {
     match keycode.unwrap() {
@@ -45,7 +56,7 @@ fn event_to_joypad(event: Event) -> Option<JoypadEvent> {
     }
 }
 
-fn gui() {
+fn gui(rom_path: Option<PathBuf>) {
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
 
@@ -76,11 +87,12 @@ fn gui() {
                                                      160,
                                                      144).unwrap();
 
-    let rom_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../samples/blargg/cpu_instrs/cpu_instrs.gb");
-    let rom_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../samples/blargg/cpu_instrs/09-op r,r.gb");
+    // let rom_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../samples/blargg/cpu_instrs/cpu_instrs.gb");
+    // let rom_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../samples/blargg/cpu_instrs/09-op r,r.gb");
     // let rom_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../samples/blargg/cpu_instrs/11-op a,(hl).gb");
     // let rom_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../samples/pokemon_gold.gbc");
-    let mut gameboy = Gameboy::init(Some(rom_path)).unwrap();
+
+    let mut gameboy = Gameboy::init(rom_path).unwrap();
     let frame_duration = Duration::new(0, Gameboy::FRAME_DURATION);
 
     // Start the event loop
@@ -157,6 +169,19 @@ fn gui() {
 }
 
 fn main() -> Result<()> {
-    gui();
+    let cli = Cli::from_args();
+
+    if !cli.headless {
+        gui(cli.rom_file);
+    } else {
+        let mut gameboy = Gameboy::init(cli.rom_file)?;
+        loop {
+            // TODO: Perhaps allow user to provide joypad input file?
+            // e.g., list of (input, time)
+            gameboy.frame(None);
+            std::thread::sleep(Duration::from_nanos(Gameboy::FRAME_DURATION as u64))
+        }
+    }
+
     Ok(())
 }

@@ -10,4 +10,4 @@ debug = ["gbc/debug"]
 [dependencies]
 gbc = { path = "../lib" }
 sdl2 = { version = "0.34.3", features = [ "bundled", "static-link" ] }
-structopt = "0.3"
+structopt = { version = "0.3", default-features = false }

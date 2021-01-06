@@ -1006,8 +1006,7 @@ mod test {
     use super::*;
 
     fn get_cpu() -> Cpu {
-        let memory = MemoryBus::new();
-        Cpu::new(memory)
+        Cpu::new(None).unwrap()
     }
 
     #[test]
