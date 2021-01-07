@@ -969,23 +969,22 @@ impl Cpu {
         let mut carry = self.registers.carry();
 
         let mut a = self.registers.read(Reg8::A);
-        let lower = a & 0xF;
-        let upper = a >> 4;
+        let lower = a & 0x0F;
 
-        if subtract {
+        if !subtract {
+            if half_carry || lower >= 0xA {
+                a = a.wrapping_add(0x06);
+            }
+            if carry || a > 0x99 {
+                a = a.wrapping_add(0x60);
+                carry = true;
+            }
+        } else {
             if half_carry {
                 a = a.wrapping_sub(0x06);
             }
             if carry {
                 a = a.wrapping_sub(0x60);
-            }
-        } else {
-            if half_carry || lower >= 0xA {
-                a = a.wrapping_add(0x06);
-            }
-            if carry || upper >= 0x9 {
-                a = a.wrapping_add(0x60);
-                carry = true;
             }
         }
 

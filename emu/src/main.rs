@@ -15,7 +15,7 @@ use structopt::StructOpt;
 #[derive(Debug, StructOpt)]
 struct Cli {
     #[structopt(parse(from_os_str))]
-    rom_file: Option<PathBuf>,
+    rom_file: PathBuf,
 
     #[structopt(long)]
     headless: bool,
@@ -75,8 +75,6 @@ fn gui(rom_path: Option<PathBuf>) {
                            .build()
                            .unwrap();
 
-    dbg!(canvas.info());
-
     // Get a handle to the Canvas texture creator
     let texture_creator = canvas.texture_creator();
 
@@ -86,11 +84,6 @@ fn gui(rom_path: Option<PathBuf>) {
                                                      TextureAccess::Target,
                                                      160,
                                                      144).unwrap();
-
-    // let rom_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../samples/blargg/cpu_instrs/cpu_instrs.gb");
-    // let rom_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../samples/blargg/cpu_instrs/09-op r,r.gb");
-    // let rom_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../samples/blargg/cpu_instrs/11-op a,(hl).gb");
-    // let rom_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../samples/pokemon_gold.gbc");
 
     let mut gameboy = Gameboy::init(rom_path).unwrap();
     let frame_duration = Duration::new(0, Gameboy::FRAME_DURATION);
@@ -172,9 +165,9 @@ fn main() -> Result<()> {
     let cli = Cli::from_args();
 
     if !cli.headless {
-        gui(cli.rom_file);
+        gui(Some(cli.rom_file));
     } else {
-        let mut gameboy = Gameboy::init(cli.rom_file)?;
+        let mut gameboy = Gameboy::init(Some(cli.rom_file))?;
         loop {
             // TODO: Perhaps allow user to provide joypad input file?
             // e.g., list of (input, time)
