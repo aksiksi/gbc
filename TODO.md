@@ -14,7 +14,8 @@
 - [ ] ~~Move debugger into CPU~~
     - [ ] ~~Wrap all memory operations to be able to break on reads/writes in debugger~~
     - [ ] Not possible: we would not be able to pass the `Cpu` into the `Debugger`
-- [ ] Individual tests that fail are 9 & 11
+- [ ] Individual tests are mostly failing
+    - [ ] For test 1, DAA seems fine. The problem is likely in surrounding code. Maybe the checksum check?
 - [ ] Get regular OAM DMA working
     - Wiki on how OAM DMA works: https://gbdev.gg8.se/wiki/articles/OAM_DMA_tutorial
 - [ ] Get OAM HDMA working
