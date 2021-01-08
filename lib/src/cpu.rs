@@ -59,12 +59,21 @@ pub struct Cpu {
     pub registers: RegisterFile,
     pub memory: MemoryBus,
 
+    /// Number of cycles executed by this CPU since last reset.
+    pub cycle_count: u64,
+
     /// Global interrupt enable flag (Interrupt Master Enable)
     ime: bool,
     pub is_halted: bool,
 }
 
 impl Cpu {
+    /// Base CPU frequency, in Hz
+    pub const BASE_FREQ: u32 = 4_194_304;
+
+    /// CPU cycle time, in ns
+    pub const CYCLE_TIME: u32 = ((1.0 / Self::BASE_FREQ as f64) * 1e9) as u32;
+
     pub fn new(cartridge: Option<Cartridge>) -> Result<Self> {
         let registers = RegisterFile::new();
 
@@ -76,6 +85,7 @@ impl Cpu {
         Ok(Self {
             registers,
             memory,
+            cycle_count: 0,
             ime: false,
             is_halted: false,
         })
@@ -90,15 +100,16 @@ impl Cpu {
     /// on the current value in the speed I/O register.
     pub fn cycle_time(&self) -> u32 {
         if self.speed() {
-            119
+            Self::CYCLE_TIME / 2
         } else {
-            238
+            Self::CYCLE_TIME
         }
     }
 
     /// Reset this CPU to initial state
     pub fn reset(&mut self) -> Result<()> {
         self.registers = RegisterFile::new();
+        self.cycle_count = 0;
         self.is_halted = false;
         self.ime = false;
 
@@ -142,7 +153,11 @@ impl Cpu {
             cycles.taken()
         };
 
-        (int_cycles + cycles, inst)
+        let cycles = int_cycles + cycles;
+
+        self.cycle_count += cycles as u64;
+
+        (cycles, inst)
     }
 
     /// Fetch the next instruction and return it

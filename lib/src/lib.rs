@@ -97,6 +97,11 @@ impl Gameboy {
                 self.cpu.trigger_interrupt(Interrupt::Serial);
             }
 
+            // Update the internal timer and trigger an interrupt, if needed
+            if self.cpu.memory.timer().step(self.cpu.cycle_count) {
+                self.cpu.trigger_interrupt(Interrupt::Timer);
+            }
+
             cycle += cycles_taken as u32;
         }
 
