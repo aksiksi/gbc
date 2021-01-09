@@ -9,6 +9,7 @@ pub mod joypad;
 pub mod memory;
 pub mod ppu;
 pub mod registers;
+pub mod timer;
 
 #[cfg(feature = "debug")]
 pub mod debug;

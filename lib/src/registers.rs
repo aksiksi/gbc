@@ -225,24 +225,26 @@ impl RegisterOps<Reg16, u16> for RegisterFile {
 
 impl std::fmt::Display for RegisterFile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let af = self.read(Reg16::AF);
+        let bc = self.read(Reg16::BC);
+        let de = self.read(Reg16::DE);
+        let hl = self.read(Reg16::HL);
+
         write!(f,
-               "A: {:#02X}\n\
-                F: {:#04X}\n\
-                B: {:#04X}\n\
-                C: {:#04X}\n\
-                D: {:#04X}\n\
-                E: {:#04X}\n\
-                H: {:#04X}\n\
-                L: {:#04X}\n\
-                PC: {:#06X}\n\
+               "AF: {:#06X}\n\
+                BC: {:#06X}\n\
+                DE: {:#06X}\n\
+                HL: {:#06X}\n\
                 SP: {:#06X}\n\
+                PC: {:#06X}\n\
                 Zero: {}\n\
                 Subtract: {}\n\
                 HalfCarry: {}\n\
-                Carry: {}", self.A, self.F, self.B,
-        self.C, self.D, self.E, self.H,
-        self.L, self.PC, self.SP, self.zero(),
-        self.subtract(), self.half_carry(), self.carry())
+                Carry: {}",
+            af, bc, de, hl,
+            self.SP, self.PC, self.zero(),
+            self.subtract(), self.half_carry(), self.carry()
+        )
     }
 }
 

@@ -197,7 +197,7 @@ impl Debugger {
                 }
                 "reset" => {
                     // Reset the CPU
-                    cpu.reset();
+                    cpu.reset().unwrap();
                     self.checks = 0;
                     self.steps = 0;
                     self.instructions.clear();
