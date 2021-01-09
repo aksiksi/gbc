@@ -2,6 +2,10 @@
 
 * Wiki on how OAM DMA works: https://gbdev.gg8.se/wiki/articles/OAM_DMA_tutorial
 * MAME instruction handler: https://github.com/mamedev/mame/blob/master/src/devices/cpu/lr35902/opc_main.hxx
+* Sameboy (solid emulator in C): https://github.com/LIJI32/SameBoy
+* Mooneye (GB emulator in Rust): https://github.com/Gekkio/mooneye-gb
+* Mooneye notes: https://gekkio.fi/files/gb-docs/gbctr.pdf
+* Blargg sound tests: https://forums.nesdev.com/viewtopic.php?t=13730
 
 # NOTES
 
@@ -46,3 +50,5 @@ However, the texture needs to passed into the main emulator loop. The reason is 
 * 
 
 ## APU Architecture
+
+TBD...

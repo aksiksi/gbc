@@ -210,11 +210,11 @@ impl TryFrom<u8> for RomSize {
 
 /// ROM
 pub struct Rom {
-    /// Static bank, 16K
-    bank0: Box<[u8; Self::BANK_SIZE]>,
-
-    /// Dynamic bank, depends on active bank
-    bank1: Vec<u8>,
+    /// ROM data for all banks
+    ///
+    /// Bank 0: static, 16K
+    /// Bank 1-7: dynamic
+    data: Vec<u8>,
 
     /// Currently active bank -- ignored for `None` ROMs
     pub(crate) active_bank: u16,
@@ -232,18 +232,15 @@ impl Rom {
     // Jump Vectors in first ROM bank
 
     pub fn new(rom_size: RomSize) -> Self {
-        let bank0 = Box::new([0u8; Self::BANK_SIZE]);
-
         let size = usize::from(rom_size);
         let num_banks = size / Self::BANK_SIZE;
 
-        // Construct a `Vec` for bank 1 based on total ROM size (minus bank 0 size)
-        let bank1 = vec![0u8; size - Self::BANK_SIZE];
+        // Construct a `Vec` for all ROM banks based on total ROM size
+        let data = vec![0u8; size];
 
         Self {
-            bank0,
-            bank1,
-            active_bank: 0,
+            data,
+            active_bank: 1,
             num_banks: num_banks as u16,
         }
     }
@@ -255,11 +252,8 @@ impl Rom {
         // Seek to beginning of the ROM file
         rom_file.seek(SeekFrom::Start(0))?;
 
-        // Read bank 0 from the ROM file
-        rom_file.read_exact(&mut *rom.bank0)?;
-
-        // Read bank 1 from the ROM file
-        rom_file.read_exact(&mut rom.bank1)?;
+        // Read all banks from ROM file
+        rom_file.read_exact(&mut rom.data)?;
 
         Ok(rom)
     }
@@ -277,14 +271,14 @@ impl MemoryRead<u16, u8> for Rom {
         match addr {
             0x0000..=0x3FFF => {
                 // Bank 0 (static)
-                self.bank0[addr]
+                self.data[addr]
             }
             0x4000..=0x7FFF => {
                 // Bank 1 (dynamic)
-                assert!(self.active_bank < self.num_banks);
+                assert!(self.active_bank > 0 && self.active_bank < self.num_banks);
                 let addr = addr - 0x4000;
                 let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
-                self.bank1[bank_offset + addr]
+                self.data[bank_offset + addr]
             }
             _ => unreachable!("Unexpected read from: {}", addr),
         }
@@ -300,14 +294,14 @@ impl MemoryWrite<u16, u8> for Rom {
         match addr {
             0x0000..=0x3FFF => {
                 // Bank 0 (static)
-                self.bank0[addr] = value;
+                self.data[addr] = value;
             }
             0x4000..=0x7FFF => {
                 // Bank 1 (dynamic)
-                assert!(self.active_bank < self.num_banks);
+                assert!(self.active_bank > 0 && self.active_bank < self.num_banks);
                 let addr = addr - 0x4000;
                 let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
-                self.bank1[bank_offset + addr] = value;
+                self.data[bank_offset + addr] = value;
             }
             _ => unreachable!("Unexpected read from: {}", addr),
         }
@@ -380,11 +374,15 @@ impl MemoryWrite<u16, u8> for Controller {
         match addr {
             0x0000..=0x1FFF if self.cartridge_type.is_mbc1() => {
                 // Cartridge RAM enable/disable
-                println!("RAM enable/disable");
+                if value & 0xF == 0xA {
+                    println!("RAM enable");
+                } else {
+                    println!("RAM disable");
+                }
             }
             0x2000..=0x3FFF if self.cartridge_type.is_mbc1() => {
                 // MBC1 ROM bank select (5 bit register)
-                let value = value & 0b00011111;
+                let value = value & 0x1F;
                 let value = if value == 0 { 1 } else { value };
                 self.rom.update_bank(value as u16);
             }

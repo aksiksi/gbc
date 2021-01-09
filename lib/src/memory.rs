@@ -435,7 +435,7 @@ impl MemoryWrite<u16, u8> for MemoryBus {
             }
             Ram::BASE_ADDR..=Ram::LAST_ADDR => self.ram.write(addr, value),
             Vram::BANK_SELECT_ADDR => self.ppu.vram_mut().update_bank(value),
-            0xFE00..=0xFE9F | 0xFF40..=0xFF4B | 0xFF68..=0xFF69 => self.ppu.write(addr, value),
+            0xFE00..=0xFE9F | 0xFF40..=0xFF4B | 0xFF68..=0xFF6B => self.ppu.write(addr, value),
             0xFF80..=0xFFFE => {
                 let addr = addr as usize - 0xFF80;
                 self.high_ram[addr] = value;
