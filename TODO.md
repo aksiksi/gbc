@@ -15,8 +15,8 @@
     - [ ] ~~Wrap all memory operations to be able to break on reads/writes in debugger~~
     - [ ] Not possible: we would not be able to pass the `Cpu` into the `Debugger`
 - [ ] Individual tests that are failing: 1-4, 11
-    - [ ] Test 1
-        - [ ] Probably DAA...
+    - [x] Test 1
+        - [x] Bad check in add case... see: https://forums.nesdev.com/viewtopic.php?t=15944
     - [x] Test 2
         - [x] Fix: Implement CPU timer
     - [x] Test 3
@@ -26,9 +26,9 @@
     - [x] Test 9
         - [x] Fix 1: Flags not updated for CPL, CCF, and SCF
         - [x] Fix 2: Added the rotate A (non-CB) instruction variants
-    - [ ] Test 11
+    - [x] Test 11
         - [x] Fix 1: SWAP (HL) was reading from SP
-        - [ ] Fix 2: DAA
+        - [x] Fix 2: DAA (above)
 - [ ] Get regular OAM DMA working
     - Wiki on how OAM DMA works: https://gbdev.gg8.se/wiki/articles/OAM_DMA_tutorial
 - [ ] Get OAM HDMA working

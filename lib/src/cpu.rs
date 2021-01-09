@@ -1008,15 +1008,14 @@ impl Cpu {
         let mut carry = self.registers.carry();
 
         let mut a = self.registers.read(Reg8::A);
-        let lower = a & 0x0F;
 
         if !subtract {
-            if half_carry || lower >= 0xA {
-                a = a.wrapping_add(0x06);
-            }
             if carry || a > 0x99 {
                 a = a.wrapping_add(0x60);
                 carry = true;
+            }
+            if half_carry || (a & 0x0F) > 0x9 {
+                a = a.wrapping_add(0x06);
             }
         } else {
             if half_carry {
@@ -1030,7 +1029,7 @@ impl Cpu {
         self.registers.write(Reg8::A, a);
 
         self.registers.set(Flag::Zero, a == 0);
-        self.registers.set(Flag::HalfCarry, false);
+        self.registers.clear(Flag::HalfCarry);
         self.registers.set(Flag::Carry, carry);
     }
 
@@ -1222,7 +1221,7 @@ mod test {
         assert!(!cpu.registers.zero());
         assert!(cpu.registers.subtract());
 
-        cpu.registers.clear_all();
+        cpu.registers.write(Reg8::F, 0);
         cpu.registers.write(Reg8::A, 0x83);
         cpu.registers.write(Reg8::B, 0x38);
         let inst = Instruction::Sub { src: Reg8::B.into() };

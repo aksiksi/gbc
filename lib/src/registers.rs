@@ -133,11 +133,6 @@ impl RegisterFile {
         self.F &= !mask;
     }
 
-    /// Clear all flags
-    pub fn clear_all(&mut self) {
-        self.F = 0;
-    }
-
     pub fn flags(&self) -> u8 {
         self.F
     }
@@ -268,7 +263,6 @@ mod test {
     #[test]
     fn flags() {
         let mut registers = RegisterFile::new();
-        registers.clear_all();
 
         registers.set(Flag::Zero, true);
         assert!(registers.zero());
