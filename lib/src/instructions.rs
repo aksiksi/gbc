@@ -348,11 +348,12 @@ pub enum Instruction {
     ///
     /// ### Flags
     ///
-    /// * Zero: set if result 0
+    /// * Zero: set if result 0 for non-A variant, otherwise reset
     /// * Subtract: reset
     /// * HalfCarry: reset
     /// * Carry: contains old bit 7
     Rlc { dst: Arg },
+    Rlca,
 
     /// Rotate [Reg8](Arg::Reg8) or ([HL](Reg16::HL)) left through carry flag.
     ///
@@ -363,21 +364,23 @@ pub enum Instruction {
     ///
     /// ### Flags
     ///
-    /// * Zero: set if result 0
+    /// * Zero: set if result 0 for non-A variant, otherwise reset
     /// * Subtract: reset
     /// * HalfCarry: reset
     /// * Carry: contains old bit 7
     Rl { dst: Arg },
+    Rla,
 
     /// Rotate [Reg8](Arg::Reg8) or ([HL](Reg16::HL)) right. Place old bit 0 in carry flag.
     ///
     /// ### Flags
     ///
-    /// * Zero: set if result 0
+    /// * Zero: set if result 0 for non-A variant, otherwise reset
     /// * Subtract: reset
     /// * HalfCarry: reset
     /// * Carry: contains old bit 0
     Rrc { dst: Arg },
+    Rrca,
 
     /// Rotate [Reg8](Arg::Reg8) or ([HL](Reg16::HL)) right through carry flag.
     ///
@@ -387,11 +390,12 @@ pub enum Instruction {
     ///
     /// ### Flags
     ///
-    /// * Zero: set if result 0
+    /// * Zero: set if result 0 for non-A variant, otherwise reset
     /// * Subtract: reset
     /// * HalfCarry: reset
     /// * Carry: contains old bit 0
     Rr { dst: Arg },
+    Rra,
 
     /// Shift [Reg8](Arg::Reg8) or ([HL](Reg16::HL)) left into carry.
     ///
@@ -627,10 +631,10 @@ impl Instruction {
             0x3F => (Ccf, 1, 4.into()),
 
             // Rotate
-            0x07 => (Rlc { dst: Reg8::A.into() }, 1, 4.into()),
-            0x17 => (Rl { dst: Reg8::A.into() }, 1, 4.into()),
-            0x0F => (Rrc { dst: Reg8::A.into() }, 1, 4.into()),
-            0x1F => (Rr { dst: Reg8::A.into() }, 1, 4.into()),
+            0x07 => (Rlca, 1, 4.into()),
+            0x17 => (Rla, 1, 4.into()),
+            0x0F => (Rrca, 1, 4.into()),
+            0x1F => (Rra, 1, 4.into()),
 
             // Inc
             0x03 => (Inc { dst: Arg::Reg16(Reg16::BC) }, 1, 8.into()),
@@ -1003,9 +1007,13 @@ impl std::fmt::Display for Instruction {
             Ei => write!(f, "ei"),
             Rst { offset } => write!(f, "rst {:#06X}", offset),
             Rlc { dst } => write!(f, "rlc {}", dst),
+            Rlca => write!(f, "rlca"),
             Rl { dst } => write!(f, "rl {}", dst),
+            Rla => write!(f, "rla"),
             Rrc { dst } => write!(f, "rrc {}", dst),
+            Rrca => write!(f, "rrca"),
             Rr { dst } => write!(f, "rr {}", dst),
+            Rra => write!(f, "rra"),
             Sla { dst } => write!(f, "sla {}", dst),
             Sra { dst } => write!(f, "sra {}", dst),
             Srl { dst } => write!(f, "srl {}", dst),

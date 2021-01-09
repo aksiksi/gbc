@@ -16,11 +16,19 @@
     - [ ] Not possible: we would not be able to pass the `Cpu` into the `Debugger`
 - [ ] Individual tests that are failing: 1-4, 11
     - [ ] Test 1
-        - [ ] DAA seems fine. The problem is likely in surrounding code. Maybe the checksum calculation?
-    - [x] ~~Test 2~~
-    - [ ] Test 3
-    - [ ] Test 4
+        - [ ] Probably DAA...
+    - [x] Test 2
+        - [x] Fix: Implement CPU timer
+    - [x] Test 3
+        - [x] Fix: 16-bit SP/HL imm8 instructions use 8-bit carry and half-carry rules
+    - [x] Test 4
+        - [x] Fix: faulty half-carry logic for ADC and SBC
+    - [x] Test 9
+        - [x] Fix 1: Flags not updated for CPL, CCF, and SCF
+        - [x] Fix 2: Added the rotate A (non-CB) instruction variants
     - [ ] Test 11
+        - [x] Fix 1: SWAP (HL) was reading from SP
+        - [ ] Fix 2: DAA
 - [ ] Get regular OAM DMA working
     - Wiki on how OAM DMA works: https://gbdev.gg8.se/wiki/articles/OAM_DMA_tutorial
 - [ ] Get OAM HDMA working

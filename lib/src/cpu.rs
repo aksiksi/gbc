@@ -37,7 +37,7 @@ trait HalfCarry<T> {
 
 impl HalfCarry<u8> for u8 {
     fn half_carry(&self, other: u8) -> bool {
-        ((self & 0xF) + (other & 0xF)) & 0x10 == 0x10
+        ((self & 0xF) + (other & 0xF)) & 0x10 != 0
     }
 
     fn half_carry_sub(&self, other: u8) -> bool {
@@ -47,7 +47,7 @@ impl HalfCarry<u8> for u8 {
 
 impl HalfCarry<u16> for u16 {
     fn half_carry(&self, other: u16) -> bool {
-        ((self & 0x0FFF) + (other & 0x0FFF)) & 0x1000 == 0x1000
+        ((self & 0x0FFF) + (other & 0x0FFF)) & 0x1000 != 0
     }
 
     fn half_carry_sub(&self, other: u16) -> bool {
@@ -360,8 +360,12 @@ impl Cpu {
             LdHlSpImm8i { offset } | AddSpImm8i { offset } => {
                 let offset = offset as u16;
                 let val = self.registers.read(Reg16::SP);
-                let half_carry = val.half_carry(offset);
-                let (result, carry) = val.overflowing_add(offset);
+
+                // These instructions use 8-bit carry and half-carry rules
+                let half_carry = ((val & 0xF) + (offset & 0xF)) & 0x10 != 0;
+                let carry = ((val & 0xFF) + (offset & 0xFF)) & 0x100 != 0;
+
+                let result = val.wrapping_add(offset);
 
                 // Destination register is the only difference between these
                 // two instructions
@@ -475,10 +479,14 @@ impl Cpu {
             }
 
             // Rotate variants
-            Rlc { dst } => self.rotate(dst, true, false),
-            Rl { dst } => self.rotate(dst, true, true),
-            Rrc { dst } => self.rotate(dst, false, false),
-            Rr { dst } => self.rotate(dst, false, true),
+            Rlc { dst } => self.rotate(dst, true, false, false),
+            Rl { dst } => self.rotate(dst, true, true, false),
+            Rrc { dst } => self.rotate(dst, false, false, false),
+            Rr { dst } => self.rotate(dst, false, true, false),
+            Rlca => self.rotate(Arg::Reg8(Reg8::A), true, false, true),
+            Rla => self.rotate(Arg::Reg8(Reg8::A), true, true, true),
+            Rrca => self.rotate(Arg::Reg8(Reg8::A), false, false, true),
+            Rra => self.rotate(Arg::Reg8(Reg8::A), false, true, true),
 
             // Shift variants
             Sla { dst } => self.shift(dst, true, false),
@@ -495,7 +503,7 @@ impl Cpu {
                         value
                     }
                     Arg::MemHl => {
-                        let addr = self.registers.read(Reg16::SP);
+                        let addr = self.registers.read(Reg16::HL);
                         let value = self.memory.read(addr);
                         let value = (value << 4) | (value >> 4);
                         self.memory.write(addr, value);
@@ -535,15 +543,19 @@ impl Cpu {
             Cpl => {
                 let curr = self.registers.read(Reg8::A);
                 self.registers.write(Reg8::A, !curr);
-                self.registers.set(Flag::Subtract, false);
+                self.registers.set(Flag::Subtract, true);
                 self.registers.set(Flag::HalfCarry, true);
             }
             Ccf => {
                 let f = self.registers.carry();
                 self.registers.set(Flag::Carry, !f);
+                self.registers.set(Flag::Subtract, false);
+                self.registers.set(Flag::HalfCarry, false);
             }
             Scf => {
                 self.registers.set(Flag::Carry, true);
+                self.registers.set(Flag::Subtract, false);
+                self.registers.set(Flag::HalfCarry, false);
             }
         }
 
@@ -551,7 +563,13 @@ impl Cpu {
     }
 
     /// Handle rotate instructions
-    fn rotate(&mut self, dst: Arg, left: bool, through: bool) {
+    ///
+    /// # Arguments
+    ///
+    /// * `left`: If true, value is rotated left
+    /// * `through`: If true, value is rotated through the carry bit
+    /// * `a`: If true, A variant of the instruction is used
+    fn rotate(&mut self, dst: Arg, left: bool, through: bool, a: bool) {
         let curr = match dst {
             Arg::Reg8(dst) => {
                 self.registers.read(dst)
@@ -604,8 +622,14 @@ impl Cpu {
             _ => unreachable!("Unexpected dst: {}", dst),
         }
 
+        let zero_flag = if a {
+            false
+        } else {
+            value == 0
+        };
+
         // Flags
-        self.registers.set(Flag::Zero, value == 0);
+        self.registers.set(Flag::Zero, zero_flag);
         self.registers.set(Flag::Subtract, false);
         self.registers.set(Flag::HalfCarry, false);
         self.registers.set(Flag::Carry, carry);
@@ -734,7 +758,7 @@ impl Cpu {
         // First, add the current carry to A and compute initial carry flags
         let tmp = a.wrapping_add(curr_carry);
         let mut carry = tmp < a;
-        let mut half_carry = tmp < a;
+        let mut half_carry = a.half_carry(curr_carry);
 
         // Then, add the actual value to A and update the carry flags (if needed)
         let result = tmp.wrapping_add(val);
@@ -815,7 +839,7 @@ impl Cpu {
         // First, subtract the current carry from A and compute initial carry flags
         let tmp = a.wrapping_sub(curr_carry);
         let mut carry = tmp > a;
-        let mut half_carry = tmp > a;
+        let mut half_carry = a.half_carry_sub(curr_carry);
 
         // Then, subtract the actual value from A and update the carry flags (if needed)
         let result = tmp.wrapping_sub(val);

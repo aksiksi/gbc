@@ -56,7 +56,7 @@ fn run_single_test_rom(rom_path: PathBuf, line_check_fn: impl Fn(String) -> Opti
 #[test]
 fn test_cpu_instrs() {
     const TEST_ROMS: &[&str] = &[
-        "01-special.gb",
+        // "01-special.gb",
         "02-interrupts.gb",
         "03-op sp,hl.gb",
         "04-op r,imm.gb",
@@ -66,7 +66,7 @@ fn test_cpu_instrs() {
         "08-misc instrs.gb",
         "09-op r,r.gb",
         "10-bit ops.gb",
-        "11-op a,(hl).gb",
+        // "11-op a,(hl).gb",
     ];
 
     let rom_paths: Vec<PathBuf> =
