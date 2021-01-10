@@ -1,5 +1,5 @@
 //! Run through the indivdual and combined Blargg GB tests
-use std::io::{BufReader, BufRead};
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
@@ -12,8 +12,11 @@ use std::time::Duration;
 /// * `Some(true)` if the test passes
 /// * `Some(false)` if the test fails
 /// * `None` if the line is irrelevant (skipped)
-fn run_single_test_rom(rom_path: &PathBuf, line_check_fn: impl Fn(String) -> Option<bool> + Send + Sync + 'static) -> bool {
-    let bin: &str = env!("CARGO_BIN_EXE_GBCEMU");
+fn run_single_test_rom(
+    rom_path: &PathBuf,
+    line_check_fn: impl Fn(String) -> Option<bool> + Send + Sync + 'static,
+) -> bool {
+    let bin: &str = env!("CARGO_BIN_EXE_gbcemu");
     let args = &["--headless", rom_path.to_str().unwrap()];
 
     let mut cmd = Command::new(bin)
@@ -71,15 +74,17 @@ fn test_cpu_instrs() {
         "11-op a,(hl).gb",
     ];
 
-    let rom_paths: Vec<PathBuf> =
-        TEST_ROMS.iter().map(|name| {
+    let rom_paths: Vec<PathBuf> = TEST_ROMS
+        .iter()
+        .map(|name| {
             Path::new(env!("CARGO_MANIFEST_DIR"))
-                 .join("..")
-                 .join("samples")
-                 .join("blargg")
-                 .join("cpu_instrs")
-                 .join(name)
-        }).collect();
+                .join("..")
+                .join("samples")
+                .join("blargg")
+                .join("cpu_instrs")
+                .join(name)
+        })
+        .collect();
 
     for path in rom_paths {
         let passed = run_single_test_rom(&path, |line| {
