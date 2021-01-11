@@ -59,9 +59,6 @@ pub struct Cpu {
     pub registers: RegisterFile,
     pub memory: MemoryBus,
 
-    /// Number of cycles executed by this CPU since last reset.
-    pub cycle_count: u64,
-
     /// Global interrupt enable flag (Interrupt Master Enable)
     ime: bool,
     pub is_halted: bool,
@@ -85,7 +82,6 @@ impl Cpu {
         Ok(Self {
             registers,
             memory,
-            cycle_count: 0,
             ime: false,
             is_halted: false,
         })
@@ -109,7 +105,6 @@ impl Cpu {
     /// Reset this CPU to initial state
     pub fn reset(&mut self) -> Result<()> {
         self.registers = RegisterFile::new();
-        self.cycle_count = 0;
         self.is_halted = false;
         self.ime = false;
 
@@ -134,7 +129,7 @@ impl Cpu {
 
         // If the CPU is halted, bail out
         if self.is_halted {
-            return (0, Instruction::Nop);
+            return (4, Instruction::Nop);
         }
 
         // Fetch and decode the next instruction at PC
@@ -154,8 +149,6 @@ impl Cpu {
         };
 
         let cycles = int_cycles + cycles;
-
-        self.cycle_count += cycles as u64;
 
         (cycles, inst)
     }

@@ -77,7 +77,7 @@ impl Gameboy {
             }
 
             // Execute a step of the CPU
-            let (cycles_taken, _) = self.cpu.step();
+            let (cycles_taken, _inst) = self.cpu.step();
 
             // Execute a step of the PPU.
             //
@@ -99,7 +99,8 @@ impl Gameboy {
             }
 
             // Update the internal timer and trigger an interrupt, if needed
-            if self.cpu.memory.timer().step(self.cpu.cycle_count) {
+            // Note that the timer may tick multiple times for a single instruction
+            if self.cpu.memory.timer().step(cycles_taken) {
                 self.cpu.trigger_interrupt(Interrupt::Timer);
             }
 

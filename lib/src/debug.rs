@@ -148,17 +148,17 @@ impl Debugger {
                     self.breakpoints.remove(index);
                 }
                 "d" => eprintln!("'d' requires at least 1 argument"),
-                "disable" if line.len() == 2 => {
-                    // Disable a breakpoint
+                "toggle" if line.len() == 2 => {
+                    // Toggle a breakpoint
                     let index: usize = line[1].parse().unwrap();
                     if index >= self.breakpoints.len() {
                         eprintln!("Invalid breakpoint {}", index);
                         continue;
                     }
 
-                    self.breakpoints[index].1 = false;
+                    self.breakpoints[index].1 = !self.breakpoints[index].1;
                 }
-                "disable" => eprintln!("'disable' requires at least 1 argument"),
+                "toggle" => eprintln!("'toggle' requires at least 1 argument"),
                 "dump" if line.len() == 2 => {
                     let flag: u32 = line[1].parse().unwrap();
                     if flag == 0 {
