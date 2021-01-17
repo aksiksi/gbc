@@ -100,3 +100,27 @@ fn test_cpu_instrs() {
         assert!(passed, "Test {} failed!", path.to_str().unwrap());
     }
 }
+
+/// Run through Blargg's instruction timing test ROM
+#[test]
+fn test_instr_timing() {
+    let rom_path =
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("samples")
+            .join("blargg")
+            .join("instr_timing")
+            .join("instr_timing.gb");
+
+    let passed = run_single_test_rom(&rom_path, |line| {
+        if line.contains("Passed") {
+            Some(true)
+        } else if line.contains("Failed") {
+            Some(false)
+        } else {
+            None
+        }
+    });
+
+    assert!(passed, "instr_timing failed!");
+}
