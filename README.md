@@ -1,5 +1,7 @@
 # gbc
 
+![Rust](https://github.com/aksiksi/gbc/workflows/Rust/badge.svg)
+
 A Gameboy Color (GBC) emulator written in Rust. This is intended as a learning project. 
 
 ## Project Structure
@@ -8,6 +10,21 @@ The emulator is divided into two crates:
 
 1. `lib`: the main library for emulating a Gameboy
 2. `emu`: the emulator frontend GUI (using SDL)
+
+## Tests
+
+There are two types of tests:
+
+1. Functional tests: verify the basic functions of the CPU and peripherals
+2. Integration tests: run existing test ROMs and ensure that they pass
+
+These tests run on every commit to the repo.
+
+## Examples
+
+### Blargg's cpu_instrs ROM
+
+![cpu_instrs](https://user-images.githubusercontent.com/916621/104858877-21f48380-58f0-11eb-8a83-d5087da6d7a7.png)
 
 ## Building
 
