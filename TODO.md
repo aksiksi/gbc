@@ -30,6 +30,10 @@
     - [x] Test 11
         - [x] Fix 1: SWAP (HL) was reading from SP
         - [x] Fix 2: DAA (above)
+- [x] Narrow down bug with instr_timing test
+    - [x] Break at 0xC352
+    - [x] `ret` at 0xC355 is never hit -- somewhere in between, the ROM is reset (?)
+    - [x] Fix: turned out that the size for `LdMemCA` was incorrect...
 - [ ] Get regular OAM DMA working
     - Wiki on how OAM DMA works: https://gbdev.gg8.se/wiki/articles/OAM_DMA_tutorial
 - [ ] Get OAM HDMA working

@@ -617,8 +617,8 @@ impl Instruction {
             0x7F => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::Reg8(Reg8::A) }, 1, 4.into()),
             0xE0 => (Ldh { offset: arg8 }, 2, 12.into()),
             0xF0 => (LdhA { offset: arg8 }, 2, 12.into()),
-            0xE2 => (LdMemCA, 2, 8.into()),
-            0xF2 => (LdAMemC, 2, 8.into()),
+            0xE2 => (LdMemCA, 1, 8.into()),
+            0xF2 => (LdAMemC, 1, 8.into()),
             0xEA => (Ld { dst: Arg::MemImm(arg16), src: Arg::Reg8(Reg8::A) }, 3, 16.into()),
             0xFA => (Ld { dst: Arg::Reg8(Reg8::A), src: Arg::MemImm(arg16) }, 3, 16.into()),
             0xF8 => (LdHlSpImm8i { offset: arg8 as i8 }, 2, 12.into()),
@@ -892,10 +892,9 @@ impl Instruction {
             0x40..=0x7F => {
                 let (dst, bit) = Self::decode_cb_helper(0x40, opcode);
                 let cycles = match dst {
-                    Arg::MemHl => 16.into(),
+                    Arg::MemHl => 12.into(),
                     _ => 8.into(),
                 };
-
 
                 (Bit { dst, bit }, 2, cycles)
             }
@@ -1111,7 +1110,7 @@ mod test {
             ([0xCB, 0x3C, 0x00], Instruction::Srl { dst: Reg8::H.into() }, 2, 8.into()),
 
             // Bit
-            ([0xCB, 0x46, 0x00], Instruction::Bit { dst: Arg::MemHl, bit: 0 }, 2, 16.into()),
+            ([0xCB, 0x46, 0x00], Instruction::Bit { dst: Arg::MemHl, bit: 0 }, 2, 12.into()),
             ([0xCB, 0x4B, 0x00], Instruction::Bit { dst: Reg8::E.into(), bit: 1 }, 2, 8.into()),
             ([0xCB, 0x53, 0x00], Instruction::Bit { dst: Reg8::E.into(), bit: 2 }, 2, 8.into()),
             ([0xCB, 0x69, 0x00], Instruction::Bit { dst: Reg8::C.into(), bit: 5 }, 2, 8.into()),
