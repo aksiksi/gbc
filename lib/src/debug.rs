@@ -11,12 +11,11 @@ pub enum Mode {
     Step,
     StepN(u32),
     Continue,
+    ContinueN(u32),
 }
 
 pub struct Debugger {
     mode: Mode,
-    checks: u32,
-    steps: u32,
     breakpoints: Vec<(u16, bool)>,
     instructions: Vec<(Instruction, u16)>,
     instruction_dump: Option<File>,
@@ -26,12 +25,23 @@ impl Debugger {
     pub fn new() -> Self {
         Self {
             mode: Mode::Step,
-            steps: 0,
-            checks: 0,
             breakpoints: Vec::new(),
             instructions: Vec::new(),
             instruction_dump: None,
         }
+    }
+
+    /// Returns `true` if a breakpoint was hit
+    fn is_breakpoint_hit(&mut self, pc: u16) -> bool {
+        let mut breakpoint_hit = false;
+
+        for (addr, enabled) in &self.breakpoints {
+            if *enabled && pc == *addr {
+                breakpoint_hit = true;
+            }
+        }
+
+        breakpoint_hit
     }
 
     pub fn triggered(&mut self, cpu: &Cpu) -> bool {
@@ -51,28 +61,33 @@ impl Debugger {
             write!(f, "{:#06x}: {}\n", pc, inst).unwrap();
         }
 
-        self.checks += 1;
-
         let res = match self.mode {
             Mode::Step => true,
             Mode::StepN(n) => {
-                if self.checks - self.steps == n {
-                    self.steps = self.checks - 1;
-                    true
-                } else {
+                if n > 1 {
+                    self.mode = Mode::StepN(n-1);
                     false
+                } else {
+                    // Revert to `step` mode
+                    self.mode = Mode::Step;
+                    true
                 }
             }
-            Mode::Continue => {
-                let mut breakpoint_hit = false;
-                for (addr, enabled) in &self.breakpoints {
-                    if *enabled && pc == *addr {
-                        self.steps = self.checks - 1;
-                        breakpoint_hit = true;
+            Mode::Continue => self.is_breakpoint_hit(pc),
+            Mode::ContinueN(n) => {
+                let mut hit = self.is_breakpoint_hit(pc);
+
+                if hit {
+                    if n > 1 {
+                        self.mode = Mode::ContinueN(n-1);
+                        hit = false;
+                    } else {
+                        // Revert to `step` mode
+                        self.mode = Mode::Step;
                     }
                 }
 
-                breakpoint_hit
+                hit
             }
         };
 
@@ -99,8 +114,6 @@ impl Debugger {
     }
 
     pub fn repl(&mut self, cpu: &mut Cpu) {
-        self.steps += 1;
-
         loop {
             print!("gbcdbg> ");
             std::io::stdout().flush().unwrap();
@@ -198,8 +211,6 @@ impl Debugger {
                 "reset" => {
                     // Reset the CPU
                     cpu.reset().unwrap();
-                    self.checks = 0;
-                    self.steps = 0;
                     self.instructions.clear();
                     println!("CPU reset");
                 }
@@ -229,6 +240,11 @@ impl Debugger {
                 }
                 "n" => {
                     self.mode = Mode::Step;
+                    return;
+                }
+                "r" if line.len() == 2 => {
+                    let n: u32 = line[1].parse().unwrap();
+                    self.mode = Mode::ContinueN(n);
                     return;
                 }
                 "r" => {
