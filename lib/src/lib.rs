@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::time::Instant;
 
 pub mod cartridge;
 pub mod cpu;

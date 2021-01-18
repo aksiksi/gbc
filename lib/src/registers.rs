@@ -262,7 +262,7 @@ mod test {
 
     #[test]
     fn combined_regs() {
-        let mut regs = RegisterFile::new();
+        let mut regs = RegisterFile::new(true);
 
         regs.write(Reg8::A, 0x10);
         regs.write(Reg8::F, 0xFF);
@@ -275,7 +275,7 @@ mod test {
 
     #[test]
     fn flags() {
-        let mut registers = RegisterFile::new();
+        let mut registers = RegisterFile::new(true);
 
         registers.set(Flag::Zero, true);
         assert!(registers.zero());
