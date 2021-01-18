@@ -562,7 +562,13 @@ impl Ppu {
     /// that sprites are more often layered on top of the BG.
     fn render_scanline(&mut self) {
         if self.lcdc.bg_priority() {
-            self.render_tiles();
+            self.render_background();
+
+            if self.lcdc.window_display_enable() {
+                self.render_window();
+            }
+        } else {
+            // TODO: Write white to the line on DMG
         }
 
         if self.lcdc.sprite_enable() {
@@ -570,8 +576,137 @@ impl Ppu {
         }
     }
 
-    /// Render a scanline worth of BG/window tiles.
-    fn render_tiles(&mut self) {
+    /// Returns pixel data for a single BG or window pixel.
+    ///
+    /// Given the x and y position of the pixel in the BG map, we need to do the following:
+    ///
+    /// 1. Using the BG pixel positions, determine the BG tile map x and y.
+    /// 2. Using the tile coordinates, compute an index into the BG tile map.
+    /// 3. Get the tile data index (bank 0) and tile attributes (bank 1) from VRAM.
+    /// 4. Extract tile attributes.
+    /// 5. Read the actual tile data (16 bytes) from the relevant VRAM bank.
+    /// 6. Compute the pixel's index within the 8x8 pixel tile, and adjust if flips are
+    ///    present in this tile.
+    /// 7. Compute the pixel's color palette index (2 bits).
+    /// 8. Finally, using the tile's palette number and the index from (8),
+    ///    compute the RGB value for the pixel.
+    fn fetch_pixel_data(&self, bg_pixel_x: u8, bg_pixel_y: u8, tile_map_base: u16) -> GameboyRgba {
+        // Select base address for BG tile data based on LCDC register
+        let (tile_data_base, tile_data_index_signed) = if !self.lcdc.bg_tile_data_select() {
+            (0x8000, false)
+        } else {
+            (0x9000, true)
+        };
+
+        // (2) and (3)
+        let bg_tile_x = bg_pixel_x / 8;
+        let bg_tile_y = bg_pixel_y / 8;
+        let tile_map_index = (bg_tile_y as u16 * 32 + bg_tile_x as u16) as u16;
+
+        // (4)
+        let tile_number = self.vram.read_bank(0, tile_map_base + tile_map_index);
+        let tile_data_attr = if self.cgb {
+            self.vram.read_bank(1, tile_map_base + tile_map_index)
+        } else {
+            // No 2nd bank for tile attributes in DMG mode
+            0
+        };
+
+        // (5)
+        let tile_palette_num = tile_data_attr & 0x07; // bits 0-2
+        let tile_data_bank = (tile_data_attr & (1 << 3)) >> 3; // bit 3
+        let horizontal_flip = (tile_data_attr & (1 << 5)) != 0; // bit 5
+        let vertical_flip = (tile_data_attr & (1 << 6)) != 0; // bit 6
+        let _bg_priority = (tile_data_attr & (1 << 7)) != 0; // bit 7
+
+        // (6)
+        let mut tile_data = [0u8; 16];
+        for i in 0..tile_data.len() as u16 {
+            let addr;
+
+            if !tile_data_index_signed || tile_number <= 127 {
+                // If we are in 8000 mode OR 8800 mode with tile number <= 127,
+                // just add the index to the base address as normal.
+                let tile_data_index = tile_number as u16 * 16 + i;
+                addr = tile_data_base + tile_data_index;
+            } else {
+                // For "signed" tiles in 8800 mode:
+                //
+                // * Tile 128 -> 0x8800-0x880F
+                // * Tile 255 -> 0x8FF0-0x8FFF
+                let tile_data_index = (tile_number as u16 - 128) * 16 + i;
+                addr = 0x8800 + tile_data_index;
+            }
+
+            tile_data[i as usize] = self.vram.read_bank(tile_data_bank, addr);
+        }
+
+        // (7)
+        let mut tile_pixel_x = bg_pixel_x - bg_tile_x * 8;
+        let mut tile_pixel_y = bg_pixel_y - bg_tile_y * 8;
+
+        // Handle flipped pixels
+        if horizontal_flip {
+            tile_pixel_x = 7 - tile_pixel_x;
+        }
+
+        if vertical_flip {
+            tile_pixel_y = 7 - tile_pixel_y;
+        }
+
+        // (8)
+        //
+        // The y position of the pixel maps to the "line" (2 bytes) in the tile data
+        // The x position maps to the bit we need to check in the upper and lower nibbles of the line
+        // Note that the x position is *inverted*: e.g., the leftmost pixel is tracked in bit 7 of each nibble
+        let line_idx = tile_pixel_y as usize * 2;
+        let lower = tile_data[line_idx];
+        let upper = tile_data[line_idx + 1];
+        let pixel_pos = 7 - tile_pixel_x; // This corrects the inversion noted above
+
+        let lower_bit = (lower & 1 << pixel_pos) >> pixel_pos;
+        let upper_bit = (upper & 1 << pixel_pos) >> pixel_pos;
+        let color_index = upper_bit << 1 | lower_bit;
+
+        // (9)
+        let mut pixel_data;
+
+        if self.cgb {
+            let palette_index = (tile_palette_num * 4 + color_index) as usize;
+            let pixel_color = (self.bg_palette_ram[palette_index + 1] as u16) << 8 |
+                                self.bg_palette_ram[palette_index] as u16;
+            let red = (pixel_color & 0x001F) as u8;
+            let green = ((pixel_color & 0x03E0) >> 5) as u8;
+            let blue = ((pixel_color & 0x7F00) >> 10) as u8;
+            let alpha = 0xFF; // BG is always opaque
+
+            pixel_data = GameboyRgba {
+                red,
+                blue,
+                green,
+                alpha,
+            };
+
+            pixel_data.scale_to_rgb();
+        } else {
+            // In DMG mode, extract the color palette index from BGP
+            let palette_index = match color_index {
+                0 => self.bgp & 0b00000011,
+                1 => (self.bgp & 0b00001100) >> 2,
+                2 => (self.bgp & 0b00110000) >> 4,
+                3 => (self.bgp & 0b11000000) >> 6,
+                _ => unreachable!(),
+            };
+
+            // On DMG, we have a single, static color palette
+            pixel_data = DMG_PALETTE[palette_index as usize];
+        }
+
+        pixel_data
+    }
+
+    /// Render a scanline worth of BG pixels
+    fn render_background(&mut self) {
         let scanline = self.ly;
 
         // Select base address for BG tile map based on LCDC register
@@ -581,136 +716,40 @@ impl Ppu {
             0x9C00
         };
 
-        // Select base address for BG tile data based on LCDC register
-        let (tile_data_base, tile_data_index_signed) = if !self.lcdc.bg_tile_data_select() {
-            (0x8000, false)
-        } else {
-            (0x9000, true)
-        };
-
-        // For each pixel in the current scanline, we need to do the following:
-        //
-        // 1. Figure out the x and y pixel positions in the BG (256x256 pixels, 32x32 tiles).
-        // 2. Using the BG pixel positions, determine the BG tile map x and y.
-        // 3. Using the tile coordinates, compute an index into the BG tile map.
-        // 4. Get the tile data index (bank 0) and tile attributes (bank 1) from VRAM.
-        // 5. Extract tile attributes.
-        // 6. Read the actual tile data (16 bytes) from the relevant VRAM bank.
-        // 7. Compute the pixel's index within the 8x8 pixel tile, and adjust if flips are
-        //    present in this tile.
-        // 8. Compute the pixel's color palette index (2 bits).
-        // 9. Finally, using the tile's palette number and the index from (8),
-        //    compute the RGB value for the pixel.
         for pixel in 0..LCD_WIDTH as u8 {
-            // (1)
+            // Figure out the x and y pixel positions in the BG (256x256 pixels, 32x32 tiles)
+            // This is how scrolling is handled
             let bg_pixel_x = pixel.wrapping_add(self.scx);
             let bg_pixel_y = scanline.wrapping_add(self.scy);
 
-            // (2) and (3)
-            let bg_tile_x = bg_pixel_x / 8;
-            let bg_tile_y = bg_pixel_y / 8;
-            let tile_map_index = (bg_tile_y as u16 * 32 + bg_tile_x as u16) as u16;
+            let pixel_data = self.fetch_pixel_data(bg_pixel_x, bg_pixel_y, tile_map_base);
 
-            // (4)
-            let tile_number = self.vram.read_bank(0, tile_map_base + tile_map_index);
-            let tile_data_attr = if self.cgb {
-                self.vram.read_bank(1, tile_map_base + tile_map_index)
-            } else {
-                // No 2nd bank for tile attributes in DMG mode
-                0
-            };
+            // Push the pixel to the frame buffer
+            self.frame_buffer.write(pixel as usize, scanline as usize, pixel_data);
+        }
+    }
 
-            // (5)
-            let tile_palette_num = tile_data_attr & 0x07; // bits 0-2
-            let tile_data_bank = (tile_data_attr & (1 << 3)) >> 3; // bit 3
-            let horizontal_flip = (tile_data_attr & (1 << 5)) != 0; // bit 5
-            let vertical_flip = (tile_data_attr & (1 << 6)) != 0; // bit 6
-            let _bg_priority = (tile_data_attr & (1 << 7)) != 0; // bit 7
+    /// Render a scanline worth of window pixels
+    ///
+    /// This does nothing if: `scanline < WY`
+    fn render_window(&mut self) {
+        let scanline = self.ly;
 
-            // (6)
-            let mut tile_data = [0u8; 16];
-            for i in 0..tile_data.len() as u16 {
-                let addr;
+        if scanline < self.wy {
+            // No window to render just yet
+            return;
+        }
 
-                if !tile_data_index_signed || tile_number <= 127 {
-                    // If we are in 8000 mode OR 8800 mode with tile number <= 127,
-                    // just add the index to the base address as normal.
-                    let tile_data_index = tile_number as u16 * 16 + i;
-                    addr = tile_data_base + tile_data_index;
-                } else {
-                    // For "signed" tiles in 8800 mode:
-                    //
-                    // * Tile 128 -> 0x8800-0x880F
-                    // * Tile 255 -> 0x8FF0-0x8FFF
-                    let tile_data_index = (tile_number as u16 - 128) * 16 + i;
-                    addr = 0x8800 + tile_data_index;
-                }
+        // Select base address for window tile map based on LCDC register
+        let tile_map_base: u16 = if !self.lcdc.window_tile_map_select() {
+            0x9800
+        } else {
+            0x9C00
+        };
 
-                tile_data[i as usize] = self.vram.read_bank(tile_data_bank, addr);
-            }
-
-            // (7)
-            let mut tile_pixel_x = bg_pixel_x - bg_tile_x * 8;
-            let mut tile_pixel_y = bg_pixel_y - bg_tile_y * 8;
-
-            // Handle flipped pixels
-            if horizontal_flip {
-                tile_pixel_x = 7 - tile_pixel_x;
-            }
-
-            if vertical_flip {
-                tile_pixel_y = 7 - tile_pixel_y;
-            }
-
-            // (8)
-            //
-            // The y position of the pixel maps to the "line" (2 bytes) in the tile data
-            // The x position maps to the bit we need to check in the upper and lower nibbles of the line
-            // Note that the x position is *inverted*: e.g., the leftmost pixel is tracked in bit 7 of each nibble
-            let line_idx = tile_pixel_y as usize * 2;
-            let lower = tile_data[line_idx];
-            let upper = tile_data[line_idx + 1];
-            let pixel_pos = 7 - tile_pixel_x; // This corrects the inversion noted above
-
-            let lower_bit = (lower & 1 << pixel_pos) >> pixel_pos;
-            let upper_bit = (upper & 1 << pixel_pos) >> pixel_pos;
-            let color_index = upper_bit << 1 | lower_bit;
-
-            // (9)
-            let mut pixel_data;
-
-            if self.cgb {
-                let palette_index = (tile_palette_num * 4 + color_index) as usize;
-                let pixel_color = (self.bg_palette_ram[palette_index + 1] as u16) << 8 |
-                                   self.bg_palette_ram[palette_index] as u16;
-                let red = (pixel_color & 0x001F) as u8;
-                let green = ((pixel_color & 0x03E0) >> 5) as u8;
-                let blue = ((pixel_color & 0x7F00) >> 10) as u8;
-                let alpha = 0xFF; // BG is always opaque
-
-                pixel_data = GameboyRgba {
-                    red,
-                    blue,
-                    green,
-                    alpha,
-                };
-
-                pixel_data.scale_to_rgb();
-            } else {
-                // In DMG mode, extract the color palette index from BGP
-                let palette_index = match color_index {
-                    0 => self.bgp & 0b00000011,
-                    1 => (self.bgp & 0b00001100) >> 2,
-                    2 => (self.bgp & 0b00110000) >> 4,
-                    3 => (self.bgp & 0b11000000) >> 6,
-                    _ => unreachable!(),
-                };
-
-                // We have a single, static color palette
-                pixel_data = DMG_PALETTE[palette_index as usize];
-            }
-
-            // Finally, push the pixel to the frame buffer
+        for pixel in (self.wx-7)..LCD_WIDTH as u8 {
+            // Windows do not support scrolling, so simply start rendering at the WX and WY positions
+            let pixel_data = self.fetch_pixel_data(pixel, scanline, tile_map_base);
             self.frame_buffer.write(pixel as usize, scanline as usize, pixel_data);
         }
     }
@@ -779,8 +818,7 @@ impl Ppu {
     }
 
     /// Returns `true` if OAM is locked to CPU
-    #[allow(unused)]
-    fn oam_locked(&self) -> bool {
+    pub fn oam_locked(&self) -> bool {
         match self.stat.mode {
             // Locked during Scan and Read
             StatMode::OamScan | StatMode::OamRead => true,

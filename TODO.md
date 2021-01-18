@@ -36,6 +36,7 @@
     - [x] Fix: turned out that the size for `LdMemCA` was incorrect...
 - [x] Get regular OAM DMA working
     - Wiki on how OAM DMA works: https://gbdev.gg8.se/wiki/articles/OAM_DMA_tutorial
+- [x] Basic window rendering
 - [ ] Get sprite rendering working
     - [ ] Find good test ROM
 - [ ] Buffer up serial writes and expose as API on `Gameboy`
