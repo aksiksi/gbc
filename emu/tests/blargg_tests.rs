@@ -14,6 +14,7 @@ use std::time::Duration;
 /// * `None` if the line is irrelevant (skipped)
 fn run_single_test_rom(
     rom_path: &PathBuf,
+    timeout: Option<u64>,
     line_check_fn: impl Fn(String) -> Option<bool> + Send + Sync + 'static,
 ) -> bool {
     let bin: &str = env!("CARGO_BIN_EXE_gbcemu");
@@ -50,16 +51,43 @@ fn run_single_test_rom(
     });
 
     // If we do not receive a response within 60 seconds, assume that the test is blocked
-    let passed = rx.recv_timeout(Duration::from_secs(60)).unwrap_or(false);
+    let timeout = timeout.unwrap_or(60);
+    let passed = rx.recv_timeout(Duration::from_secs(timeout)).unwrap_or(false);
 
     cmd.kill().unwrap();
 
     passed
 }
 
-/// Run through Blargg's individual CPU tests
+/// Run through Blargg's CPU instructions test ROM
 #[test]
 fn test_cpu_instrs() {
+    let rom_path =
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("samples")
+            .join("blargg")
+            .join("cpu_instrs")
+            .join("cpu_instrs.gb");
+    let timeout = 180;
+
+    let passed = run_single_test_rom(&rom_path, Some(timeout), |line| {
+        if line.contains("Passed") {
+            Some(true)
+        } else if line.contains("Failed") {
+            Some(false)
+        } else {
+            None
+        }
+    });
+
+    assert!(passed);
+}
+
+/// Run through Blargg's individual CPU tests
+#[test]
+#[ignore]
+fn test_cpu_instrs_individual() {
     const TEST_ROMS: &[&str] = &[
         "01-special.gb",
         "02-interrupts.gb",
@@ -87,7 +115,7 @@ fn test_cpu_instrs() {
         .collect();
 
     for path in rom_paths {
-        let passed = run_single_test_rom(&path, |line| {
+        let passed = run_single_test_rom(&path, None, |line| {
             if line.contains("Passed") {
                 Some(true)
             } else if line.contains("Failed") {
@@ -111,8 +139,9 @@ fn test_instr_timing() {
             .join("blargg")
             .join("instr_timing")
             .join("instr_timing.gb");
+    let timeout = 120;
 
-    let passed = run_single_test_rom(&rom_path, |line| {
+    let passed = run_single_test_rom(&rom_path, Some(timeout), |line| {
         if line.contains("Passed") {
             Some(true)
         } else if line.contains("Failed") {
@@ -122,5 +151,5 @@ fn test_instr_timing() {
         }
     });
 
-    assert!(passed, "instr_timing failed!");
+    assert!(passed);
 }
