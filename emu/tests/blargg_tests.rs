@@ -49,8 +49,8 @@ fn run_single_test_rom(
         tx.send(passed).unwrap();
     });
 
-    // If we do not receive a response within 30 seconds, assume that the test failed
-    let passed = rx.recv_timeout(Duration::from_secs(30)).unwrap_or(false);
+    // If we do not receive a response within 60 seconds, assume that the test is blocked
+    let passed = rx.recv_timeout(Duration::from_secs(60)).unwrap_or(false);
 
     cmd.kill().unwrap();
 
