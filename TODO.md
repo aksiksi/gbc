@@ -34,11 +34,17 @@
     - [x] Break at 0xC352
     - [x] `ret` at 0xC355 is never hit -- somewhere in between, the ROM is reset (?)
     - [x] Fix: turned out that the size for `LdMemCA` was incorrect...
-- [ ] Get regular OAM DMA working
+- [x] Get regular OAM DMA working
     - Wiki on how OAM DMA works: https://gbdev.gg8.se/wiki/articles/OAM_DMA_tutorial
-- [ ] Get OAM HDMA working
 - [ ] Get sprite rendering working
     - [ ] Find good test ROM
-- [ ] Implement RTC logic for relevant MBCs
+- [ ] Buffer up serial writes and expose as API on `Gameboy`
+    - [ ] This way, we can run tests in-line w/o calling into the CLI
+- [ ] Get OAM HDMA working
 - [ ] Get MBC3 controller working
+- [ ] Implement RTC logic for relevant MBCs
+- [ ] Speed change might need to be handled explicitly
 - [ ] Look into dot clock pauses: https://gbdev.io/pandocs/#properties-of-stat-modes
+- [ ] FPS counter
+    - [x] Static linking SDL2 TTF library does not seem to work on Windows
+    - [ ] Find an alternative approach

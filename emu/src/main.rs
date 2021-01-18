@@ -140,6 +140,8 @@ fn gui(rom_path: Option<PathBuf>) {
         // Helpful C example: https://wiki.libsdl.org/SDL_CreateTexture
         canvas.with_texture_canvas(&mut texture, |canvas| {
             canvas.clear();
+
+            // Draw the rendered frame
             for x in 0..LCD_WIDTH {
                 for y in 0..LCD_HEIGHT {
                     let color = frame_buffer.data[y * 160 + x];
