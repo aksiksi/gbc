@@ -467,7 +467,8 @@ impl MemoryWrite<u16, u8> for Controller {
             // Forward RAM writes as-is
             Ram::BASE_ADDR..=Ram::LAST_ADDR => self.ram.as_mut().unwrap().write(addr, value),
 
-            _ => unreachable!("Unexpected write to: {}", addr),
+            // All other writes are ignored
+            _ => (),
         }
     }
 }

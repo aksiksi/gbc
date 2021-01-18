@@ -128,6 +128,7 @@ pub struct Io {
 
     // Serial port (SB) and control (SC) (0xFF01, 0xFF02)
     serial: [u8; 2],
+    serial_buffer: Vec<char>,
 
     /// Timer: 0xFF04 - 0xFF07
     timer: Timer,
@@ -165,6 +166,7 @@ impl Io {
         Self {
             joypad: Joypad::new(),
             serial: [0; 2],
+            serial_buffer: Vec::new(),
             timer: Timer::new(),
             int_flags: 0,
             sound: [0; 23],
@@ -206,6 +208,14 @@ impl Io {
         } else {
             false
         }
+    }
+
+    /// Returns a handle to the serial buffer
+    ///
+    /// This buffer contains every character logged to the serial port.
+    /// Mainly used in tests.
+    pub fn serial_buffer(&self) -> &[char] {
+        &self.serial_buffer
     }
 }
 
@@ -259,7 +269,9 @@ impl MemoryWrite<u16, u8> for Io {
                 // Serial control
                 self.serial[1] = value;
                 if value == 0x81 {
-                    print!("{}", self.serial[0] as char);
+                    let c = self.serial[0] as char;
+                    print!("{}", c);
+                    self.serial_buffer.push(c);
                 }
             }
             0xFF04..=0xFF07 => {
@@ -295,6 +307,7 @@ impl MemoryWrite<u16, u8> for Io {
             0xFF56 => {
                 self.rp = value;
             }
+            0xFF7F => (),
             _ => panic!("Invalid write to address {}: value {}", addr, value),
         }
     }
@@ -327,6 +340,8 @@ pub struct MemoryBus {
 
     /// Interrupt enable  - 0xFFFF
     pub int_enable: u8,
+
+    cgb: bool,
 }
 
 impl MemoryBus {
@@ -339,6 +354,7 @@ impl MemoryBus {
             io: Io::new(),
             high_ram: [0u8; 0x80],
             int_enable: 0,
+            cgb: true,
         }
     }
 
@@ -354,6 +370,7 @@ impl MemoryBus {
             io: Io::new(),
             high_ram: [0u8; 0x80],
             int_enable: 0,
+            cgb,
         })
     }
 
@@ -413,6 +430,24 @@ impl MemoryRead<u16, u8> for MemoryBus {
                 let bank = self.ppu().vram().active_bank;
                 bank | 0xFE
             }
+            0xFEA0..=0xFEFF => {
+                // Prohibited memory area
+                // If OAM is locked, returns 0xFF
+                // Otherwise, behavior depends on DMG vs. CGB
+                if self.ppu().oam_locked() {
+                    0xFF
+                } else {
+                    if !self.cgb {
+                        0
+                    } else {
+                        // From Pan Docs:
+                        //   "Returns the high nibble of the lower address byte twice,
+                        //    e.g. FFAx returns AA, FFBx returns BB, and so forth."
+                        let upper_nibble = ((addr & 0xF0) >> 4) as u8;
+                        upper_nibble << 4 | upper_nibble
+                    }
+                }
+            }
             0xFE00..=0xFE9F | 0xFF40..=0xFF4B | 0xFF68..=0xFF6B => self.ppu.read(addr),
             0xFF80..=0xFFFE => {
                 let addr = addr as usize - 0xFF80;
@@ -436,6 +471,9 @@ impl MemoryWrite<u16, u8> for MemoryBus {
             }
             Ram::BASE_ADDR..=Ram::LAST_ADDR => self.ram.write(addr, value),
             Vram::BANK_SELECT_ADDR => self.ppu.vram_mut().update_bank(value),
+            0xFEA0..=0xFEFF => {
+                // Prohibited memory area -- no effect on writes
+            }
             0xFE00..=0xFE9F | 0xFF40..=0xFF4B | 0xFF68..=0xFF6B => self.ppu.write(addr, value),
             0xFF80..=0xFFFE => {
                 let addr = addr as usize - 0xFF80;

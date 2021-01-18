@@ -25,6 +25,9 @@ use ppu::FrameBuffer;
 pub struct Gameboy {
     cpu: Cpu,
 
+    // Number of frames executed
+    frame_counter: u64,
+
     #[cfg(feature = "debug")]
     debugger: debug::Debugger,
 }
@@ -47,12 +50,14 @@ impl Gameboy {
         #[cfg(feature = "debug")]
         let gameboy = Self {
             cpu,
+            frame_counter: 0,
             debugger: debug::Debugger::new(),
         };
 
         #[cfg(not(feature = "debug"))]
         let gameboy = Self {
             cpu,
+            frame_counter: 0,
         };
 
         Ok(gameboy)
@@ -113,6 +118,8 @@ impl Gameboy {
             self.cpu.memory.joypad().handle_event(event);
         }
 
+        self.frame_counter += 1;
+
         // Return the rendered frame as a frame buffer
         self.cpu.memory.ppu().frame_buffer()
     }
@@ -121,17 +128,20 @@ impl Gameboy {
     pub fn insert<P: AsRef<Path>>(&mut self, rom_path: P) -> Result<()> {
         let cartridge = Some(Cartridge::from_file(rom_path)?);
         self.cpu = Cpu::new(cartridge)?;
+        self.frame_counter = 0;
         Ok(())
     }
 
     /// Eject the inserted cartridge, if any, and reset the CPU
     pub fn eject(&mut self) {
         self.cpu = Cpu::new(None).unwrap();
+        self.frame_counter = 0;
     }
 
     /// Reset the emulator
     pub fn reset(&mut self) -> Result<()> {
         // Reset the CPU
+        self.frame_counter = 0;
         self.cpu.reset()
     }
 

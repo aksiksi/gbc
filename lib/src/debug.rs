@@ -182,6 +182,7 @@ impl Debugger {
                         println!("Dumping instructions to {}", DEBUG_DUMP_FILE);
                     }
                 }
+                "dump" => eprintln!("'dump' requires at least 1 argument"),
                 "h" | "hist" => {
                     let count: usize = if line.len() < 2 {
                         5
