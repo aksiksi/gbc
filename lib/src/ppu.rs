@@ -47,6 +47,7 @@
 //! The combination of these two periods nets us ~60 fps.
 use std::collections::VecDeque;
 
+use crate::cpu::Interrupt;
 use crate::memory::{MemoryRead, MemoryWrite};
 
 pub const LCD_WIDTH: usize = 160;
@@ -327,6 +328,7 @@ pub struct Ppu {
 
     /// OAM DMA (0xFF46)
     oam_dma: u8,
+    pub oam_dma_active: bool,
 
     /// Monochrome palette registers (0xFF47-0xFF49)
     bgp: u8,
@@ -402,6 +404,7 @@ impl Ppu {
             ly: 0,
             lyc: 0,
             oam_dma: 0,
+            oam_dma_active: false,
             bgp: 0xFC,
             obp0: 0xFF,
             obp1: 0xFF,
@@ -428,8 +431,9 @@ impl Ppu {
     /// function is called *after* the CPU step completes. The value passed in
     /// for `cycle` includes the time spent by the CPU.
     ///
-    /// The returned tuple contains two interrupt flags: (Vblank, LcdStat)
-    pub fn step(&mut self, cycle: u32, speed: bool) -> (bool, bool) {
+    /// This method returns a `Vec` of interrupts that need to be triggered, if
+    /// any.
+    pub fn step(&mut self, cycle: u32, speed: bool, interrupts: &mut Vec<Interrupt>) {
         self.cycle = cycle;
 
         // Figure out the current dot and scan line
@@ -445,16 +449,14 @@ impl Ppu {
         // Update the internal PPU status
         //
         // This also returns which interrupts need to be triggered
-        let (stat_mode_change, vblank_interrupt, stat_interrupt) = self.update_status(dot, line);
+        let stat_mode_change = self.update_status(dot, line, interrupts);
 
         // Render data to the frame
         self.render(stat_mode_change);
-
-        (vblank_interrupt, stat_interrupt)
     }
 
     /// Returns: (stat_mode_change, vblank_interrupt, stat_interrupt)
-    fn update_status(&mut self, dot: u32, line: u8) -> (bool, bool, bool) {
+    fn update_status(&mut self, dot: u32, line: u8, interrupts: &mut Vec<Interrupt>) -> bool {
         // If we have a scanline change, flush the write stack to affected registers
         if line != self.ly {
             while let Some((addr, value)) = self.write_stack.pop_back() {
@@ -505,7 +507,9 @@ impl Ppu {
         // VBLANK interrupt is fired if the mode has changed and the current mode is VBLANK.
         //
         // Note: This is fired once per frame.
-        let vblank_interrupt = stat_mode_change && mode == StatMode::Vblank;
+        if stat_mode_change && mode == StatMode::Vblank {
+            interrupts.push(Interrupt::Vblank);
+        }
 
         // If any of the STAT interrupt conditions are met, fire an interrupt.
         //
@@ -519,7 +523,11 @@ impl Ppu {
             }
         };
 
-        (stat_mode_change, vblank_interrupt, stat_interrupt)
+        if stat_interrupt {
+            interrupts.push(Interrupt::LcdStat);
+        }
+
+        stat_mode_change
     }
 
     /// Render pixel data to the internal frame buffer
@@ -771,6 +779,7 @@ impl Ppu {
     }
 
     /// Returns `true` if OAM is locked to CPU
+    #[allow(unused)]
     fn oam_locked(&self) -> bool {
         match self.stat.mode {
             // Locked during Scan and Read
@@ -840,10 +849,8 @@ impl MemoryWrite<u16, u8> for Ppu {
                 }
             }
             0xFE00..=0xFE9F => {
-                if !self.oam_locked() {
-                    let idx = (addr as usize) - 0xFE00;
-                    self.oam[idx] = value;
-                }
+                let idx = (addr as usize) - 0xFE00;
+                self.oam[idx] = value;
             }
             Self::LCDC_ADDR => self.lcdc.set(value),
             Self::STAT_ADDR => {
@@ -864,7 +871,10 @@ impl MemoryWrite<u16, u8> for Ppu {
                     self.ly = value;
                 }
             }
-            0xFF46 => self.oam_dma = value,
+            0xFF46 => {
+                self.oam_dma = value;
+                self.oam_dma_active = true;
+            }
             0xFF47 => self.bgp = value,
             0xFF48 => self.obp0 = value,
             0xFF49 => self.obp1 = value,

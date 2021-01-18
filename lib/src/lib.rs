@@ -2,6 +2,7 @@ use std::path::Path;
 
 pub mod cartridge;
 pub mod cpu;
+pub mod dma;
 pub mod error;
 pub mod instructions;
 pub mod joypad;
@@ -78,29 +79,30 @@ impl Gameboy {
             // Execute a step of the CPU
             let (cycles_taken, _inst) = self.cpu.step();
 
+            let mut interrupts = Vec::new();
+
             // Execute a step of the PPU.
             //
             // The PPU will "catch up" based on what happened in the CPU.
-            let (trigger_vblank, trigger_stat) =
-                self.cpu.memory.ppu_mut().step(cycle + cycles_taken as u32, speed);
-            if trigger_vblank {
-                self.cpu.trigger_interrupt(Interrupt::Vblank);
-            }
-            if trigger_stat {
-                self.cpu.trigger_interrupt(Interrupt::LcdStat);
-            }
+            self.cpu.memory.ppu_mut().step(cycle + cycles_taken as u32, speed, &mut interrupts);
 
             // Check if a serial interrupt needs to be triggered
             //
             // TODO: This does not happen every cycle, right?
             if self.cpu.memory.io_mut().serial_interrupt() {
-                self.cpu.trigger_interrupt(Interrupt::Serial);
+                interrupts.push(Interrupt::Serial);
             }
+
+            self.cpu.dma_step(cycles_taken);
 
             // Update the internal timer and trigger an interrupt, if needed
             // Note that the timer may tick multiple times for a single instruction
             if self.cpu.memory.timer().step(cycles_taken) {
-                self.cpu.trigger_interrupt(Interrupt::Timer);
+                interrupts.push(Interrupt::Timer);
+            }
+
+            for interrupt in interrupts {
+                self.cpu.trigger_interrupt(interrupt);
             }
 
             cycle += cycles_taken as u32;

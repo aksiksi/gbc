@@ -413,7 +413,7 @@ impl MemoryRead<u16, u8> for MemoryBus {
                 let bank = self.ppu().vram().active_bank;
                 bank | 0xFE
             }
-            0xFE00..=0xFE9F | 0xFF40..=0xFF4B | 0xFF68..=0xFF69 => self.ppu.read(addr),
+            0xFE00..=0xFE9F | 0xFF40..=0xFF4B | 0xFF68..=0xFF6B => self.ppu.read(addr),
             0xFF80..=0xFFFE => {
                 let addr = addr as usize - 0xFF80;
                 self.high_ram[addr]

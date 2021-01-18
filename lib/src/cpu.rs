@@ -1,4 +1,5 @@
 use crate::cartridge::Cartridge;
+use crate::dma::DmaController;
 use crate::error::Result;
 use crate::instructions::{Arg, Cond, Cycles, Instruction};
 use crate::memory::{MemoryBus, MemoryRead, MemoryWrite};
@@ -58,6 +59,7 @@ impl HalfCarry<u16> for u16 {
 pub struct Cpu {
     pub registers: RegisterFile,
     pub memory: MemoryBus,
+    dma: DmaController,
     pub cgb: bool,
 
     /// Global interrupt enable flag (Interrupt Master Enable)
@@ -88,10 +90,12 @@ impl Cpu {
         };
 
         let registers = RegisterFile::new(cgb);
+        let dma = DmaController::new();
 
         Ok(Self {
             registers,
             memory,
+            dma,
             cgb,
             ime: false,
             is_halted: false,
@@ -162,6 +166,12 @@ impl Cpu {
         let cycles = int_cycles + cycles;
 
         (cycles, inst)
+    }
+
+    /// Execute a single step of DMA (if active).
+    pub fn dma_step(&mut self, cycles: u8) {
+        let memory = &mut self.memory;
+        self.dma.step(cycles, memory);
     }
 
     /// Fetch the next instruction and return it
