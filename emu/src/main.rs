@@ -4,6 +4,7 @@ use std::time::{Instant, Duration};
 
 use gbc::{Gameboy, Result};
 use gbc::joypad::{JoypadEvent, JoypadInput};
+use gbc::ppu::{LCD_WIDTH, LCD_HEIGHT};
 
 use sdl2::render::TextureAccess;
 use sdl2::pixels::Color;
@@ -82,8 +83,8 @@ fn gui(rom_path: Option<PathBuf>) {
     // We write raw pixel data here and copy it to the Canvas for rendering
     let mut texture = texture_creator.create_texture(None,
                                                      TextureAccess::Target,
-                                                     160,
-                                                     144).unwrap();
+                                                     LCD_WIDTH as u32,
+                                                     LCD_HEIGHT as u32).unwrap();
 
     let mut gameboy = Gameboy::init(rom_path).unwrap();
     let frame_duration = Duration::new(0, Gameboy::FRAME_DURATION);
@@ -139,8 +140,8 @@ fn gui(rom_path: Option<PathBuf>) {
         // Helpful C example: https://wiki.libsdl.org/SDL_CreateTexture
         canvas.with_texture_canvas(&mut texture, |canvas| {
             canvas.clear();
-            for x in 0..160 {
-                for y in 0..144 {
+            for x in 0..LCD_WIDTH {
+                for y in 0..LCD_HEIGHT {
                     let color = frame_buffer.data[y * 160 + x];
                     canvas.set_draw_color(Color::RGBA(color.red, color.green, color.blue, color.alpha));
                     canvas.draw_point((x as i32, y as i32)).unwrap();

@@ -344,12 +344,13 @@ impl MemoryBus {
 
     pub fn from_cartridge(mut cartridge: Cartridge) -> Result<Self> {
         let controller = Controller::from_cartridge(&mut cartridge)?;
+        let cgb = cartridge.cgb();
 
         Ok(Self {
             cartridge: Some(cartridge),
             controller,
-            ppu: Ppu::new(true),
-            ram: Ram::new(true),
+            ppu: Ppu::new(cgb),
+            ram: Ram::new(cgb),
             io: Io::new(),
             high_ram: [0u8; 0x80],
             int_enable: 0,

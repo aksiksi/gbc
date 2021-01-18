@@ -91,23 +91,36 @@ impl RegisterFile {
 
     /// Returns a new register file
     ///
-    /// * Registers are initialized to some values on boot
+    /// * Registers are initialized to some values on boot based on GB mode
     /// * SP is initialized to 0xFFFE on boot
     /// * PC is initialized to 0x100 on boot (once internal ROM completes)
-    ///
-    /// TODO: do we want to mimic the internal ROM?
-    pub fn new() -> Self {
-        Self {
-            A: 0x11,
-            F: 0x80,
-            B: 0x00,
-            C: 0x00,
-            D: 0xFF,
-            E: 0x56,
-            H: 0x00,
-            L: 0x0D,
-            PC: 0x0100,
-            SP: 0xFFFE,
+    pub fn new(cgb: bool) -> Self {
+        if cgb {
+            Self {
+                A: 0x11,
+                F: 0x80,
+                B: 0x00,
+                C: 0x00,
+                D: 0xFF,
+                E: 0x56,
+                H: 0x00,
+                L: 0x0D,
+                PC: 0x0100,
+                SP: 0xFFFE,
+            }
+        } else {
+            Self {
+                A: 0x01,
+                F: 0xB0,
+                B: 0x00,
+                C: 0x13,
+                D: 0x00,
+                E: 0xD8,
+                H: 0x01,
+                L: 0x4D,
+                PC: 0x0100,
+                SP: 0xFFFE,
+            }
         }
     }
 

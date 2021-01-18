@@ -49,6 +49,9 @@ use std::collections::VecDeque;
 
 use crate::memory::{MemoryRead, MemoryWrite};
 
+pub const LCD_WIDTH: usize = 160;
+pub const LCD_HEIGHT: usize = 144;
+
 #[derive(Clone, Copy, Debug)]
 pub struct GameboyRgba {
     pub red: u8,
@@ -78,20 +81,32 @@ impl GameboyRgba {
     }
 }
 
+// Basic DMG/monochrome color palette
+static DMG_PALETTE: [GameboyRgba; 4] = [
+    GameboyRgba {
+        red: 175, green: 203, blue: 70, alpha: 255
+    },
+    GameboyRgba {
+        red: 121, green: 170, blue: 109, alpha: 255
+    },
+    GameboyRgba {
+        red: 34, green: 111, blue: 95, alpha: 255
+    },
+    GameboyRgba {
+        red: 8, green: 41, blue: 85, alpha: 255
+    },
+];
+
 /// Buffer that holds pixel data for a single frame.
 pub struct FrameBuffer {
-    pub data: Box<[GameboyRgba; Self::WIDTH * Self::HEIGHT]>,
+    pub data: Box<[GameboyRgba; LCD_WIDTH * LCD_HEIGHT]>,
     pub ready: bool,
 }
 
 impl FrameBuffer {
-    /// 160x144 pixels in a frame
-    const WIDTH: usize = 160;
-    const HEIGHT: usize = 144;
-
     pub fn new() -> Self {
         Self {
-            data: Box::new([GameboyRgba::white(); Self::WIDTH * Self::HEIGHT]),
+            data: Box::new([GameboyRgba::white(); LCD_WIDTH * LCD_HEIGHT]),
             ready: false,
         }
     }
@@ -100,7 +115,7 @@ impl FrameBuffer {
     ///
     /// `x` is the "column", `y` is the "row".
     pub fn write(&mut self, x: usize, y: usize, pixel: GameboyRgba) {
-        self.data[y * Self::WIDTH + x] = pixel;
+        self.data[y * LCD_WIDTH + x] = pixel;
     }
 }
 
@@ -357,6 +372,9 @@ pub struct Ppu {
 
     /// Last cycle processed
     cycle: u32,
+
+    /// If `true`, operate in CGB mode
+    cgb: bool,
 }
 
 impl Ppu {
@@ -400,6 +418,7 @@ impl Ppu {
             ly_enabled: false,
             write_stack: VecDeque::with_capacity(5), // 5 registers use this
             cycle: 0,
+            cgb,
         }
     }
 
@@ -574,7 +593,7 @@ impl Ppu {
         // 8. Compute the pixel's color palette index (2 bits).
         // 9. Finally, using the tile's palette number and the index from (8),
         //    compute the RGB value for the pixel.
-        for pixel in 0u8..160 {
+        for pixel in 0..LCD_WIDTH as u8 {
             // (1)
             let bg_pixel_x = pixel.wrapping_add(self.scx);
             let bg_pixel_y = scanline.wrapping_add(self.scy);
@@ -586,7 +605,12 @@ impl Ppu {
 
             // (4)
             let tile_number = self.vram.read_bank(0, tile_map_base + tile_map_index);
-            let tile_data_attr = self.vram.read_bank(1, tile_map_base + tile_map_index);
+            let tile_data_attr = if self.cgb {
+                self.vram.read_bank(1, tile_map_base + tile_map_index)
+            } else {
+                // No 2nd bank for tile attributes in DMG mode
+                0
+            };
 
             // (5)
             let tile_palette_num = tile_data_attr & 0x07; // bits 0-2
@@ -645,25 +669,40 @@ impl Ppu {
             let color_index = upper_bit << 1 | lower_bit;
 
             // (9)
-            let palette_index = (tile_palette_num * 4 + color_index) as usize;
-            let pixel_color = (self.bg_palette_ram[palette_index + 1] as u16) << 8 |
-                               self.bg_palette_ram[palette_index] as u16;
+            let mut pixel_data;
 
-            let red = (pixel_color & 0x001F) as u8;
-            let green = ((pixel_color & 0x03E0) >> 5) as u8;
-            let blue = ((pixel_color & 0x7F00) >> 10) as u8;
-            let alpha = 0xFF; // BG is always opaque
+            if self.cgb {
+                let palette_index = (tile_palette_num * 4 + color_index) as usize;
+                let pixel_color = (self.bg_palette_ram[palette_index + 1] as u16) << 8 |
+                                   self.bg_palette_ram[palette_index] as u16;
+                let red = (pixel_color & 0x001F) as u8;
+                let green = ((pixel_color & 0x03E0) >> 5) as u8;
+                let blue = ((pixel_color & 0x7F00) >> 10) as u8;
+                let alpha = 0xFF; // BG is always opaque
+
+                pixel_data = GameboyRgba {
+                    red,
+                    blue,
+                    green,
+                    alpha,
+                };
+
+                pixel_data.scale_to_rgb();
+            } else {
+                // In DMG mode, extract the color palette index from BGP
+                let palette_index = match color_index {
+                    0 => self.bgp & 0b00000011,
+                    1 => (self.bgp & 0b00001100) >> 2,
+                    2 => (self.bgp & 0b00110000) >> 4,
+                    3 => (self.bgp & 0b11000000) >> 6,
+                    _ => unreachable!(),
+                };
+
+                // We have a single, static color palette
+                pixel_data = DMG_PALETTE[palette_index as usize];
+            }
 
             // Finally, push the pixel to the frame buffer
-            let mut pixel_data = GameboyRgba {
-                red,
-                blue,
-                green,
-                alpha,
-            };
-
-            pixel_data.scale_to_rgb();
-
             self.frame_buffer.write(pixel as usize, scanline as usize, pixel_data);
         }
     }

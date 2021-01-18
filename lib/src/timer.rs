@@ -115,6 +115,8 @@ impl Timer {
             0xFF04 => {
                 // Writes to DIV reset the register
                 self.div = 0;
+                self.div_counter = 0;
+                self.tima_counter = 0;
             }
             0xFF05 => self.tima = value,
             0xFF06 => self.tma = value,

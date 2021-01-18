@@ -6,6 +6,8 @@
 * Mooneye (GB emulator in Rust): https://github.com/Gekkio/mooneye-gb
 * Mooneye notes: https://gekkio.fi/files/gb-docs/gbctr.pdf
 * Blargg sound tests: https://forums.nesdev.com/viewtopic.php?t=13730
+* Blargg's mem_timing tests: https://www.reddit.com/r/EmuDev/comments/j4xn0s/gb_how_to_get_correct_memory_timings/
+    * Passing these tests require that the timer and all peripherals be updated after every memory operation
 
 # NOTES
 
