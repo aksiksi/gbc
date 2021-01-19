@@ -116,7 +116,9 @@ impl Gameboy {
 
         // Update joypad, if needed
         if let Some(event) = joypad_event {
-            self.cpu.memory.joypad().handle_event(event);
+            if self.cpu.memory.joypad().handle_event(event) {
+                self.cpu.trigger_interrupt(Interrupt::Joypad);
+            }
         }
 
         self.frame_counter += 1;

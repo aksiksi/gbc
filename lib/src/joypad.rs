@@ -51,10 +51,8 @@ enum JoypadSelection {
 
 #[derive(Debug)]
 pub struct Joypad {
-    /// Raw register state
-    raw: u8,
-
-    /// Current joypad selection for correct event handling
+    buttons: u8,
+    directions: u8,
     selection: JoypadSelection,
 }
 
@@ -62,21 +60,18 @@ impl Joypad {
     pub fn new() -> Self {
         Self {
             // All buttons are unpressed by default
-            raw: 0xFF,
+            buttons: 0xFF,
+            directions: 0xFF,
             selection: JoypadSelection::None,
         }
     }
 
     /// Update raw joypad register based on incoming joypad event.
-    ///
-    /// This sets the right bits in the `raw` state based on
-    /// the event. If the event does not apply to current selection,
-    /// it is simply ignored.
-    pub fn handle_event(&mut self, event: JoypadEvent) {
-        // Does the button match the selection
-        if event.selection() != self.selection {
-            return;
-        }
+    pub fn handle_event(&mut self, event: JoypadEvent) -> bool {
+        let reg = match event.selection() {
+            JoypadSelection::Buttons => &mut self.buttons,
+            _ => &mut self.directions,
+        };
 
         let is_down = if let JoypadEvent::Down(_) = event {
             true
@@ -85,28 +80,31 @@ impl Joypad {
         };
 
         // Convert the input to its relevant bit position
-        let input = event.input();
-        let bit = input.to_bit();
+        let bit = event.input().to_bit();
 
         if is_down {
-            self.raw |= 1 << bit;
+            *reg &= !(1 << bit);
+            true
         } else {
-            self.raw &= !(1 << bit);
+            *reg |= 1 << bit;
+            false
         }
     }
 
     pub fn read(&self) -> u8 {
-        self.raw
+        match self.selection {
+            JoypadSelection::Buttons => self.buttons & 0x0F,
+            JoypadSelection::Directions => self.directions & 0x0F,
+            JoypadSelection::None => 0x0F,
+        }
     }
 
     pub fn write(&mut self, data: u8) {
-        self.raw = data;
-
         // Update the selection keys based on value written
         // This information is used during event handling
-        self.selection = if self.raw & (1 << 5) == 0 {
+        self.selection = if data & (1 << 5) == 0 {
             JoypadSelection::Buttons
-        } else if self.raw & (1 << 4) == 0 {
+        } else if data & (1 << 4) == 0 {
             JoypadSelection::Directions
         } else {
             JoypadSelection::None
