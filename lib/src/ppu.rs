@@ -84,17 +84,24 @@ impl GameboyRgba {
 
 // Basic DMG/monochrome color palette
 static DMG_PALETTE: [GameboyRgba; 4] = [
+    // White
     GameboyRgba {
-        red: 175, green: 203, blue: 70, alpha: 255
+        red: 0xE0, green: 0xF8, blue: 0xD0, alpha: 255
     },
+
+    // Light gray
     GameboyRgba {
-        red: 121, green: 170, blue: 109, alpha: 255
+        red: 0x88, green: 0xC0, blue: 0x70, alpha: 255
     },
+
+    // Dark gray
     GameboyRgba {
-        red: 34, green: 111, blue: 95, alpha: 255
+        red: 0x34, green: 0x68, blue: 0x56, alpha: 255
     },
+
+    // Black
     GameboyRgba {
-        red: 8, green: 41, blue: 85, alpha: 255
+        red: 0x08, green: 0x18, blue: 0x20, alpha: 255
     },
 ];
 

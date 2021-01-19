@@ -16,7 +16,13 @@ use structopt::StructOpt;
 #[derive(Debug, StructOpt)]
 struct Cli {
     #[structopt(parse(from_os_str))]
-    rom_file: PathBuf,
+    rom_file: Option<PathBuf>,
+
+    #[structopt(long)]
+    boot_rom: bool,
+
+    #[structopt(default_value = "6", long)]
+    scale: u32,
 
     #[structopt(long)]
     headless: bool,
@@ -57,12 +63,16 @@ fn event_to_joypad(event: Event) -> Option<JoypadEvent> {
     }
 }
 
-fn gui(rom_path: Option<PathBuf>) {
-    let rom_name = rom_path
+fn gui(cli: Cli) {
+    let rom_name = cli.rom_file
         .as_ref()
         .map(|p| {
-            p.file_name().unwrap().to_str().unwrap()
+            match p.file_name() {
+                None => None,
+                Some(n) => Some(n.to_str().unwrap()),
+            }
         })
+        .flatten()
         .unwrap_or("No ROM");
     let title = format!("{} - gbc", rom_name);
 
@@ -70,9 +80,10 @@ fn gui(rom_path: Option<PathBuf>) {
     let video_subsystem = sdl_context.video().unwrap();
 
     // Setup an SDL2 Window
-    let window = video_subsystem.window(&title, 640, 576)
+    let window = video_subsystem.window(&title, LCD_WIDTH as u32 * cli.scale, LCD_HEIGHT as u32 * cli.scale)
         .position_centered()
         .allow_highdpi()
+        .resizable()
         .build()
         .unwrap();
 
@@ -94,7 +105,7 @@ fn gui(rom_path: Option<PathBuf>) {
                                                      LCD_WIDTH as u32,
                                                      LCD_HEIGHT as u32).unwrap();
 
-    let mut gameboy = Gameboy::init(rom_path).unwrap();
+    let mut gameboy = Gameboy::init(cli.rom_file, cli.boot_rom).unwrap();
     let frame_duration = Duration::new(0, Gameboy::FRAME_DURATION);
 
     // Start the event loop
@@ -167,9 +178,9 @@ fn main() -> Result<()> {
     let cli = Cli::from_args();
 
     if !cli.headless {
-        gui(Some(cli.rom_file));
+        gui(cli);
     } else {
-        let mut gameboy = Gameboy::init(Some(cli.rom_file))?;
+        let mut gameboy = Gameboy::init(cli.rom_file, false)?;
         loop {
             // TODO: Perhaps allow user to provide joypad input file?
             // e.g., list of (input, time)

@@ -1,4 +1,4 @@
-use crate::cartridge::{Cartridge, Controller, Ram as CartridgeRam, Rom};
+use crate::cartridge::{BootRom, Cartridge, Controller, Ram as CartridgeRam, Rom};
 use crate::error::Result;
 use crate::joypad::Joypad;
 use crate::ppu::{Ppu, Vram};
@@ -146,7 +146,7 @@ pub struct Io {
     prep_speed_switch: u8,
 
     /// Range: 0xFF50
-    disable_boot_rom: u8,
+    pub disable_boot_rom: u8,
 
     /// HDMA1-HDMA5 (0xFF51-0xFF55)
     hdma: [u8; 5],
@@ -307,8 +307,11 @@ impl MemoryWrite<u16, u8> for Io {
             0xFF56 => {
                 self.rp = value;
             }
-            0xFF7F => (),
-            _ => panic!("Invalid write to address {}: value {}", addr, value),
+            0xFF03 | 0xFF08..=0xFF0E | 0xFF27..=0xFF2F | 0xFF4C..=0xFF4E | 0xFF57..=0xFF67 | 0xFF6C..=0xFF6F | 0xFF71..=0xFF7F => {
+                // Invalid registers
+                //panic!("Invalid write to 0x{:X}: {}", addr, value)
+            }
+            _ => unreachable!(),
         }
     }
 }
@@ -414,6 +417,10 @@ impl MemoryRead<u16, u8> for MemoryBus {
     /// This will be converted into a read from the relevant memory section.
     fn read(&self, addr: u16) -> u8 {
         match addr {
+            BootRom::BASE_ADDR..=BootRom::LAST_ADDR if self.controller.boot_rom.is_some() => {
+                // If the boot ROM is active, read from it instead of cartridge ROM
+                self.controller.boot_rom.as_ref().unwrap().read(addr)
+            }
             Rom::BASE_ADDR..=Rom::LAST_ADDR => self.controller.rom.read(addr),
             Vram::BASE_ADDR..=Vram::LAST_ADDR => self.ppu.vram().read(addr),
             CartridgeRam::BASE_ADDR..=CartridgeRam::LAST_ADDR => {
@@ -423,12 +430,6 @@ impl MemoryRead<u16, u8> for MemoryBus {
             0xE000..=0xFDFF => {
                 // Echo RAM
                 self.read(addr - 0x2000)
-            }
-            Vram::BANK_SELECT_ADDR => {
-                // Reading the bank select register returns the active bank in bit 0,
-                // with all other bits set to 1
-                let bank = self.ppu().vram().active_bank;
-                bank | 0xFE
             }
             0xFEA0..=0xFEFF => {
                 // Prohibited memory area
@@ -449,14 +450,20 @@ impl MemoryRead<u16, u8> for MemoryBus {
                 }
             }
             0xFE00..=0xFE9F | 0xFF40..=0xFF4B | 0xFF68..=0xFF6B => self.ppu.read(addr),
+            Vram::BANK_SELECT_ADDR => {
+                // Reading the bank select register returns the active bank in bit 0,
+                // with all other bits set to 1
+                let bank = self.ppu().vram().active_bank;
+                bank | 0xFE
+            }
+            0xFF00..=0xFF7F => {
+                self.io.read(addr)
+            }
             0xFF80..=0xFFFE => {
                 let addr = addr as usize - 0xFF80;
                 self.high_ram[addr]
             }
             0xFFFF => self.int_enable,
-
-            // Default to I/O access
-            _ => self.io.read(addr),
         }
     }
 }
@@ -470,7 +477,9 @@ impl MemoryWrite<u16, u8> for MemoryBus {
                 self.controller.write(addr, value)
             }
             Ram::BASE_ADDR..=Ram::LAST_ADDR => self.ram.write(addr, value),
-            Vram::BANK_SELECT_ADDR => self.ppu.vram_mut().update_bank(value),
+            0xE000..=0xFDFF => {
+                // Echo RAM
+            }
             0xFEA0..=0xFEFF => {
                 // Prohibited memory area -- no effect on writes
             }
@@ -479,13 +488,21 @@ impl MemoryWrite<u16, u8> for MemoryBus {
                 let addr = addr as usize - 0xFF80;
                 self.high_ram[addr] = value;
             }
+            Vram::BANK_SELECT_ADDR => self.ppu.vram_mut().update_bank(value),
+            0xFF50 => {
+                // Disable boot ROM
+                if self.io.disable_boot_rom == 0 && value & 0x1 != 0 {
+                    self.controller.boot_rom.take();
+                    self.io.disable_boot_rom = 1;
+                }
+            }
             Ram::BANK_SELECT_ADDR => self.ram.update_bank(value),
+            0xFF00..=0xFF7F => {
+                self.io.write(addr, value)
+            }
             0xFFFF => {
                 self.int_enable = value;
             }
-
-            // Default to I/O access
-            _ => self.io.write(addr, value),
         }
     }
 }

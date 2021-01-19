@@ -308,8 +308,34 @@ impl MemoryWrite<u16, u8> for Rom {
     }
 }
 
+pub struct BootRom {
+    data: &'static [u8; 256],
+}
+
+impl BootRom {
+    pub const BASE_ADDR: u16 = 0x0000;
+    pub const LAST_ADDR: u16 = 0x00FF;
+
+    pub fn new() -> Self {
+        Self {
+            data: include_bytes!("dmg_boot.bin"),
+        }
+    }
+}
+
+impl MemoryRead<u16, u8> for BootRom {
+    #[inline]
+    fn read(&self, addr: u16) -> u8 {
+        let addr = addr as usize;
+        self.data[addr]
+    }
+}
+
 /// Cartridge ROM + RAM controller.
 pub struct Controller {
+    /// Boot ROM
+    pub boot_rom: Option<BootRom>,
+
     /// Cartridge ROM
     pub rom: Rom,
 
@@ -336,6 +362,7 @@ impl Controller {
         let ram_size = RamSize::_8K;
 
         Self {
+            boot_rom: None,
             rom: Rom::new(rom_size),
             ram: Ram::new(ram_size),
             rom_size,
@@ -353,8 +380,14 @@ impl Controller {
         let ram_size = cartridge.ram_size()?;
         let rom = Rom::from_file(rom_size, &mut cartridge.rom_file)?;
         let ram = Ram::new(ram_size);
+        let boot_rom = if cartridge.boot_rom {
+            Some(BootRom::new())
+        } else {
+            None
+        };
 
         Ok(Self {
+            boot_rom,
             rom,
             ram,
             rom_size,
@@ -610,6 +643,10 @@ pub struct Cartridge {
     /// ROM file
     pub rom_file: File,
 
+    /// If `true`, boot ROM is executed on boot/reset,
+    /// prior to loading the game
+    pub boot_rom: bool,
+
     /// Cartridge header
     ///
     /// See: https://gbdev.gg8.se/wiki/articles/The_Cartridge_Header
@@ -620,7 +657,7 @@ impl Cartridge {
     const HEADER_SIZE: usize = 0x50; // bytes
     const HEADER_OFFSET: u64 = 0x100;
 
-    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
+    pub fn from_file<P: AsRef<Path>>(path: P, boot_rom: bool) -> Result<Self> {
         let mut rom_file = File::open(&path)?;
         let mut header = [0u8; Self::HEADER_SIZE];
 
@@ -630,6 +667,7 @@ impl Cartridge {
 
         let cartridge = Self {
             rom_file,
+            boot_rom,
             header,
         };
 
@@ -751,7 +789,7 @@ mod test {
             .join("samples")
             .join("pokemon_gold.gbc");
 
-        let cartridge = Cartridge::from_file(&sample_rom_path).unwrap();
+        let cartridge = Cartridge::from_file(&sample_rom_path, false).unwrap();
 
         // Info: https://datacrystal.romhacking.net/wiki/Pok%C3%A9mon_Gold_and_Silver
         assert_eq!(cartridge.title().unwrap(), "POKEMON_GLDAAUE");

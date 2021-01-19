@@ -39,15 +39,17 @@
 - [x] Basic window rendering
 - [x] Get sprite rendering working
     - [x] Find good test ROM (Dr. Mario and Tetris)
-- [ ] Fix sprite overlap rendering
-    - [ ] Get the first 10 sprites in the line
-        - [ ] CGB: in OAM order, with x-pos as tiebreaker
-        - [ ] DMG: in x-pos order
-    - [ ] Map these into sprite objects for simpler manipulation (?)
-    - [ ] Pass the list of sprites to each sprite pixel fetch call
-    - [ ] If pixel has color index 0, try the next sprite in priority order
+- [x] Fix sprite overlap rendering
+    - [x] Get the first 10 sprites in the line
+        - [x] CGB: in OAM order
+        - [x] DMG: in x-pos order
+    - [x] Map these into sprite objects for simpler manipulation (?)
+    - [x] Pass the list of sprites to each sprite pixel fetch call
+    - [x] If pixel has color index 0, try the next sprite in priority order
 - [x] Buffer up serial writes and expose as API on `Gameboy`
     - [ ] This way, we can run tests in-line w/o calling into the CLI
+- [x] Add option to load boot ROM (cartridge must be present)
+- [x] Resizeable and scalable window
 - [ ] Get correct serial timing for interrupt handling
 - [ ] Get OAM HDMA working
 - [ ] Get MBC3 controller working

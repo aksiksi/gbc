@@ -76,11 +76,13 @@ impl Cpu {
 
     pub fn new(cartridge: Option<Cartridge>) -> Result<Self> {
         let cgb;
+        let mut boot_rom = false;
         let memory;
 
         match cartridge {
             Some(c) => {
                 cgb = c.cgb();
+                boot_rom = c.boot_rom;
                 memory = MemoryBus::from_cartridge(c)?;
             }
             None => {
@@ -89,7 +91,11 @@ impl Cpu {
             }
         };
 
-        let registers = RegisterFile::new(cgb);
+        let mut registers = RegisterFile::new(cgb);
+        if boot_rom {
+            registers.PC = 0x0;
+        }
+
         let dma = DmaController::new();
 
         Ok(Self {
