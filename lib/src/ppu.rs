@@ -578,7 +578,9 @@ impl Ppu {
     ///
     /// CGB mode: in OAM order
     /// DMG mode: sorted by x-pos
-    fn find_visible_sprites(&self, scanline: u8) -> Vec<Sprite> {
+    fn find_visible_sprites(&self) -> Vec<Sprite> {
+        let scanline = self.ly;
+
         let size = if self.lcdc.sprite_size() {
             16
         } else {
@@ -617,11 +619,12 @@ impl Ppu {
         sprites
     }
 
-    /// Render a single scanline worth of pixel data to the frame buffer
+    /// Render a single pixel to the frame buffer (screen).
     ///
-    /// This is split into rendering BG/window tiles and rendering sprites. Note
-    /// that sprites are more often layered on top of the BG.
-    fn render_scanline(&mut self) {
+    /// This is split into rendering the BG/window pixel and rendering the sprite
+    /// pixel. Note that sprites are more often layered on top of the BG, depending
+    /// on color and priority.
+    fn render_pixel(&mut self, pixel: u8, sprites: &[Sprite]) {
         let scanline = self.ly;
 
         // Select base address for BG tile map based on LCDC register
@@ -638,65 +641,70 @@ impl Ppu {
             0x9C00
         };
 
-        let sprites = self.find_visible_sprites(scanline);
+        let mut pixel_data = None;
+        let bg_priority;
+        let bg_color_index;
 
-        for pixel in 0..LCD_WIDTH as u8 {
-            let mut pixel_data = None;
-            let bg_priority;
-            let bg_color_index;
+        // Fetch pixel data for the BG or window, depending on which is currently active
+        if self.lcdc.bg_priority() {
+            let window_display =
+                self.lcdc.window_display_enable() &&
+                scanline >= self.wy &&
+                pixel >= self.wx.wrapping_sub(7);
 
-            // Fetch pixel data for the BG or window, depending on which is currently active
-            if self.lcdc.bg_priority() {
-                let window_display =
-                    self.lcdc.window_display_enable() &&
-                    scanline >= self.wy &&
-                    pixel >= self.wx.wrapping_sub(7);
-
-                let (data, priority, color_index) = if !window_display {
-                    let bg_pixel_x = pixel.wrapping_add(self.scx);
-                    let bg_pixel_y = scanline.wrapping_add(self.scy);
-                    self.fetch_bg_pixel_data(bg_pixel_x, bg_pixel_y, bg_tile_map_base)
-                } else {
-                    self.fetch_bg_pixel_data(pixel, scanline, window_tile_map_base)
-                };
-
-                pixel_data = Some(data);
-                bg_priority = priority;
-                bg_color_index = color_index;
+            let (data, priority, color_index) = if !window_display {
+                let bg_pixel_x = pixel.wrapping_add(self.scx);
+                let bg_pixel_y = scanline.wrapping_add(self.scy);
+                self.fetch_bg_pixel_data(bg_pixel_x, bg_pixel_y, bg_tile_map_base)
             } else {
-                if !self.cgb {
-                    // On DMG, reset the BG to white
-                    pixel_data = Some(DMG_PALETTE[0]);
-                }
+                self.fetch_bg_pixel_data(pixel, scanline, window_tile_map_base)
+            };
 
-                bg_priority = false;
-                bg_color_index = 0;
+            pixel_data = Some(data);
+            bg_priority = priority;
+            bg_color_index = color_index;
+        } else {
+            if !self.cgb {
+                // On DMG, reset the BG to white
+                pixel_data = Some(DMG_PALETTE[0]);
             }
 
-            if self.lcdc.sprite_enable() {
-                // Fetch sprite pixel data
-                let result = self.fetch_sprite_pixel_data(&sprites, pixel, scanline);
-                if let Some((data, priority, color_index)) = result {
-                    if !bg_priority && color_index != 0 {
-                        // If one of the below conditions is met, draw the sprite
-                        // on top of the BG pixel:
-                        //
-                        // 1. BG priority bit is _not_ set
-                        // 2. Sprite pixel is not transparent
-                        // 3. Transparent BG, always draw sprite on top
-                        // 4. Sprite priority for non-transparent BG
-                        // 5. No BG was rendered
-                        if bg_color_index == 0 || priority || pixel_data.is_none() {
-                            pixel_data = Some(data);
-                        }
+            bg_priority = false;
+            bg_color_index = 0;
+        }
+
+        if self.lcdc.sprite_enable() {
+            // Fetch sprite pixel data
+            let result = self.fetch_sprite_pixel_data(&sprites, pixel, scanline);
+            if let Some((data, priority, color_index)) = result {
+                if !bg_priority && color_index != 0 {
+                    // If one of the below conditions is met, draw the sprite
+                    // on top of the BG pixel:
+                    //
+                    // 1. BG priority bit is _not_ set
+                    // 2. Sprite pixel is not transparent
+                    // 3. Transparent BG, always draw sprite on top
+                    // 4. Sprite priority for non-transparent BG
+                    // 5. No BG was rendered
+                    if bg_color_index == 0 || priority || pixel_data.is_none() {
+                        pixel_data = Some(data);
                     }
                 }
             }
+        }
 
-            if let Some(data) = pixel_data {
-                // Push the pixel to the frame buffer
-                self.frame_buffer.write(pixel as usize, scanline as usize, data);
-            }
+        if let Some(data) = pixel_data {
+            // Push the pixel to the frame buffer
+            self.frame_buffer.write(pixel as usize, scanline as usize, data);
+        }
+    }
+
+    /// Render a single scanline worth of pixel data to the frame buffer
+    fn render_scanline(&mut self) {
+        let sprites = self.find_visible_sprites();
+
+        for pixel in 0..LCD_WIDTH as u8 {
+            self.render_pixel(pixel, &sprites);
         }
     }
 
