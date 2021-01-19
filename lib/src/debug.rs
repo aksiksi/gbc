@@ -8,10 +8,11 @@ use crate::memory::{MemoryRead, MemoryWrite};
 const DEBUG_DUMP_FILE: &str = "dump.txt";
 
 pub enum Mode {
-    Step,
-    StepN(u32),
     Continue,
     ContinueN(u32),
+    ContinuePc(u16),
+    Step,
+    StepN(u32),
 }
 
 pub struct Debugger {
@@ -89,13 +90,12 @@ impl Debugger {
 
                 hit
             }
+            Mode::ContinuePc(addr) => pc == addr,
         };
 
         if res {
-            // When a breakpoint is hit, print the last executed instruction
-            if self.instructions.len() > 1 {
-                println!("{}", self.instructions[self.instructions.len()-2].0);
-            }
+            // When a breakpoint is hit, print the next instruction
+            println!("{}", inst);
         }
 
         res
@@ -234,15 +234,43 @@ impl Debugger {
                         println!("{:#06x}: {}", addr, inst);
                     }
                 }
-                "n" if line.len() == 2 => {
+                "s" | "step" if line.len() == 2 => {
                     let n: u32 = line[1].parse().unwrap();
                     self.mode = Mode::StepN(n);
                     return;
                 }
-                "n" => {
+                "s" | "step" => {
                     self.mode = Mode::Step;
                     return;
                 }
+                "n" | "next" => {
+                    let pc = cpu.registers.PC;
+                    let (inst, size, _) = cpu.fetch(None);
+
+                    // If the next instruction is a CALL, keep executing
+                    // until the function returns
+                    if let Instruction::Call { .. } = inst {
+                        self.mode = Mode::ContinuePc(pc + size as u16);
+                    } else {
+                        self.mode = Mode::Step;
+                    }
+
+                    return;
+                }
+                "c" | "continue" if line.len() == 2 => {
+                    // Continue executing until address is hit (breakpoint shortcut)
+                    let addr = match Self::parse_u16(line[1]) {
+                        Some(addr) => addr,
+                        None => {
+                            eprintln!("Invalid address specified");
+                            continue;
+                        }
+                    };
+
+                    self.mode = Mode::ContinuePc(addr);
+                    return;
+                }
+                "c" => eprintln!("'c' requires at least 1 argument"),
                 "r" if line.len() == 2 => {
                     let n: u32 = line[1].parse().unwrap();
                     self.mode = Mode::ContinueN(n);

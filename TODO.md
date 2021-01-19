@@ -39,8 +39,9 @@
 - [x] Basic window rendering
 - [ ] Get sprite rendering working
     - [ ] Find good test ROM
-- [ ] Buffer up serial writes and expose as API on `Gameboy`
+- [x] Buffer up serial writes and expose as API on `Gameboy`
     - [ ] This way, we can run tests in-line w/o calling into the CLI
+- [ ] Get correct serial timing for interrupt handling
 - [ ] Get OAM HDMA working
 - [ ] Get MBC3 controller working
 - [ ] Implement RTC logic for relevant MBCs

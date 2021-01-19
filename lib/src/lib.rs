@@ -95,7 +95,8 @@ impl Gameboy {
             //
             // TODO: This does not happen every cycle, right?
             if self.cpu.memory.io_mut().serial_interrupt() {
-                interrupts.push(Interrupt::Serial);
+                // TODO: Implement correct timing for serial interrupts
+                //interrupts.push(Interrupt::Serial);
             }
 
             self.cpu.dma_step(cycles_taken);
