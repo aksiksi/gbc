@@ -24,7 +24,7 @@ These tests run on every commit to the repo.
 
 ### Dr. Mario
 
-![dr_mario](https://user-images.githubusercontent.com/916621/105058438-35186800-5a44-11eb-88c2-a5b7f13644ef.png)
+![dr_mario](https://user-images.githubusercontent.com/916621/105101343-a07e2c00-5a7c-11eb-8b3e-bf3e5d9c3eeb.mp4)
 
 ### Blargg's cpu_instrs ROM
 
