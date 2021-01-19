@@ -37,8 +37,15 @@
 - [x] Get regular OAM DMA working
     - Wiki on how OAM DMA works: https://gbdev.gg8.se/wiki/articles/OAM_DMA_tutorial
 - [x] Basic window rendering
-- [ ] Get sprite rendering working
-    - [ ] Find good test ROM
+- [x] Get sprite rendering working
+    - [x] Find good test ROM (Dr. Mario and Tetris)
+- [ ] Fix sprite overlap rendering
+    - [ ] Get the first 10 sprites in the line
+        - [ ] CGB: in OAM order, with x-pos as tiebreaker
+        - [ ] DMG: in x-pos order
+    - [ ] Map these into sprite objects for simpler manipulation (?)
+    - [ ] Pass the list of sprites to each sprite pixel fetch call
+    - [ ] If pixel has color index 0, try the next sprite in priority order
 - [x] Buffer up serial writes and expose as API on `Gameboy`
     - [ ] This way, we can run tests in-line w/o calling into the CLI
 - [ ] Get correct serial timing for interrupt handling

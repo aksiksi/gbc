@@ -807,25 +807,20 @@ impl Ppu {
         // 8x16 sprite
         let lower_tile = scanline >= tile_y + 8;
 
+        // Convert tile number to index in VRAM
+        let tile_index = if size == 8 {
+            tile_number as u16
+        } else if !lower_tile {
+            tile_number as u16 & 0xFE
+        } else {
+            tile_number as u16 | 0x01
+        };
+
         // Fetch tile data for the pixel
         let mut tile_data= [0u8; 16];
         for i in 0..tile_data.len() as u16 {
-            let tile_data_index;
-
-            if size == 8 {
-                // For 8x8 sprites, use the tile number normally (just like BG)
-                tile_data_index = tile_number as u16 * 16 + i
-            } else {
-                // For 8x16 sprites, we need to fetch the tile this pixel is in
-                if !lower_tile {
-                    tile_data_index = (tile_number as u16 & 0xFE) * 16 + i;
-                } else {
-                    tile_data_index = (tile_number as u16 | 0x01) * 16 + i;
-                }
-            }
-
+            let tile_data_index = tile_index * 16 + i;
             let addr = tile_data_base + tile_data_index;
-
             tile_data[i as usize] = self.vram.read_bank(vram_bank, addr);
         }
 

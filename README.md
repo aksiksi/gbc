@@ -22,6 +22,10 @@ These tests run on every commit to the repo.
 
 ## Examples
 
+### Dr. Mario
+
+![dr_mario](https://user-images.githubusercontent.com/916621/105058438-35186800-5a44-11eb-88c2-a5b7f13644ef.png)
+
 ### Blargg's cpu_instrs ROM
 
 ![cpu_instrs](https://user-images.githubusercontent.com/916621/104858877-21f48380-58f0-11eb-8a83-d5087da6d7a7.png)

@@ -66,7 +66,7 @@ impl Gameboy {
     /// Run Gameboy for a single frame.
     ///
     /// The frame takes in an optional joypad event as input.
-    pub fn frame(&mut self, joypad_event: Option<JoypadEvent>) -> &FrameBuffer {
+    pub fn frame(&mut self, mut joypad_events: Vec<Option<JoypadEvent>>) -> &FrameBuffer {
         // Figure out the number of clock cycles we can execute in a single frame
         let speed = self.cpu.speed();
         let cycle_time = self.cpu.cycle_time();
@@ -115,9 +115,11 @@ impl Gameboy {
         }
 
         // Update joypad, if needed
-        if let Some(event) = joypad_event {
-            if self.cpu.memory.joypad().handle_event(event) {
-                self.cpu.trigger_interrupt(Interrupt::Joypad);
+        for event in &mut joypad_events {
+            if let Some(event) = event.take() {
+                if self.cpu.memory.joypad().handle_event(event) {
+                    self.cpu.trigger_interrupt(Interrupt::Joypad);
+                }
             }
         }
 

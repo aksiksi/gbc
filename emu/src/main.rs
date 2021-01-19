@@ -94,8 +94,8 @@ fn gui(rom_path: Option<PathBuf>) {
     'running: loop {
         let frame_start = Instant::now();
 
-        // List of pending key events
-        let mut latest_event = None;
+        // List of joypad events to push to the Gameboy this frame
+        let mut joypad_events = Vec::new();
 
         for event in event_pump.poll_iter() {
             match event {
@@ -108,23 +108,14 @@ fn gui(rom_path: Option<PathBuf>) {
                     gameboy.reset().unwrap();
                 }
                 Event::KeyDown { .. } | Event::KeyUp { .. } => {
-                    if latest_event.is_none() {
-                        latest_event = Some(event.clone());
-                    }
+                    joypad_events.push(event_to_joypad(event));
                 }
                 _ => (),
             }
         }
 
-        // Take the latest event and map it to a JoypadEvent
-        // TODO: Does this make sense?
-        let event = match latest_event {
-            Some(e) => event_to_joypad(e),
-            None => None,
-        };
-
         // Run the Gameboy for a single frame and return the frame data
-        let frame_buffer = gameboy.frame(event);
+        let frame_buffer = gameboy.frame(joypad_events);
 
         // With the following, we are setting the texture as a render target for
         // our main canvas. This allows us to use regular canvas drawing functions -
@@ -174,7 +165,7 @@ fn main() -> Result<()> {
         loop {
             // TODO: Perhaps allow user to provide joypad input file?
             // e.g., list of (input, time)
-            gameboy.frame(None);
+            gameboy.frame(Vec::new());
             std::thread::sleep(Duration::from_nanos(Gameboy::FRAME_DURATION as u64))
         }
     }
