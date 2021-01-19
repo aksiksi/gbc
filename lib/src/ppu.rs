@@ -222,7 +222,6 @@ impl LcdControl {
         self.raw & (1 << 3) != 0
     }
 
-    #[allow(unused)]
     pub fn sprite_size(&self) -> bool {
         self.raw & (1 << 2) != 0
     }
@@ -561,22 +560,82 @@ impl Ppu {
     /// This is split into rendering BG/window tiles and rendering sprites. Note
     /// that sprites are more often layered on top of the BG.
     fn render_scanline(&mut self) {
-        if self.lcdc.bg_priority() {
-            self.render_background();
+        let scanline = self.ly;
 
-            if self.lcdc.window_display_enable() {
-                self.render_window();
-            }
+        // Select base address for BG tile map based on LCDC register
+        let bg_tile_map_base: u16 = if !self.lcdc.bg_tile_map_select() {
+            0x9800
         } else {
-            // TODO: Write white to the line on DMG
-        }
+            0x9C00
+        };
 
-        if self.lcdc.sprite_enable() {
-            self.render_sprites();
+        // Select base address for window tile map based on LCDC register
+        let window_tile_map_base: u16 = if !self.lcdc.window_tile_map_select() {
+            0x9800
+        } else {
+            0x9C00
+        };
+
+        for pixel in 0..LCD_WIDTH as u8 {
+            let mut pixel_data = None;
+            let bg_priority;
+            let bg_color_index;
+
+            // Fetch pixel data for the BG or window, depending on which is currently active
+            if self.lcdc.bg_priority() {
+                let window_display =
+                    self.lcdc.window_display_enable() &&
+                    scanline >= self.wy &&
+                    pixel >= self.wx.wrapping_sub(7);
+
+                let (data, priority, color_index) = if !window_display {
+                    let bg_pixel_x = pixel.wrapping_add(self.scx);
+                    let bg_pixel_y = scanline.wrapping_add(self.scy);
+                    self.fetch_bg_pixel_data(bg_pixel_x, bg_pixel_y, bg_tile_map_base)
+                } else {
+                    self.fetch_bg_pixel_data(pixel, scanline, window_tile_map_base)
+                };
+
+                pixel_data = Some(data);
+                bg_priority = priority;
+                bg_color_index = color_index;
+            } else {
+                if !self.cgb {
+                    // On DMG, reset the BG to white
+                    pixel_data = Some(DMG_PALETTE[0]);
+                }
+
+                bg_priority = false;
+                bg_color_index = 0;
+            }
+
+            if self.lcdc.sprite_enable() {
+                // Fetch sprite pixel data
+                if let Some((data, priority, color_index)) = self.fetch_sprite_pixel_data(pixel, scanline) {
+                    if !bg_priority && color_index != 0 {
+                        // If one of the below conditions is met, draw the sprite
+                        // on top of the BG pixel:
+                        //
+                        // 1. BG priority bit is _not_ set
+                        // 2. Sprite pixel is not transparent
+                        // 3. Transparent BG, always draw sprite on top
+                        // 4. Sprite priority for non-transparent BG
+                        // 5. No BG was rendered
+                        if bg_color_index == 0 || priority || pixel_data.is_none() {
+                            pixel_data = Some(data);
+                        }
+                    }
+                }
+            }
+
+            if let Some(data) = pixel_data {
+                // Push the pixel to the frame buffer
+                self.frame_buffer.write(pixel as usize, scanline as usize, data);
+            }
         }
     }
 
-    /// Returns pixel data for a single BG or window pixel.
+    /// Fetches BG data for a single pixel
     ///
     /// Given the x and y position of the pixel in the BG map, we need to do the following:
     ///
@@ -587,10 +646,15 @@ impl Ppu {
     /// 5. Read the actual tile data (16 bytes) from the relevant VRAM bank.
     /// 6. Compute the pixel's index within the 8x8 pixel tile, and adjust if flips are
     ///    present in this tile.
+    ///
+    /// In `compute_pixel_data`:
+    ///
     /// 7. Compute the pixel's color palette index (2 bits).
     /// 8. Finally, using the tile's palette number and the index from (8),
     ///    compute the RGB value for the pixel.
-    fn fetch_pixel_data(&self, bg_pixel_x: u8, bg_pixel_y: u8, tile_map_base: u16) -> GameboyRgba {
+    ///
+    /// Returns: (pixel data, BG priority, pixel color index)
+    fn fetch_bg_pixel_data(&self, bg_pixel_x: u8, bg_pixel_y: u8, tile_map_base: u16) -> (GameboyRgba, bool, u8) {
         // Select base address for BG tile data based on LCDC register
         let (tile_data_base, tile_data_index_signed) = if !self.lcdc.bg_tile_data_select() {
             (0x8000, false)
@@ -617,7 +681,11 @@ impl Ppu {
         let tile_data_bank = (tile_data_attr & (1 << 3)) >> 3; // bit 3
         let horizontal_flip = (tile_data_attr & (1 << 5)) != 0; // bit 5
         let vertical_flip = (tile_data_attr & (1 << 6)) != 0; // bit 6
-        let _bg_priority = (tile_data_attr & (1 << 7)) != 0; // bit 7
+        let bg_priority = if self.cgb {
+            (tile_data_attr & (1 << 7)) == 0 // bit 7
+        } else {
+            false
+        };
 
         // (6)
         let mut tile_data = [0u8; 16];
@@ -654,7 +722,144 @@ impl Ppu {
             tile_pixel_y = 7 - tile_pixel_y;
         }
 
-        // (8)
+        let (pixel_data, color_index) =
+            self.compute_pixel_data(tile_data, tile_pixel_x,
+                                    tile_pixel_y, tile_palette_num, false);
+
+        (pixel_data, bg_priority, color_index)
+    }
+
+    /// We go through a similar sequence as done in the BG method.
+    ///
+    /// The main difference is that sprite info is stored in OAM, so we need  to
+    /// walk through OAM to determine which sprite needs to be rendered at this location.
+    fn fetch_sprite_pixel_data(&self, pixel: u8, scanline: u8) -> Option<(GameboyRgba, bool, u8)> {
+        let tile_data_base = 0x8000;
+
+        let size = if self.lcdc.sprite_size() {
+            16
+        } else {
+            8
+        };
+
+        let mut sprite_index = 0;
+        let mut sprite_match = None;
+        let mut min_x_pos = 0xFF;
+
+        // Iterate over each OAM entry to find the first suitable entry.
+        //
+        // In CGB mode: find the first intersecting sprite
+        // In DMG mode: find the intersecting sprite with the _lowest_ x-position
+        while sprite_index < 40 {
+            let y_pos = self.oam[sprite_index * 4].wrapping_sub(16);
+            if !(scanline >= y_pos && scanline < y_pos.wrapping_add(size)) {
+                sprite_index += 1;
+                continue;
+            }
+
+            let x_pos = self.oam[sprite_index * 4 + 1].wrapping_sub(8);
+            if !(pixel >= x_pos && pixel < x_pos.wrapping_add(8)) {
+                sprite_index += 1;
+                continue;
+            }
+
+            if self.cgb {
+                sprite_match = Some(sprite_index);
+                break;
+            } else {
+                if x_pos < min_x_pos {
+                    sprite_match = Some(sprite_index);
+                    min_x_pos = x_pos;
+                }
+            }
+
+            sprite_index += 1;
+        }
+
+        if sprite_match.is_none() {
+            // No suitable sprite was found
+            return None;
+        }
+
+        let sprite_match = sprite_match.unwrap();
+
+        // Upper left corner of the tile
+        let tile_y = self.oam[sprite_match * 4] - 16;
+        let tile_x = self.oam[sprite_match * 4 + 1] - 8;
+        let tile_number = self.oam[sprite_match * 4 + 2];
+        let attr = self.oam[sprite_match * 4 + 3];
+
+        let palette_num;
+        let vram_bank;
+        if self.cgb {
+            palette_num = attr & 0x07;
+            vram_bank = (attr & 1 << 3) >> 3;
+        } else {
+            palette_num = (attr & 1 << 4) >> 4;
+            vram_bank = 0;
+        };
+
+        let horizontal_flip = (attr & 1 << 5) != 0;
+        let vertical_flip = (attr & 1 << 6) != 0;
+        let priority = (attr & 1 << 7) == 0;
+
+        // If this is true, pixel data is part of the lower tile for this
+        // 8x16 sprite
+        let lower_tile = scanline >= tile_y + 8;
+
+        // Fetch tile data for the pixel
+        let mut tile_data= [0u8; 16];
+        for i in 0..tile_data.len() as u16 {
+            let tile_data_index;
+
+            if size == 8 {
+                // For 8x8 sprites, use the tile number normally (just like BG)
+                tile_data_index = tile_number as u16 * 16 + i
+            } else {
+                // For 8x16 sprites, we need to fetch the tile this pixel is in
+                if !lower_tile {
+                    tile_data_index = (tile_number as u16 & 0xFE) * 16 + i;
+                } else {
+                    tile_data_index = (tile_number as u16 | 0x01) * 16 + i;
+                }
+            }
+
+            let addr = tile_data_base + tile_data_index;
+
+            tile_data[i as usize] = self.vram.read_bank(vram_bank, addr);
+        }
+
+        // Find the location of the pixel _within_ the tile data
+        let mut tile_pixel_x = pixel - tile_x;
+        let mut tile_pixel_y = scanline - tile_y;
+
+        if vertical_flip {
+            tile_pixel_y = (size - 1) - tile_pixel_y;
+        }
+
+        // Handle flipped pixels
+        if horizontal_flip {
+            tile_pixel_x = 7 - tile_pixel_x;
+        }
+
+        // Correct pixel_y in lower sprite tile
+        if lower_tile && tile_pixel_y >= 8 {
+            tile_pixel_y -= 8;
+        }
+
+        let (pixel_data, color_index) =
+            self.compute_pixel_data(tile_data, tile_pixel_x,
+                                    tile_pixel_y, palette_num, true);
+
+        Some((pixel_data, priority, color_index))
+    }
+
+    /// Returns pixel data for a single BG/window or sprite pixel.
+    ///
+    /// Returns: (pixel data, color index)
+    fn compute_pixel_data(&self, tile_data: [u8; 16], tile_pixel_x: u8,
+                          tile_pixel_y: u8, tile_palette_num: u8, sprite: bool) -> (GameboyRgba, u8) {
+        // (7)
         //
         // The y position of the pixel maps to the "line" (2 bytes) in the tile data
         // The x position maps to the bit we need to check in the upper and lower nibbles of the line
@@ -668,13 +873,20 @@ impl Ppu {
         let upper_bit = (upper & 1 << pixel_pos) >> pixel_pos;
         let color_index = upper_bit << 1 | lower_bit;
 
-        // (9)
+        // (8)
         let mut pixel_data;
 
         if self.cgb {
             let palette_index = (tile_palette_num * 4 + color_index) as usize;
-            let pixel_color = (self.bg_palette_ram[palette_index + 1] as u16) << 8 |
-                                self.bg_palette_ram[palette_index] as u16;
+            let palette_ram = if sprite {
+                &self.sprite_palette_ram
+            } else {
+                &self.bg_palette_ram
+            };
+
+            let pixel_color = (palette_ram[palette_index + 1] as u16) << 8 |
+                              palette_ram[palette_index] as u16;
+
             let red = (pixel_color & 0x001F) as u8;
             let green = ((pixel_color & 0x03E0) >> 5) as u8;
             let blue = ((pixel_color & 0x7F00) >> 10) as u8;
@@ -689,73 +901,28 @@ impl Ppu {
 
             pixel_data.scale_to_rgb();
         } else {
-            // In DMG mode, extract the color palette index from BGP
+            let palette_reg = if !sprite {
+                self.bgp
+            } else {
+                match tile_palette_num {
+                    0 => self.obp0,
+                    _ => self.obp1,
+                }
+            };
+
+            // In DMG mode, extract the color palette index from BGP/OBP
             let palette_index = match color_index {
-                0 => self.bgp & 0b00000011,
-                1 => (self.bgp & 0b00001100) >> 2,
-                2 => (self.bgp & 0b00110000) >> 4,
-                3 => (self.bgp & 0b11000000) >> 6,
+                0 => palette_reg & 0b00000011,
+                1 => (palette_reg & 0b00001100) >> 2,
+                2 => (palette_reg & 0b00110000) >> 4,
+                3 => (palette_reg & 0b11000000) >> 6,
                 _ => unreachable!(),
             };
 
-            // On DMG, we have a single, static color palette
             pixel_data = DMG_PALETTE[palette_index as usize];
         }
 
-        pixel_data
-    }
-
-    /// Render a scanline worth of BG pixels
-    fn render_background(&mut self) {
-        let scanline = self.ly;
-
-        // Select base address for BG tile map based on LCDC register
-        let tile_map_base: u16 = if !self.lcdc.bg_tile_map_select() {
-            0x9800
-        } else {
-            0x9C00
-        };
-
-        for pixel in 0..LCD_WIDTH as u8 {
-            // Figure out the x and y pixel positions in the BG (256x256 pixels, 32x32 tiles)
-            // This is how scrolling is handled
-            let bg_pixel_x = pixel.wrapping_add(self.scx);
-            let bg_pixel_y = scanline.wrapping_add(self.scy);
-
-            let pixel_data = self.fetch_pixel_data(bg_pixel_x, bg_pixel_y, tile_map_base);
-
-            // Push the pixel to the frame buffer
-            self.frame_buffer.write(pixel as usize, scanline as usize, pixel_data);
-        }
-    }
-
-    /// Render a scanline worth of window pixels
-    ///
-    /// This does nothing if: `scanline < WY`
-    fn render_window(&mut self) {
-        let scanline = self.ly;
-
-        if scanline < self.wy {
-            // No window to render just yet
-            return;
-        }
-
-        // Select base address for window tile map based on LCDC register
-        let tile_map_base: u16 = if !self.lcdc.window_tile_map_select() {
-            0x9800
-        } else {
-            0x9C00
-        };
-
-        for pixel in (self.wx-7)..LCD_WIDTH as u8 {
-            // Windows do not support scrolling, so simply start rendering at the WX and WY positions
-            let pixel_data = self.fetch_pixel_data(pixel, scanline, tile_map_base);
-            self.frame_buffer.write(pixel as usize, scanline as usize, pixel_data);
-        }
-    }
-
-    fn render_sprites(&mut self) {
-        //todo!()
+        (pixel_data, color_index)
     }
 
     /// Write a single byte of data to palette RAM.
