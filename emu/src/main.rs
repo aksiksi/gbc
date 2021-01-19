@@ -58,11 +58,19 @@ fn event_to_joypad(event: Event) -> Option<JoypadEvent> {
 }
 
 fn gui(rom_path: Option<PathBuf>) {
+    let rom_name = rom_path
+        .as_ref()
+        .map(|p| {
+            p.file_name().unwrap().to_str().unwrap()
+        })
+        .unwrap_or("No ROM");
+    let title = format!("{} - gbc", rom_name);
+
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
 
     // Setup an SDL2 Window
-    let window = video_subsystem.window("gbc", 640, 576)
+    let window = video_subsystem.window(&title, 640, 576)
         .position_centered()
         .allow_highdpi()
         .build()
