@@ -63,55 +63,70 @@ impl Gameboy {
         Ok(gameboy)
     }
 
-    /// Run Gameboy for a single frame.
-    ///
-    /// The frame takes in an optional joypad event as input.
-    pub fn frame(&mut self, mut joypad_events: Vec<Option<JoypadEvent>>) -> &FrameBuffer {
-        // Figure out the number of clock cycles we can execute in a single frame
-        let speed = self.cpu.speed();
+    /// Figure out the number of clock cycles we can execute in a single frame
+    #[inline]
+    pub fn cycles_per_frame(&self) -> u32 {
         let cycle_time = self.cpu.cycle_time();
-        let num_cycles = Self::FRAME_DURATION / cycle_time;
+        Self::FRAME_DURATION / cycle_time
+    }
 
+    /// Run the Gameboy for a single step.
+    ///
+    /// Returns a tuple of: (cycles consumed, pointer to `FrameBuffer`)
+    pub fn step(&mut self, cycle: u32) -> (u32, &FrameBuffer) {
+        let speed = self.cpu.speed();
+
+        #[cfg(feature = "debug")]
+        // If the debugger is triggered, step into the REPL.
+        if self.debugger.triggered(&self.cpu) {
+            self.debugger.repl(&mut self.cpu);
+        }
+
+        // Execute a step of the CPU
+        let (cycles_taken, _inst) = self.cpu.step();
+
+        let mut interrupts = Vec::new();
+
+        // Execute a step of the PPU.
+        //
+        // The PPU will "catch up" based on what happened in the CPU.
+        self.cpu.memory.ppu_mut().step(cycle + cycles_taken as u32, speed, &mut interrupts);
+
+        // Check if a serial interrupt needs to be triggered
+        //
+        // TODO: This does not happen every cycle, right?
+        if self.cpu.memory.io_mut().serial_interrupt() {
+            // TODO: Implement correct timing for serial interrupts
+            //interrupts.push(Interrupt::Serial);
+        }
+
+        self.cpu.dma_step(cycles_taken);
+
+        // Update the internal timer and trigger an interrupt, if needed
+        // Note that the timer may tick multiple times for a single instruction
+        if self.cpu.memory.timer().step(cycles_taken) {
+            interrupts.push(Interrupt::Timer);
+        }
+
+        for interrupt in interrupts {
+            self.cpu.trigger_interrupt(interrupt);
+        }
+
+        (cycles_taken as u32, self.cpu.memory.ppu().frame_buffer())
+    }
+
+    /// Run a Gameboy for a single frame.
+    ///
+    /// The frame takes in an list of joypad events as input, and returns
+    /// a `FrameBuffer`.
+    pub fn frame(&mut self, mut joypad_events: Vec<Option<JoypadEvent>>) -> &FrameBuffer {
         // Execute next instruction
         let mut cycle = 0;
+        let num_cycles = self.cycles_per_frame();
+
         while cycle < num_cycles {
-            #[cfg(feature = "debug")]
-            // If the debugger is triggered, step into the REPL.
-            if self.debugger.triggered(&self.cpu) {
-                self.debugger.repl(&mut self.cpu);
-            }
-
-            // Execute a step of the CPU
-            let (cycles_taken, _inst) = self.cpu.step();
-
-            let mut interrupts = Vec::new();
-
-            // Execute a step of the PPU.
-            //
-            // The PPU will "catch up" based on what happened in the CPU.
-            self.cpu.memory.ppu_mut().step(cycle + cycles_taken as u32, speed, &mut interrupts);
-
-            // Check if a serial interrupt needs to be triggered
-            //
-            // TODO: This does not happen every cycle, right?
-            if self.cpu.memory.io_mut().serial_interrupt() {
-                // TODO: Implement correct timing for serial interrupts
-                //interrupts.push(Interrupt::Serial);
-            }
-
-            self.cpu.dma_step(cycles_taken);
-
-            // Update the internal timer and trigger an interrupt, if needed
-            // Note that the timer may tick multiple times for a single instruction
-            if self.cpu.memory.timer().step(cycles_taken) {
-                interrupts.push(Interrupt::Timer);
-            }
-
-            for interrupt in interrupts {
-                self.cpu.trigger_interrupt(interrupt);
-            }
-
-            cycle += cycles_taken as u32;
+            let (cycles_taken, _) = self.step(cycle);
+            cycle += cycles_taken;
         }
 
         // Update joypad, if needed
