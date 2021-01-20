@@ -130,7 +130,7 @@ fn gui(cli: Cli) {
                 },
                 Event::KeyDown { keycode: Some(Keycode::R), .. } => {
                     // Reset the emulator
-                    gameboy.reset().unwrap();
+                    gameboy.reset();
                 }
                 Event::KeyDown { .. } | Event::KeyUp { .. } => {
                     joypad_events.push(event_to_joypad(event));

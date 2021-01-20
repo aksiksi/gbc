@@ -318,9 +318,6 @@ impl MemoryWrite<u16, u8> for Io {
 
 /// 64K memory map for the GBC
 pub struct MemoryBus {
-    /// Cartridge
-    pub cartridge: Option<Cartridge>,
-
     /// ROM:       0x0000 - 0x7FFF
     /// Cart RAM:  0xA000 - 0xBFFF
     controller: Controller,
@@ -350,7 +347,6 @@ pub struct MemoryBus {
 impl MemoryBus {
     pub fn new() -> Self {
         Self {
-            cartridge: None,
             controller: Controller::new(),
             ppu: Ppu::new(true),
             ram: Ram::new(true),
@@ -361,12 +357,11 @@ impl MemoryBus {
         }
     }
 
-    pub fn from_cartridge(mut cartridge: Cartridge) -> Result<Self> {
-        let controller = Controller::from_cartridge(&mut cartridge)?;
+    pub fn from_cartridge(cartridge: Cartridge) -> Result<Self> {
         let cgb = cartridge.cgb();
+        let controller = Controller::from_cartridge(cartridge)?;
 
         Ok(Self {
-            cartridge: Some(cartridge),
             controller,
             ppu: Ppu::new(cgb),
             ram: Ram::new(cgb),
@@ -375,6 +370,18 @@ impl MemoryBus {
             int_enable: 0,
             cgb,
         })
+    }
+
+    /// Reset the memory bus
+    pub fn reset(&mut self) {
+        let cgb = self.cgb;
+
+        self.controller.reset();
+        self.ppu = Ppu::new(cgb);
+        self.ram = Ram::new(cgb);
+        self.io = Io::new();
+        self.high_ram = [0u8; 0x80];
+        self.int_enable = 0;
     }
 
     pub fn controller(&mut self) -> &mut Controller {

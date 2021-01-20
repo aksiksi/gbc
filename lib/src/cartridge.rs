@@ -373,7 +373,7 @@ impl Controller {
     }
 
     /// Create a controller from a `Cartridge`
-    pub fn from_cartridge(cartridge: &mut Cartridge) -> Result<Self> {
+    pub fn from_cartridge(mut cartridge: Cartridge) -> Result<Self> {
         // Extract ROM and RAM info from cartridge header
         let cartridge_type = cartridge.cartridge_type()?;
         let rom_size = cartridge.rom_size()?;
@@ -395,6 +395,13 @@ impl Controller {
             cartridge_type,
             banking_mode: false,
         })
+    }
+
+    /// Reset this controller
+    ///
+    /// ROM remains unchanged, RAM is reset
+    pub fn reset(&mut self) {
+        self.ram = Ram::new(self.ram_size);
     }
 }
 

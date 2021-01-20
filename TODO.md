@@ -55,6 +55,14 @@
 - [ ] Get MBC3 controller working
 - [ ] Implement RTC logic for relevant MBCs
 - [ ] Speed change might need to be handled explicitly
+- [ ] Save state support
+    - [ ] Gameboy: Serialize as-is **at the end of a frame**
+    - [ ] CPU: serialize as-is w/ register file
+    - [ ] Memory: serialize as-is
+    - [ ] Controller: serialize everything except the ROM
+        - [ ] On restore, we will reset the Gameboy anyways, which will ensure that the ROM is loaded and memory is blank
+    - [ ] PPU: serialize as-is
+    - [ ] Timer: serialize as-is
 - [ ] Look into dot clock pauses: https://gbdev.io/pandocs/#properties-of-stat-modes
 - [ ] FPS counter
     - [x] Static linking SDL2 TTF library does not seem to work on Windows

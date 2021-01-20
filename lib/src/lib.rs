@@ -25,7 +25,7 @@ use ppu::FrameBuffer;
 pub struct Gameboy {
     cpu: Cpu,
 
-    // Number of frames executed
+    /// Number of frames executed
     frame_counter: u64,
 
     #[cfg(feature = "debug")]
@@ -159,10 +159,11 @@ impl Gameboy {
     }
 
     /// Reset the emulator
-    pub fn reset(&mut self) -> Result<()> {
-        // Reset the CPU
+    pub fn reset(&mut self) {
         self.frame_counter = 0;
-        self.cpu.reset()
+
+        // Reset the CPU
+        self.cpu.reset();
     }
 
     pub fn cpu(&mut self) -> &mut Cpu {

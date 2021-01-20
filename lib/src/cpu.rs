@@ -124,21 +124,14 @@ impl Cpu {
     }
 
     /// Reset this CPU to initial state
-    pub fn reset(&mut self) -> Result<()> {
+    ///
+    /// This involves resetting memory, the ROM controller, and the PPU
+    pub fn reset(&mut self) {
         self.registers = RegisterFile::new(self.cgb);
+        self.memory.reset();
+        self.dma = DmaController::new();
         self.is_halted = false;
         self.ime = false;
-
-        // If a cartridge is inserted, rebuild memory from the cartridge
-        // Otherwise, build a "default" memory bus
-        let memory = match self.memory.cartridge.take() {
-            Some(c) => MemoryBus::from_cartridge(c)?,
-            None => MemoryBus::new(),
-        };
-
-        self.memory = memory;
-
-        Ok(())
     }
 
     /// Executes the next instruction and returns the number of cycles it
