@@ -108,14 +108,12 @@ static DMG_PALETTE: [GameboyRgba; 4] = [
 /// Buffer that holds pixel data for a single frame.
 pub struct FrameBuffer {
     pub data: Box<[GameboyRgba; LCD_WIDTH * LCD_HEIGHT]>,
-    pub ready: bool,
 }
 
 impl FrameBuffer {
     pub fn new() -> Self {
         Self {
             data: Box::new([GameboyRgba::white(); LCD_WIDTH * LCD_HEIGHT]),
-            ready: false,
         }
     }
 
@@ -563,10 +561,6 @@ impl Ppu {
                 // If we are at the start of HBLANK, render a scanline worth
                 // of BG and sprites to the frame buffer
                 self.render_scanline();
-            }
-            StatMode::Vblank if self.ly == 144 => {
-                // At the start of VBLANK, indicate that the current frame is ready
-                self.frame_buffer.ready = true;
             }
             _ => ()
         }
@@ -1018,7 +1012,7 @@ impl Ppu {
 
     /// Returns `true` if VRAM is locked to CPU
     fn vram_locked(&self) -> bool {
-        match self.stat.mode {
+        self.lcdc.lcd_display_enable() && match self.stat.mode {
             // Locked during OAM read (mode 3)
             StatMode::OamRead => true,
             _ => false,
@@ -1027,7 +1021,7 @@ impl Ppu {
 
     /// Returns `true` if OAM is locked to CPU
     pub fn oam_locked(&self) -> bool {
-        match self.stat.mode {
+        self.lcdc.lcd_display_enable() && match self.stat.mode {
             // Locked during Scan and Read
             StatMode::OamScan | StatMode::OamRead => true,
             StatMode::Vblank | StatMode::Hblank => false,
@@ -1095,8 +1089,10 @@ impl MemoryWrite<u16, u8> for Ppu {
                 }
             }
             0xFE00..=0xFE9F => {
-                let idx = (addr as usize) - 0xFE00;
-                self.oam[idx] = value;
+                if !self.oam_locked() {
+                    let idx = (addr as usize) - 0xFE00;
+                    self.oam[idx] = value;
+                }
             }
             Self::LCDC_ADDR => self.lcdc.set(value),
             Self::STAT_ADDR => {

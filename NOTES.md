@@ -85,3 +85,10 @@ texture.with_lock(None, |pixels, _| {
 canvas.copy(&texture, None, None).unwrap();
 canvas.present();
 ```
+
+From worst to best:
+
+* HW and SW rendering w/ texture target: ~5 ms per frame
+    * With HW, copy time decreases, but render time increases (makes sense)
+* SW w/ streaming texture: ~4 ms, render time goes way down (50 us), but copy overhead remains
+* HW w/ streaming texture: ~2 ms, both render and copy time decrease
