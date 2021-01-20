@@ -79,8 +79,11 @@ fn gui(cli: Cli) {
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
 
+    let width = LCD_WIDTH as u32 * cli.scale;
+    let height = LCD_HEIGHT as u32 * cli.scale;
+
     // Setup an SDL2 Window
-    let window = video_subsystem.window(&title, LCD_WIDTH as u32 * cli.scale, LCD_HEIGHT as u32 * cli.scale)
+    let window = video_subsystem.window(&title, width, height)
         .position_centered()
         .allow_highdpi()
         .resizable()
@@ -94,6 +97,9 @@ fn gui(cli: Cli) {
                            .software()
                            .build()
                            .unwrap();
+
+    // Fix aspect ratio of canvas
+    canvas.set_logical_size(width, height).unwrap();
 
     // Get a handle to the Canvas texture creator
     let texture_creator = canvas.texture_creator();
@@ -136,6 +142,8 @@ fn gui(cli: Cli) {
         // Run the Gameboy for a single frame and return the frame data
         let frame_buffer = gameboy.frame(joypad_events);
 
+        canvas.clear();
+
         // With the following, we are setting the texture as a render target for
         // our main canvas. This allows us to use regular canvas drawing functions -
         // e.g., rect, point - to update the underlyinh texture. Note that the texture
@@ -149,8 +157,6 @@ fn gui(cli: Cli) {
         //
         // Helpful C example: https://wiki.libsdl.org/SDL_CreateTexture
         canvas.with_texture_canvas(&mut texture, |canvas| {
-            canvas.clear();
-
             // Draw the rendered frame
             for x in 0..LCD_WIDTH {
                 for y in 0..LCD_HEIGHT {

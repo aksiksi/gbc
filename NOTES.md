@@ -54,3 +54,34 @@ However, the texture needs to passed into the main emulator loop. The reason is 
 ## APU Architecture
 
 TBD...
+
+## SDL2
+
+Example of streaming texture:
+
+```rust
+// Create texture in streaming mode
+
+// .. in frame loop
+canvas.clear();
+
+texture.with_lock(None, |pixels, _| {
+    // Draw the rendered frame
+    for x in 0..LCD_WIDTH {
+        for y in 0..LCD_HEIGHT {
+            let color = frame_buffer.data[y * LCD_WIDTH + x];
+            let i = y * LCD_WIDTH * 4 + x * 4;
+
+            // LE representation of ARGB pixel
+            // Caveat: need to be aware of pixel format and platform endianness (?)
+            pixels[i+3] = color.alpha;
+            pixels[i+2] = color.red;
+            pixels[i+1] = color.green;
+            pixels[i] = color.blue;
+        }
+    }
+}).unwrap();
+
+canvas.copy(&texture, None, None).unwrap();
+canvas.present();
+```
