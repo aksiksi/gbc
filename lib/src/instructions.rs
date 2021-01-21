@@ -764,11 +764,11 @@ impl Instruction {
             0xF5 => (Push { src: Reg16::AF.into() }, 1, 16.into()),
 
             // Jump
-            0x18 => (Jr { offset: arg8 as i8 + 2, cond: Cond::None }, 2, Cycles(12, 8)),
-            0x20 => (Jr { offset: arg8 as i8 + 2, cond: Cond::NotZero }, 2, Cycles(12, 8)),
-            0x28 => (Jr { offset: arg8 as i8 + 2, cond: Cond::Zero }, 2, Cycles(12, 8)),
-            0x30 => (Jr { offset: arg8 as i8 + 2, cond: Cond::NotCarry }, 2, Cycles(12, 8)),
-            0x38 => (Jr { offset: arg8 as i8 + 2, cond: Cond::Carry }, 2, Cycles(12, 8)),
+            0x18 => (Jr { offset: (arg8 as i8).wrapping_add(2), cond: Cond::None }, 2, Cycles(12, 8)),
+            0x20 => (Jr { offset: (arg8 as i8).wrapping_add(2), cond: Cond::NotZero }, 2, Cycles(12, 8)),
+            0x28 => (Jr { offset: (arg8 as i8).wrapping_add(2), cond: Cond::Zero }, 2, Cycles(12, 8)),
+            0x30 => (Jr { offset: (arg8 as i8).wrapping_add(2), cond: Cond::NotCarry }, 2, Cycles(12, 8)),
+            0x38 => (Jr { offset: (arg8 as i8).wrapping_add(2), cond: Cond::Carry }, 2, Cycles(12, 8)),
             0xC2 => (Jp { addr: arg16, cond: Cond::NotZero }, 3, Cycles(16, 12)),
             0xCA => (Jp { addr: arg16, cond: Cond::Zero }, 3, Cycles(16, 12)),
             0xD2 => (Jp { addr: arg16, cond: Cond::NotCarry }, 3, Cycles(16, 12)),
@@ -1144,6 +1144,20 @@ mod test {
 
         if let Jr { offset, cond } = inst {
             assert_eq!(offset, -0x21);
+            assert_eq!(cond, Cond::NotZero);
+        } else {
+            assert!(false, "Invalid instruction decode");
+        }
+    }
+
+    #[test]
+    fn jr_overflow() {
+        // Verify that `jr` behaves correctly with signed overflow
+        let raw: [u8; 3] = [0x20, 0x7F, 0x00];
+        let (inst, _, _) = Instruction::decode(raw);
+
+        if let Jr { offset, cond } = inst {
+            assert_eq!(offset, -127);
             assert_eq!(cond, Cond::NotZero);
         } else {
             assert!(false, "Invalid instruction decode");
