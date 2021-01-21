@@ -50,7 +50,7 @@
     - [ ] This way, we can run tests in-line w/o calling into the CLI
 - [x] Add option to load boot ROM (cartridge must be present)
 - [x] Resizeable and scalable window
-- [ ] Get correct serial timing for interrupt handling
+- [ ] Add basic logging throughout
 - [ ] Get OAM HDMA working
 - [ ] Get MBC3 controller working
 - [ ] Implement RTC logic for relevant MBCs
@@ -67,3 +67,4 @@
 - [ ] FPS counter
     - [x] Static linking SDL2 TTF library does not seem to work on Windows
     - [ ] Find an alternative approach
+- [ ] Get correct serial timing for interrupt handling

@@ -486,7 +486,7 @@ impl Cpu {
                 if ok {
                     // Numeric casts from signed to unsigned will sign extend
                     let offset = offset as u16;
-                    self.registers.PC = (self.registers.PC + 2).wrapping_add(offset);
+                    self.registers.PC = self.registers.PC.wrapping_add(2).wrapping_add(offset);
                     taken = true;
                 }
             }
