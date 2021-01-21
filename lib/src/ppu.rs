@@ -838,7 +838,26 @@ impl Ppu {
 
             // If this is true, pixel data is part of the lower tile for this
             // 8x16 sprite
-            let lower_tile = scanline >= tile_y + 8;
+            let mut lower_tile = scanline >= tile_y + 8;
+
+            // Find the location of the pixel _within_ the tile data
+            let mut tile_pixel_x = pixel - tile_x;
+            let mut tile_pixel_y = scanline - tile_y;
+
+            // Handle flipped pixels
+            if vertical_flip {
+                tile_pixel_y = (size - 1) - tile_pixel_y;
+                lower_tile = tile_pixel_y >= 8; // Correct lower tile flag, if needed
+            }
+
+            if horizontal_flip {
+                tile_pixel_x = 7 - tile_pixel_x;
+            }
+
+            // Correct pixel_y in lower sprite tile
+            if lower_tile && tile_pixel_y >= 8 {
+                tile_pixel_y -= 8;
+            }
 
             // Convert tile number to index in VRAM
             let tile_index = if size == 8 {
@@ -850,29 +869,11 @@ impl Ppu {
             };
 
             // Fetch tile data for the pixel
-            let mut tile_data= [0u8; 16];
+            let mut tile_data = [0u8; 16];
             for i in 0..tile_data.len() as u16 {
                 let tile_data_index = tile_index * 16 + i;
                 let addr = tile_data_base + tile_data_index;
                 tile_data[i as usize] = self.vram.read_bank(vram_bank, addr);
-            }
-
-            // Find the location of the pixel _within_ the tile data
-            let mut tile_pixel_x = pixel - tile_x;
-            let mut tile_pixel_y = scanline - tile_y;
-
-            if vertical_flip {
-                tile_pixel_y = (size - 1) - tile_pixel_y;
-            }
-
-            // Handle flipped pixels
-            if horizontal_flip {
-                tile_pixel_x = 7 - tile_pixel_x;
-            }
-
-            // Correct pixel_y in lower sprite tile
-            if lower_tile && tile_pixel_y >= 8 {
-                tile_pixel_y -= 8;
             }
 
             let (pixel_data, color_index) =
