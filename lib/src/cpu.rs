@@ -486,7 +486,7 @@ impl Cpu {
                 if ok {
                     // Numeric casts from signed to unsigned will sign extend
                     let offset = offset as u16;
-                    self.registers.PC = self.registers.PC.wrapping_add(offset);
+                    self.registers.PC = (self.registers.PC + 2).wrapping_add(offset);
                     taken = true;
                 }
             }
@@ -1355,7 +1355,7 @@ mod test {
         assert!(cpu.registers.zero());
         assert!(cpu.registers.subtract());
 
-        let (addr, value) = (0xBEEF, 0x40u8);
+        let (addr, value) = (0xC000, 0x40u8);
         cpu.memory.write(addr, value);
         cpu.registers.write(Reg16::HL, addr);
         let inst = Instruction::Cp { src: Arg::MemHl };
@@ -1424,7 +1424,7 @@ mod test {
         cpu.execute(inst);
         assert_eq!(cpu.registers.PC, 0x1234);
 
-        let inst = Instruction::Jr { offset: -0x34, cond: Cond::None };
+        let inst = Instruction::Jr { offset: -0x36, cond: Cond::None };
         cpu.execute(inst);
         assert_eq!(cpu.registers.PC, 0x1200);
 
@@ -1432,7 +1432,7 @@ mod test {
         cpu.registers.write(Reg16::PC, 0xFFFF);
         cpu.registers.set(Flag::Carry, false);
         cpu.execute(inst);
-        assert_eq!(cpu.registers.PC, 0x0);
+        assert_eq!(cpu.registers.PC, 0x2);
 
         let inst = Instruction::JpHl;
         cpu.registers.write(Reg16::HL, 0x1234);
