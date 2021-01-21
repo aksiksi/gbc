@@ -50,6 +50,8 @@
     - [ ] This way, we can run tests in-line w/o calling into the CLI
 - [x] Add option to load boot ROM (cartridge must be present)
 - [x] Resizeable and scalable window
+- [x] Fix partial sprite rendering at boundaries
+    - [x] For example, in Kirby, moving Kirby to the top of the screen leads to it disappearing partially
 - [ ] Add basic logging throughout
 - [ ] Get OAM HDMA working
 - [ ] Get MBC3 controller working

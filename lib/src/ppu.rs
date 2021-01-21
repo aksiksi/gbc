@@ -590,7 +590,10 @@ impl Ppu {
             let attr = chunk[3];
 
             let y_pos = y.wrapping_sub(16);
-            let visible = scanline >= y_pos && scanline < y_pos.wrapping_add(size);
+
+            // A sprite can be partially visible at the top or bottom edge of the screen.
+            // The wrapping add calculations are done to cover these edge cases.
+            let visible = scanline.wrapping_add(16) >= y && scanline < y_pos.wrapping_add(size);
 
             // We can only have 10 sprites on a single scanline
             if visible && sprites.len() < 10 {
@@ -811,14 +814,22 @@ impl Ppu {
 
         for sprite in sprites {
             let x_pos = sprite.x.wrapping_sub(8);
-            let visible = pixel >= x_pos && pixel < x_pos.wrapping_add(8);
+            let visible = pixel + 8 >= sprite.x && pixel < x_pos.wrapping_add(8);
             if !visible {
                 continue;
             }
 
             // Upper left corner of the tile
-            let tile_y = sprite.y - 16;
-            let tile_x = sprite.x - 8;
+            //
+            // Note: We need to use wrapping adds here to address the boundary conditions.
+            //
+            // For example, suppose we have a 8x16 sprite that is halfway above the screen -
+            // i.e., y = 8 -> y - 16 = -8. The upper corner of the tile is indeed at y = -8,
+            // but we still need to display pixels that are within the )lower_ half of the tile.
+            // This is why wrapping operations are used throughout this function. Once we have
+            // the pixel positions within the tile (e.g. `tile_pixel_x`), we are done.
+            let tile_y = sprite.y.wrapping_sub(16);
+            let tile_x = sprite.x.wrapping_sub(8);
             let tile_number = sprite.tile_number;
             let attr = sprite.attr;
 
@@ -836,23 +847,22 @@ impl Ppu {
             let vertical_flip = (attr & 1 << 6) != 0;
             let priority = (attr & 1 << 7) == 0;
 
-            // If this is true, pixel data is part of the lower tile for this
-            // 8x16 sprite
-            let mut lower_tile = scanline >= tile_y + 8;
-
             // Find the location of the pixel _within_ the tile data
-            let mut tile_pixel_x = pixel - tile_x;
-            let mut tile_pixel_y = scanline - tile_y;
+            let mut tile_pixel_x = pixel.wrapping_sub(tile_x);
+            let mut tile_pixel_y = scanline.wrapping_sub(tile_y);
 
             // Handle flipped pixels
             if vertical_flip {
                 tile_pixel_y = (size - 1) - tile_pixel_y;
-                lower_tile = tile_pixel_y >= 8; // Correct lower tile flag, if needed
             }
 
             if horizontal_flip {
                 tile_pixel_x = 7 - tile_pixel_x;
             }
+
+            // If this is true, pixel data is part of the lower tile for this
+            // 8x16 sprite
+            let lower_tile = tile_pixel_y >= 8;
 
             // Correct pixel_y in lower sprite tile
             if lower_tile && tile_pixel_y >= 8 {
