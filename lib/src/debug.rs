@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::Write;
+use std::io::{BufWriter, Write};
 
 use crate::cpu::Cpu;
 use crate::instructions::Instruction;
@@ -19,7 +19,7 @@ pub struct Debugger {
     mode: Mode,
     breakpoints: Vec<(u16, bool)>,
     instructions: Vec<(Instruction, u16)>,
-    instruction_dump: Option<File>,
+    instruction_dump: Option<BufWriter<File>>,
 }
 
 impl Debugger {
@@ -178,7 +178,7 @@ impl Debugger {
                         let _ = self.instruction_dump.take();
                         println!("Disabled instruction dumping");
                     } else {
-                        self.instruction_dump = Some(File::create(DEBUG_DUMP_FILE).unwrap());
+                        self.instruction_dump = Some(BufWriter::new(File::create(DEBUG_DUMP_FILE).unwrap()));
                         println!("Dumping instructions to {}", DEBUG_DUMP_FILE);
                     }
                 }
