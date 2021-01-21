@@ -924,7 +924,7 @@ impl Ppu {
         let mut pixel_data;
 
         if self.cgb {
-            let palette_index = (tile_palette_num * 4 + color_index) as usize;
+            let palette_index = (tile_palette_num * 4 + color_index * 2) as usize;
             let palette_ram = if sprite {
                 &self.sprite_palette_ram
             } else {
@@ -1133,9 +1133,17 @@ impl MemoryWrite<u16, u8> for Ppu {
             0xFF48 => self.obp0 = value,
             0xFF49 => self.obp1 = value,
             0xFF68 => self.bcps = value,
-            0xFF69 => self.palette_write(value, false),
+            0xFF69 => {
+                if !self.vram_locked() {
+                    self.palette_write(value, false);
+                }
+            }
             0xFF6A => self.ocps = value,
-            0xFF6B => self.palette_write(value, true),
+            0xFF6B => {
+                if !self.vram_locked() {
+                    self.palette_write(value, true);
+                }
+            }
             _ => panic!("Unexpected write to addr {} value {}", addr, value),
         }
     }
