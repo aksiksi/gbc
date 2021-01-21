@@ -216,8 +216,11 @@ pub struct Rom {
     /// Bank 1-7: dynamic
     data: Vec<u8>,
 
-    /// Currently active bank -- ignored for `None` ROMs
-    pub(crate) active_bank: u16,
+    /// Active bank 0 -- used in large MBC1 carts, otherwise always 0
+    pub(crate) active_bank_0: u16,
+
+    /// Currently active bank 1 -- ignored for `None` ROMs
+    pub(crate) active_bank_1: u16,
 
     /// Total number of banks
     num_banks: u16,
@@ -240,7 +243,8 @@ impl Rom {
 
         Self {
             data,
-            active_bank: 1,
+            active_bank_0: 0,
+            active_bank_1: 1,
             num_banks: num_banks as u16,
         }
     }
@@ -258,8 +262,12 @@ impl Rom {
         Ok(rom)
     }
 
+    pub fn update_bank_0(&mut self, bank: u16) {
+        self.active_bank_0 = bank & (self.num_banks - 1);
+    }
+
     pub fn update_bank(&mut self, bank: u16) {
-        self.active_bank = bank & (self.num_banks - 1);
+        self.active_bank_1 = bank & (self.num_banks - 1);
     }
 }
 
@@ -270,14 +278,14 @@ impl MemoryRead<u16, u8> for Rom {
 
         match addr {
             0x0000..=0x3FFF => {
-                // Bank 0 (static)
-                self.data[addr]
+                // Bank 0
+                let bank_offset = self.active_bank_0 as usize * Self::BANK_SIZE;
+                self.data[bank_offset + addr]
             }
             0x4000..=0x7FFF => {
                 // Bank 1 (dynamic)
-                assert!(self.active_bank > 0 && self.active_bank < self.num_banks);
                 let addr = addr - 0x4000;
-                let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
+                let bank_offset = self.active_bank_1 as usize * Self::BANK_SIZE;
                 self.data[bank_offset + addr]
             }
             _ => unreachable!("Unexpected read from: {}", addr),
@@ -293,14 +301,14 @@ impl MemoryWrite<u16, u8> for Rom {
 
         match addr {
             0x0000..=0x3FFF => {
-                // Bank 0 (static)
-                self.data[addr] = value;
+                // Bank 0
+                let bank_offset = self.active_bank_0 as usize * Self::BANK_SIZE;
+                self.data[bank_offset + addr] = value;
             }
             0x4000..=0x7FFF => {
                 // Bank 1 (dynamic)
-                assert!(self.active_bank > 0 && self.active_bank < self.num_banks);
                 let addr = addr - 0x4000;
-                let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
+                let bank_offset = self.active_bank_1 as usize * Self::BANK_SIZE;
                 self.data[bank_offset + addr] = value;
             }
             _ => unreachable!("Unexpected read from: {}", addr),
@@ -353,6 +361,14 @@ pub struct Controller {
 
     /// Bank mode (simple: false, advanced: true)
     banking_mode: bool,
+
+    /// RAM enable flag
+    ///
+    /// If `false`, writes are ignored
+    ram_enable: bool,
+
+    /// RAM/ROM bank select register
+    ram_rom_bank: u8,
 }
 
 impl Controller {
@@ -369,6 +385,8 @@ impl Controller {
             ram_size,
             cartridge_type: CartridgeType::Mbc1,
             banking_mode: false,
+            ram_enable: false,
+            ram_rom_bank: 0,
         }
     }
 
@@ -394,6 +412,8 @@ impl Controller {
             ram_size,
             cartridge_type,
             banking_mode: false,
+            ram_enable: false,
+            ram_rom_bank: 0,
         })
     }
 
@@ -402,6 +422,17 @@ impl Controller {
     /// ROM remains unchanged, RAM is reset
     pub fn reset(&mut self) {
         self.ram = Ram::new(self.ram_size);
+    }
+}
+
+impl MemoryRead<u16, u8> for Controller {
+    #[inline]
+    fn read(&self, addr: u16) -> u8 {
+        match addr {
+            Rom::BASE_ADDR..=Rom::LAST_ADDR => self.rom.read(addr),
+            Ram::BASE_ADDR..=Ram::LAST_ADDR => self.ram.as_ref().unwrap().read(addr),
+            _ => unreachable!("Invalid read from 0x{:X}", addr),
+        }
     }
 }
 
@@ -415,9 +446,9 @@ impl MemoryWrite<u16, u8> for Controller {
             0x0000..=0x1FFF if self.cartridge_type.is_mbc1() => {
                 // Cartridge RAM enable/disable
                 if value & 0xF == 0xA {
-                    println!("RAM enable");
+                    self.ram_enable = true;
                 } else {
-                    println!("RAM disable");
+                    self.ram_enable = false;
                 }
             }
             0x2000..=0x3FFF if self.cartridge_type.is_mbc1() => {
@@ -430,18 +461,48 @@ impl MemoryWrite<u16, u8> for Controller {
                 // MBC1 RAM bank select OR upper 2 bits of ROM bank (2 bit register)
                 let value = value & 0x03;
 
-                if usize::from(self.ram_size) >= RamSize::_32K.into() && self.banking_mode {
+                if usize::from(self.ram_size) == RamSize::_32K.into() {
                     // Switch RAM bank, but only in advanced banking mode
                     self.ram.as_mut().unwrap().set_bank(value);
                 } else if usize::from(self.rom_size) >= RomSize::_1M.into() {
-                    // Set as upper two bits of ROM bank
-                    let value = self.rom.active_bank | (value as u16) << 5;
-                    self.rom.update_bank(value);
+                    // For large ROM carts, there are two options:
+                    if !self.banking_mode {
+                        // 1. Simple banking mode: upper two bits of bank 1
+                        let value = self.rom.active_bank_1 | (value as u16) << 5;
+                        self.rom.update_bank(value);
+                    } else {
+                        // 2. Advanced banking mode: select bank 0
+                        let bank0 = match value {
+                            0 => 0,
+                            1 => 0x20,
+                            2 => 0x40,
+                            3 => 0x60,
+                            _ => unreachable!(),
+                        };
+
+                        self.rom.update_bank_0(bank0);
+                    }
                 }
+
+                self.ram_rom_bank = value;
             }
             0x6000..=0x7FFF if self.cartridge_type.is_mbc1() => {
-                // Banking mode select (1 bit)
-                self.banking_mode = value & 0x01 == 1;
+                // MBC1 banking mode select (1 bit)
+                let large_ram = usize::from(self.ram_size) >= RamSize::_32K.into();
+                let large_rom = usize::from(self.rom_size) >= RomSize::_1M.into();
+                if !large_ram && !large_rom {
+                    // No effect on small carts
+                    return;
+                }
+
+                let banking_mode = value & 0x01 == 1;
+
+                if self.ram_enable && large_ram && banking_mode {
+                    // Large RAM, switch to previously selected bank immediately
+                    self.ram.as_mut().unwrap().set_bank(self.ram_rom_bank);
+                }
+
+                self.banking_mode = banking_mode;
             }
             0x0000..=0x3FFF if self.cartridge_type.is_mbc2() => {
                 // MBC2 ROM bank select
@@ -486,17 +547,17 @@ impl MemoryWrite<u16, u8> for Controller {
             }
             0x0000..=0x1FFF if self.cartridge_type.is_mbc5() => {
                 // Cartridge RAM enable/disable
-                println!("RAM enable/disable");
+                self.ram_enable = value == 0b1010;
             }
             0x2000..=0x2FFF if self.cartridge_type.is_mbc5() => {
                 // MBC5 ROM bank select (lower 8 bits)
-                let value = self.rom.active_bank | value as u16;
+                let value = self.rom.active_bank_1 | value as u16;
                 self.rom.update_bank(value);
             }
             0x3000..=0x3FFF if self.cartridge_type.is_mbc5() => {
                 // MBC5 ROM bank select (9th bit)
                 let value = (value & 0x1) as u16;
-                let value = self.rom.active_bank | value << 8;
+                let value = self.rom.active_bank_1 | value << 8;
                 self.rom.update_bank(value);
             }
             0x4000..=0x5FFF if self.cartridge_type.is_mbc5() => {
@@ -505,7 +566,11 @@ impl MemoryWrite<u16, u8> for Controller {
             }
 
             // Forward RAM writes as-is
-            Ram::BASE_ADDR..=Ram::LAST_ADDR => self.ram.as_mut().unwrap().write(addr, value),
+            Ram::BASE_ADDR..=Ram::LAST_ADDR => {
+                if self.ram_enable {
+                    self.ram.as_mut().unwrap().write(addr, value)
+                }
+            }
 
             // All other writes are ignored
             _ => (),

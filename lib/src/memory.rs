@@ -309,7 +309,7 @@ impl MemoryWrite<u16, u8> for Io {
             }
             0xFF03 | 0xFF08..=0xFF0E | 0xFF27..=0xFF2F | 0xFF4C..=0xFF4E | 0xFF57..=0xFF67 | 0xFF6C..=0xFF6F | 0xFF71..=0xFF7F => {
                 // Invalid registers
-                //panic!("Invalid write to 0x{:X}: {}", addr, value)
+                panic!("Invalid write to 0x{:X}: {}", addr, value)
             }
             _ => unreachable!(),
         }
@@ -428,11 +428,9 @@ impl MemoryRead<u16, u8> for MemoryBus {
                 // If the boot ROM is active, read from it instead of cartridge ROM
                 self.controller.boot_rom.as_ref().unwrap().read(addr)
             }
-            Rom::BASE_ADDR..=Rom::LAST_ADDR => self.controller.rom.read(addr),
+            Rom::BASE_ADDR..=Rom::LAST_ADDR => self.controller.read(addr),
             Vram::BASE_ADDR..=Vram::LAST_ADDR => self.ppu.vram().read(addr),
-            CartridgeRam::BASE_ADDR..=CartridgeRam::LAST_ADDR => {
-                self.controller.ram.as_ref().unwrap().read(addr)
-            }
+            CartridgeRam::BASE_ADDR..=CartridgeRam::LAST_ADDR => self.controller.read(addr),
             Ram::BASE_ADDR..=Ram::LAST_ADDR => self.ram.read(addr),
             0xE000..=0xFDFF => {
                 // Echo RAM
