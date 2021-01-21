@@ -209,12 +209,14 @@ impl LcdControl {
         self.raw & (1 << 7) != 0
     }
 
-    #[allow(unused)]
-    pub fn window_tile_map_select(&self) -> bool {
-        self.raw & (1 << 6) != 0
+    pub fn window_tile_map(&self) -> u16 {
+        if self.raw & (1 << 6) == 0 {
+            0x9800
+        } else {
+            0x9C00
+        }
     }
 
-    #[allow(unused)]
     pub fn window_display_enable(&self) -> bool {
         self.raw & (1 << 5) != 0
     }
@@ -223,8 +225,12 @@ impl LcdControl {
         self.raw & (1 << 4) == 0
     }
 
-    pub fn bg_tile_map_select(&self) -> bool {
-        self.raw & (1 << 3) != 0
+    pub fn bg_tile_map(&self) -> u16 {
+        if self.raw & (1 << 3) == 0 {
+            0x9800
+        } else {
+            0x9C00
+        }
     }
 
     pub fn sprite_size(&self) -> bool {
@@ -479,7 +485,7 @@ impl Ppu {
                     Self::SCX_ADDR => self.scx = value,
                     Self::LYC_ADDR => self.lyc = value,
                     Self::WY_ADDR => self.wy = value,
-                    Self::WX_ADDR => self.wy = value,
+                    Self::WX_ADDR => self.wx = value,
                     _ => unreachable!("Unexpected address on stack: {}", addr),
                 }
             }
@@ -624,19 +630,9 @@ impl Ppu {
     fn render_pixel(&mut self, pixel: u8, sprites: &[Sprite]) {
         let scanline = self.ly;
 
-        // Select base address for BG tile map based on LCDC register
-        let bg_tile_map_base: u16 = if !self.lcdc.bg_tile_map_select() {
-            0x9800
-        } else {
-            0x9C00
-        };
-
-        // Select base address for window tile map based on LCDC register
-        let window_tile_map_base: u16 = if !self.lcdc.window_tile_map_select() {
-            0x9800
-        } else {
-            0x9C00
-        };
+        // Select base address for BG and window tile maps based on LCDC register
+        let bg_tile_map_base: u16 = self.lcdc.bg_tile_map();
+        let window_tile_map_base: u16 = self.lcdc.window_tile_map();
 
         let mut pixel_data = None;
         let bg_priority;
@@ -644,17 +640,22 @@ impl Ppu {
 
         // Fetch pixel data for the BG or window, depending on which is currently active
         if self.lcdc.bg_priority() {
-            let window_display =
+            // Check if this pixel is inside the window area
+            let in_window =
                 self.lcdc.window_display_enable() &&
                 scanline >= self.wy &&
                 pixel >= self.wx.wrapping_sub(7);
 
-            let (data, priority, color_index) = if !window_display {
+            let (data, priority, color_index) = if !in_window {
+                // Normal BG pixel
                 let bg_pixel_x = pixel.wrapping_add(self.scx);
                 let bg_pixel_y = scanline.wrapping_add(self.scy);
                 self.fetch_bg_pixel_data(bg_pixel_x, bg_pixel_y, bg_tile_map_base)
             } else {
-                self.fetch_bg_pixel_data(pixel, scanline, window_tile_map_base)
+                // Window pixel
+                let pixel_x = pixel - self.wx.wrapping_sub(7);
+                let pixel_y = scanline - self.wy;
+                self.fetch_bg_pixel_data(pixel_x, pixel_y, window_tile_map_base)
             };
 
             pixel_data = Some(data);
