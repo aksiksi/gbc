@@ -640,12 +640,18 @@ impl Ppu {
         let bg_tile_map_base: u16 = self.lcdc.bg_tile_map();
         let window_tile_map_base: u16 = self.lcdc.window_tile_map();
 
-        let mut pixel_data = None;
+        let mut pixel_data;
         let bg_priority;
         let bg_color_index;
 
-        // Fetch pixel data for the BG or window, depending on which is currently active
-        if self.lcdc.bg_priority() {
+        // Fetch pixel data for the BG or window, depending on which is currently active.
+        //
+        // Conditions:
+        //
+        // 1. If the priority bit is set, the BG will _always_ have priority over sprites
+        // 2. If priority bit is reset (CGB): BG and window are still rendered, but sprites get priority
+        // 3. If priority bit is reset (DMG): BG and window turn white and sprites get priority
+        if self.lcdc.bg_priority() || self.cgb {
             // Check if this pixel is inside the window area
             let in_window =
                 self.lcdc.window_display_enable() &&
@@ -665,14 +671,13 @@ impl Ppu {
             };
 
             pixel_data = Some(data);
-            bg_priority = priority;
+
+            // On CGB, if LCDC priority is reset, BG & window lose priority
+            bg_priority = self.lcdc.bg_priority() && priority;
             bg_color_index = color_index;
         } else {
-            if !self.cgb {
-                // On DMG, reset the BG to white
+            // On DMG, reset the BG to white in non-priority mode
                 pixel_data = Some(DMG_PALETTE[0]);
-            }
-
             bg_priority = false;
             bg_color_index = 0;
         }
@@ -685,12 +690,12 @@ impl Ppu {
                     // If one of the below conditions is met, draw the sprite
                     // on top of the BG pixel:
                     //
-                    // 1. BG priority bit is _not_ set
+                    // 1. LCDC BG priority bit OR tile map BG priority bit is _not_ set
                     // 2. Sprite pixel is not transparent
-                    // 3. Transparent BG, always draw sprite on top
-                    // 4. Sprite priority for non-transparent BG
+                    // 3. Sprite priority for non-transparent BG
+                    // 4. Sprite on top of transparent BG
                     // 5. No BG was rendered
-                    if bg_color_index == 0 || priority || pixel_data.is_none() {
+                    if priority || bg_color_index == 0 || pixel_data.is_none() {
                         pixel_data = Some(data);
                     }
                 }
