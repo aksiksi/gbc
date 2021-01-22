@@ -125,9 +125,8 @@ impl FrameBuffer {
 }
 
 pub struct Vram {
-    /// Two static banks, 8K each
-    ///
-    /// CGB mode
+    /// DMG: One static bank, 8K
+    /// CGB: Two static banks, 8K each
     data: Vec<u8>,
     pub active_bank: u8,
     cgb: bool,
@@ -311,7 +310,7 @@ struct Sprite {
 
 pub struct Ppu {
     /// Video RAM (0x8000 - 0x9FFF)
-    vram: Vram,
+    pub vram: Vram,
 
     /// OAM (0xFE00-0xFE9F)
     ///

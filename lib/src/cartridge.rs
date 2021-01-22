@@ -49,17 +49,12 @@ impl TryFrom<u8> for RamSize {
 }
 
 /// Cartridge RAM
-pub enum Ram {
-    Unbanked {
-        data: Box<[u8; Self::BANK_SIZE]>,
-        ram_size: RamSize,
-    },
-    Banked {
-        data: Vec<u8>,
-        active_bank: u8,
-        num_banks: u8,
-        ram_size: RamSize,
-    },
+#[allow(dead_code)]
+pub struct Ram {
+    data: Vec<u8>,
+    pub active_bank: u8,
+    num_banks: u8,
+    ram_size: RamSize,
 }
 
 /// 8 KB switchable/banked external RAM
@@ -70,15 +65,8 @@ impl Ram {
 
     pub fn new(ram_size: RamSize) -> Option<Self> {
         // TODO: Handle MBC2 internal RAM (512 bytes)
-
         match ram_size {
-            // For 2K and 8K RAM sizes, the RAM is unbanked
-            RamSize::_2K | RamSize::_8K => {
-                let data = Box::new([0u8; Self::BANK_SIZE]);
-                Some(Self::Unbanked { data, ram_size })
-            }
             RamSize::NotPresent => {
-                // TODO: logging
                 None
             }
             // Otherwise, we have banked RAM
@@ -86,9 +74,13 @@ impl Ram {
                 // Get raw RAM size in bytes
                 let size = usize::from(ram_size);
                 let data = vec![0u8; size];
-                let num_banks = (size / Self::BANK_SIZE) as u8;
+                let num_banks = if ram_size == RamSize::_2K {
+                    1
+                } else {
+                    (size / Self::BANK_SIZE) as u8
+                };
 
-                Some(Self::Banked {
+                Some(Self {
                     data,
                     active_bank: 0,
                     num_banks,
@@ -100,15 +92,8 @@ impl Ram {
 
     /// Handle a bank change request
     pub fn set_bank(&mut self, bank: u8) {
-        match self {
-            Self::Banked {
-                active_bank, num_banks, ..
-            } => {
-                // Mask out the selected bank based on number of banks
-                *active_bank = bank & (*num_banks - 1);
-            }
-            _ => (),
-        }
+        assert!(self.num_banks > 1, "Switching bank on unbanked RAM!");
+        self.active_bank = bank & (self.num_banks - 1);
     }
 }
 
@@ -117,15 +102,8 @@ impl MemoryRead<u16, u8> for Ram {
     #[inline]
     fn read(&self, addr: u16) -> u8 {
         let addr = (addr - Self::BASE_ADDR) as usize;
-        match &self {
-            Self::Unbanked { data, .. } => data[addr],
-            Self::Banked {
-                data, active_bank, ..
-            } => {
-                let bank_offset = *active_bank as usize * Self::BANK_SIZE;
-                data[bank_offset + addr]
-            }
-        }
+        let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
+        self.data[bank_offset + addr]
     }
 }
 
@@ -134,17 +112,8 @@ impl MemoryWrite<u16, u8> for Ram {
     #[inline]
     fn write(&mut self, addr: u16, value: u8) {
         let addr = (addr - Self::BASE_ADDR) as usize;
-        match self {
-            Self::Unbanked { data, .. } => {
-                data[addr] = value;
-            }
-            Self::Banked {
-                data, active_bank, ..
-            } => {
-                let bank_offset = *active_bank as usize * Self::BANK_SIZE;
-                data[bank_offset + addr] = value;
-            }
-        }
+        let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
+        self.data[bank_offset + addr] = value;
     }
 }
 

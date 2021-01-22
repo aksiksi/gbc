@@ -175,8 +175,8 @@ impl Cpu {
         // Fetch and decode the next instruction at PC
         let (inst, size, cycles) = self.fetch(None);
 
-        if let Some(buf) = &mut self.trace {
-            write!(buf, "0x{:X} - {}", self.registers.PC, inst).unwrap();
+        if let Some(_) = &mut self.trace {
+            self.trace(&inst);
         }
 
         // Execute the instruction on this CPU
@@ -197,11 +197,13 @@ impl Cpu {
         (cycles, inst)
     }
 
-    fn trace(&mut self) {
-        // Figure out the currently active ROM bank based on the memory region
-        // for PC
+    #[inline]
+    fn trace(&mut self, inst: &Instruction) {
+        // Figure out the currently active ROM bank based on the memory region of PC
         let pc = self.registers.PC;
-        todo!()
+        let (memory_type, bank) = self.memory.memory_info(pc);
+        let f = &mut self.trace.as_mut().unwrap();
+        write!(f, "{}:{}:0x{:X} - {}\n", bank, memory_type, pc, inst).unwrap();
     }
 
     /// Execute a single step of DMA (if active).

@@ -22,18 +22,11 @@ pub trait MemoryWrite<A, V> {
 /// * 0xC000 - 0xCFFF: Bank 0,   4K, static
 /// * 0xD000 - 0xDFFF: Bank 1,   4K  (non-CGB mode)
 /// * 0xD000 - 0xDFFF: Bank 1-7, 4K, switchable (CGB mode)
-pub enum Ram {
-    Unbanked {
-        /// Two static banks, 4K each
-        /// Non-CGB mode
-        data: Box<[u8; Self::BANK_SIZE * 2]>,
-    },
-    Banked {
-        /// Eight static banks, 4K each
-        /// CGB mode
-        data: Box<[u8; Self::BANK_SIZE * 8]>,
-        active_bank: u8,
-    },
+pub struct Ram {
+    data: Vec<u8>,
+    active_bank: u8,
+    num_banks: u8,
+    cgb: bool,
 }
 
 impl Ram {
@@ -43,28 +36,27 @@ impl Ram {
     pub const BANK_SELECT_ADDR: u16 = 0xFF70;
 
     pub fn new(cgb: bool) -> Self {
-        if cgb {
-            Self::Banked {
-                data: Box::new([0u8; Self::BANK_SIZE * 8]),
-                active_bank: 0,
-            }
+        let num_banks = if cgb {
+            8u8
         } else {
-            Self::Unbanked {
-                data: Box::new([0u8; Self::BANK_SIZE * 2]),
-            }
+            2u8
+        };
+
+        Self {
+            data: vec![0u8; Self::BANK_SIZE * num_banks as usize],
+            active_bank: 1,
+            num_banks,
+            cgb,
         }
     }
 
     /// Update the active RAM bank
     pub fn update_bank(&mut self, bank: u8) {
-        match self {
-            Self::Banked {
-                active_bank, ..
-            } => {
-                // Mask out the selected bank based on number of banks
-                *active_bank = bank & 0b0111;
-            }
-            _ => panic!("Received RAM bank change request on unbanked RAM"),
+        if self.cgb {
+            self.active_bank = bank & 0b0111;
+            assert!(self.active_bank < self.num_banks);
+        } else {
+            panic!("Received RAM bank change request on unbanked RAM");
         }
     }
 }
@@ -74,20 +66,16 @@ impl MemoryRead<u16, u8> for Ram {
     fn read(&self, addr: u16) -> u8 {
         let addr = (addr - Self::BASE_ADDR) as usize;
 
-        match self {
-            Self::Unbanked { data } => data[addr],
-            Self::Banked { data, active_bank } => {
-                match addr {
-                    0x0000..=0x0FFF => {
-                        // Read from the first bank
-                        data[addr]
-                    }
-                    _ => {
-                        // Read from the switchable bank
-                        let bank_offset = *active_bank as usize * Self::BANK_SIZE;
-                        data[bank_offset + addr]
-                    }
-                }
+        match addr {
+            0x0000..=0x0FFF => {
+                // Read from the first bank
+                self.data[addr]
+            }
+            _ => {
+                // Read from the switchable bank
+                let addr = addr - 0x1000;
+                let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
+                self.data[bank_offset + addr]
             }
         }
     }
@@ -98,22 +86,16 @@ impl MemoryWrite<u16, u8> for Ram {
     fn write(&mut self, addr: u16, value: u8) {
         let addr = (addr - Self::BASE_ADDR) as usize;
 
-        match self {
-            Self::Unbanked { data } => {
-                data[addr] = value;
+        match addr {
+            0x0000..=0x0FFF => {
+                // Write to the first bank
+                self.data[addr] = value;
             }
-            Self::Banked { data, active_bank } => {
-                match addr {
-                    0x0000..=0x0FFF => {
-                        // Write to the first bank
-                        data[addr] = value;
-                    }
-                    _ => {
-                        // Write to the switchable bank
-                        let bank_offset = *active_bank as usize * Self::BANK_SIZE;
-                        data[bank_offset + addr] = value;
-                    }
-                }
+            _ => {
+                // Write to the switchable bank
+                let addr = addr - 0x1000;
+                let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
+                self.data[bank_offset + addr] = value;
             }
         }
     }
@@ -316,6 +298,28 @@ impl MemoryWrite<u16, u8> for Io {
     }
 }
 
+pub enum MemoryType {
+    Rom,
+    Ram,
+    CartridgeRam,
+    Vram,
+    Hram,
+    Other,
+}
+
+impl std::fmt::Display for MemoryType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MemoryType::Rom => write!(f, "ROM"),
+            MemoryType::Ram => write!(f, "RAM"),
+            MemoryType::CartridgeRam => write!(f, "CRAM"),
+            MemoryType::Vram => write!(f, "VRAM"),
+            MemoryType::Hram => write!(f, "HRAM"),
+            MemoryType::Other => write!(f, "OTHER"),
+        }
+    }
+}
+
 /// 64K memory map for the GBC
 pub struct MemoryBus {
     /// ROM:       0x0000 - 0x7FFF
@@ -345,11 +349,14 @@ pub struct MemoryBus {
 }
 
 impl MemoryBus {
-    pub fn new() -> Self {
+    pub const HRAM_BASE_ADDR: u16 = 0xFF80;
+    pub const HRAM_LAST_ADDR: u16 = 0xFFFE;
+
+    pub fn new(cgb: bool) -> Self {
         Self {
             controller: Controller::new(),
-            ppu: Ppu::new(true),
-            ram: Ram::new(true),
+            ppu: Ppu::new(cgb),
+            ram: Ram::new(cgb),
             io: Io::new(),
             high_ram: [0u8; 0x80],
             int_enable: 0,
@@ -382,6 +389,38 @@ impl MemoryBus {
         self.io = Io::new();
         self.high_ram = [0u8; 0x80];
         self.int_enable = 0;
+    }
+
+    /// Given an address in memory, returns the type of memory and bank
+    /// number that the address is located in.
+    pub fn memory_info(&self, addr: u16) -> (MemoryType, u16) {
+        if addr >= Rom::BASE_ADDR && addr < Rom::BASE_ADDR + Rom::BANK_SIZE as u16 {
+            // ROM first bank
+            (MemoryType::Rom, self.controller.rom.active_bank_0)
+        } else if addr >= Rom::BASE_ADDR + Rom::BANK_SIZE as u16 && addr <= Rom::LAST_ADDR {
+            // ROM second bank
+            (MemoryType::Rom, self.controller.rom.active_bank_1)
+        } else if addr >= CartridgeRam::BASE_ADDR && addr <= CartridgeRam::LAST_ADDR {
+            // Cartridge RAM
+            (MemoryType::CartridgeRam, match &self.controller.ram {
+                None => 0,
+                Some(ram) => ram.active_bank as u16,
+            })
+        } else if addr >= Ram::BASE_ADDR && addr < Ram::BASE_ADDR + Ram::BANK_SIZE as u16 {
+            // Work RAM first bank
+            (MemoryType::Ram, 0)
+        } else if addr >= Ram::BASE_ADDR + Ram::BANK_SIZE as u16 && addr <= Ram::LAST_ADDR {
+            // Work RAM second bank
+            (MemoryType::Ram, self.ram.active_bank as u16)
+        } else if addr >= Vram::BASE_ADDR && addr <= Vram::LAST_ADDR {
+            // VRAM
+            (MemoryType::Vram, self.ppu.vram.active_bank as u16)
+        } else if addr >= Self::HRAM_BASE_ADDR && addr <= Self::HRAM_LAST_ADDR {
+            // HRAM
+            (MemoryType::Hram, 0)
+        } else {
+            (MemoryType::Other, 0)
+        }
     }
 
     pub fn controller(&mut self) -> &mut Controller {
