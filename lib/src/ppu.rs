@@ -383,6 +383,9 @@ pub struct Ppu {
     hblank_enabled: bool,
     ly_enabled: bool,
 
+    /// Sprites that are visible on this scanline
+    sprites: Vec<Sprite>,
+
     /// Register write stack
     ///
     /// Some of the registers, e.g., SCY and SCX, can be written to mid-scanline,
@@ -437,6 +440,7 @@ impl Ppu {
             vblank_enabled: false,
             hblank_enabled: false,
             ly_enabled: false,
+            sprites: Vec::with_capacity(10),
             write_stack: VecDeque::with_capacity(5), // 5 registers use this
             cycle: 0,
             cgb,
@@ -555,15 +559,23 @@ impl Ppu {
             return;
         }
 
-        // If we are not at the start of a stat mode, we have nothing to do
-        if !stat_mode_change {
+        // If we are in VBLANK, no rendering needs to be done
+        if self.stat.mode == StatMode::Vblank {
             return;
         }
 
         match self.stat.mode {
-            StatMode::Hblank if self.ly <= 143 => {
-                // If we are at the start of HBLANK, render a scanline worth
-                // of BG and sprites to the frame buffer
+            StatMode::OamRead if stat_mode_change => {
+                // At the end of OAM scan/start of OAM read, build a list of
+                // visible sprites on this scanline. OAM is locked in this mode.
+                self.sprites.clear();
+                self.find_visible_sprites();
+            }
+            StatMode::Hblank if stat_mode_change => {
+                // If we are at the end of OAM read/start of HBLANK, render a
+                // scanline worth of BG and sprites to the frame buffer.
+                //
+                // Both VRAM and OAM are locked in this mode.
                 self.render_scanline();
             }
             _ => ()
@@ -576,7 +588,7 @@ impl Ppu {
     ///
     /// CGB mode: in OAM order
     /// DMG mode: sorted by x-pos
-    fn find_visible_sprites(&self) -> Vec<Sprite> {
+    fn find_visible_sprites(&mut self) {
         let scanline = self.ly;
 
         let size = if self.lcdc.sprite_size() {
@@ -584,8 +596,6 @@ impl Ppu {
         } else {
             8
         };
-
-        let mut sprites = Vec::new();
 
         for chunk in self.oam.chunks_exact(4) {
             let y = chunk[0];
@@ -600,8 +610,8 @@ impl Ppu {
             let visible = scanline.wrapping_add(16) >= y && scanline < y_pos.wrapping_add(size);
 
             // We can only have 10 sprites on a single scanline
-            if visible && sprites.len() < 10 {
-                sprites.push(Sprite {
+            if visible && self.sprites.len() < 10 {
+                self.sprites.push(Sprite {
                     y,
                     x,
                     tile_number,
@@ -612,12 +622,10 @@ impl Ppu {
 
         // Sort according to x-pos
         if !self.cgb {
-            sprites.sort_by(|a, b| {
+            self.sprites.sort_by(|a, b| {
                 a.x.cmp(&b.x)
             });
         }
-
-        sprites
     }
 
     /// Render a single pixel to the frame buffer (screen).
@@ -625,7 +633,7 @@ impl Ppu {
     /// This is split into rendering the BG/window pixel and rendering the sprite
     /// pixel. Note that sprites are more often layered on top of the BG, depending
     /// on color and priority.
-    fn render_pixel(&mut self, pixel: u8, sprites: &[Sprite]) {
+    fn render_pixel(&mut self, pixel: u8) {
         let scanline = self.ly;
 
         // Select base address for BG and window tile maps based on LCDC register
@@ -671,7 +679,7 @@ impl Ppu {
 
         if self.lcdc.sprite_enable() {
             // Fetch sprite pixel data
-            let result = self.fetch_sprite_pixel_data(&sprites, pixel, scanline);
+            let result = self.fetch_sprite_pixel_data(pixel, scanline);
             if let Some((data, priority, color_index)) = result {
                 if !bg_priority && color_index != 0 {
                     // If one of the below conditions is met, draw the sprite
@@ -697,10 +705,8 @@ impl Ppu {
 
     /// Render a single scanline worth of pixel data to the frame buffer
     fn render_scanline(&mut self) {
-        let sprites = self.find_visible_sprites();
-
         for pixel in 0..LCD_WIDTH as u8 {
-            self.render_pixel(pixel, &sprites);
+            self.render_pixel(pixel);
         }
     }
 
@@ -798,11 +804,15 @@ impl Ppu {
         (pixel_data, bg_priority, color_index)
     }
 
-    /// We go through a similar sequence as done in the BG method.
+    /// We go through a similar sequence as in the BG method.
     ///
-    /// The main difference is that sprite info is stored in OAM, so we need  to
+    /// The first difference is that sprite info is stored in OAM, so we need  to
     /// walk through OAM to determine which sprite needs to be rendered at this location.
-    fn fetch_sprite_pixel_data(&self, sprites: &[Sprite], pixel: u8, scanline: u8) -> Option<(GameboyRgba, bool, u8)> {
+    ///
+    /// The second difference is that sprites can be either a single tile (8x8) or two
+    /// vertically stacked tiles (8x16). In case of the latter, we need to adjust our logic
+    /// based on which tile the current pixel lies in (upper vs. lower).
+    fn fetch_sprite_pixel_data(&self, pixel: u8, scanline: u8) -> Option<(GameboyRgba, bool, u8)> {
         let tile_data_base = 0x8000;
 
         let size = if self.lcdc.sprite_size() {
@@ -811,10 +821,11 @@ impl Ppu {
             8
         };
 
-        for sprite in sprites {
+        for sprite in &self.sprites {
             let x_pos = sprite.x.wrapping_sub(8);
             let visible = pixel + 8 >= sprite.x && pixel < x_pos.wrapping_add(8);
             if !visible {
+                // If the sprite is not visible at this pixel, skip it
                 continue;
             }
 
@@ -829,11 +840,12 @@ impl Ppu {
             // the pixel positions within the tile (e.g. `tile_pixel_x`), we are done.
             let tile_y = sprite.y.wrapping_sub(16);
             let tile_x = sprite.x.wrapping_sub(8);
+
             let tile_number = sprite.tile_number;
             let attr = sprite.attr;
-
             let palette_num;
             let vram_bank;
+
             if self.cgb {
                 palette_num = attr & 0x07;
                 vram_bank = (attr & 1 << 3) >> 3;
