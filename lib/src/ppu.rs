@@ -78,7 +78,6 @@ impl GameboyRgba {
         self.red = ((self.red as u32 * 255) / 31) as u8;
         self.blue = ((self.blue as u32 * 255) / 31) as u8;
         self.green = ((self.green as u32 * 255) / 31) as u8;
-        self.alpha = ((self.alpha as u32 * 255) / 31) as u8;
     }
 }
 

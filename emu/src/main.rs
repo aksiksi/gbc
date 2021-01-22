@@ -16,10 +16,13 @@ use structopt::StructOpt;
 #[derive(Debug, StructOpt)]
 struct Cli {
     #[structopt(parse(from_os_str))]
-    rom_file: Option<PathBuf>,
+    rom_file: PathBuf,
 
     #[structopt(long)]
     boot_rom: bool,
+
+    #[structopt(long)]
+    trace: bool,
 
     #[structopt(default_value = "6", long)]
     scale: u32,
@@ -64,16 +67,11 @@ fn event_to_joypad(event: Event) -> Option<JoypadEvent> {
 }
 
 fn gui(cli: Cli) {
-    let rom_name = cli.rom_file
-        .as_ref()
-        .map(|p| {
-            match p.file_name() {
-                None => None,
-                Some(n) => Some(n.to_str().unwrap()),
-            }
-        })
-        .flatten()
-        .unwrap_or("No ROM");
+    let rom_name = match cli.rom_file.file_name() {
+        None => None,
+        Some(n) => Some(n.to_str().unwrap()),
+    }.unwrap_or("Unknown ROM");
+
     let title = format!("{} - gbc", rom_name);
 
     let sdl_context = sdl2::init().unwrap();
@@ -111,7 +109,7 @@ fn gui(cli: Cli) {
                                                      LCD_WIDTH as u32,
                                                      LCD_HEIGHT as u32).unwrap();
 
-    let mut gameboy = Gameboy::init(cli.rom_file, cli.boot_rom).unwrap();
+    let mut gameboy = Gameboy::init(cli.rom_file, cli.boot_rom, cli.trace).unwrap();
     let frame_duration = Duration::new(0, Gameboy::FRAME_DURATION);
 
     // Start the event loop
@@ -186,7 +184,7 @@ fn main() -> Result<()> {
     if !cli.headless {
         gui(cli);
     } else {
-        let mut gameboy = Gameboy::init(cli.rom_file, false)?;
+        let mut gameboy = Gameboy::init(cli.rom_file, false, false)?;
         loop {
             // TODO: Perhaps allow user to provide joypad input file?
             // e.g., list of (input, time)

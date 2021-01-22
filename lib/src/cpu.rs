@@ -1,3 +1,6 @@
+use std::fs::File;
+use std::io::{BufWriter, Write};
+
 use crate::cartridge::Cartridge;
 use crate::dma::DmaController;
 use crate::error::Result;
@@ -65,6 +68,9 @@ pub struct Cpu {
     /// Global interrupt enable flag (Interrupt Master Enable)
     ime: bool,
     pub is_halted: bool,
+
+    /// Trace all instructions executed to a file
+    trace: Option<BufWriter<File>>,
 }
 
 impl Cpu {
@@ -74,29 +80,48 @@ impl Cpu {
     /// CPU cycle time, in ns
     pub const CYCLE_TIME: u32 = ((1.0 / Self::BASE_FREQ as f64) * 1e9) as u32;
 
-    pub fn new(cartridge: Option<Cartridge>) -> Result<Self> {
-        let cgb;
-        let mut boot_rom = false;
-        let memory;
+    /// Create an empty CPU without a cartridge
+    ///
+    /// Mainly used for tests
+    pub fn new(cgb: bool) -> Self {
+        let memory = MemoryBus::new(cgb);
+        let registers = RegisterFile::new(cgb);
+        let dma = DmaController::new();
 
-        match cartridge {
-            Some(c) => {
-                cgb = c.cgb();
-                boot_rom = c.boot_rom;
-                memory = MemoryBus::from_cartridge(c)?;
-            }
-            None => {
-                cgb = true;
-                memory = MemoryBus::new();
-            }
+        Self {
+            registers,
+            memory,
+            dma,
+            cgb,
+            ime: false,
+            is_halted: false,
+            trace: None,
+        }
+    }
+
+    /// Create a CPU from a cartridge
+    pub fn from_cartridge(cartridge: Cartridge, trace: bool) -> Result<Self> {
+        let cgb = cartridge.cgb();
+        let boot_rom = cartridge.boot_rom;
+        let memory = MemoryBus::from_cartridge(cartridge)?;
+
+        let registers = if boot_rom {
+            // If boot ROM is required, keep registers empty
+            RegisterFile::empty()
+        } else {
+            // Otherwise, init registers based on mode
+            RegisterFile::new(cgb)
         };
 
-        let mut registers = RegisterFile::new(cgb);
-        if boot_rom {
-            registers.PC = 0x0;
-        }
-
         let dma = DmaController::new();
+
+        // If tracing is enabled, create a trace file in the current directory
+        let trace = if trace {
+            let f = File::create("gbc.trace")?;
+            Some(BufWriter::new(f))
+        } else {
+            None
+        };
 
         Ok(Self {
             registers,
@@ -105,6 +130,7 @@ impl Cpu {
             cgb,
             ime: false,
             is_halted: false,
+            trace,
         })
     }
 
@@ -149,6 +175,10 @@ impl Cpu {
         // Fetch and decode the next instruction at PC
         let (inst, size, cycles) = self.fetch(None);
 
+        if let Some(buf) = &mut self.trace {
+            write!(buf, "0x{:X} - {}", self.registers.PC, inst).unwrap();
+        }
+
         // Execute the instruction on this CPU
         let (jump, taken) = self.execute(inst);
         let cycles = if !jump || jump && !taken {
@@ -165,6 +195,13 @@ impl Cpu {
         let cycles = int_cycles + cycles;
 
         (cycles, inst)
+    }
+
+    fn trace(&mut self) {
+        // Figure out the currently active ROM bank based on the memory region
+        // for PC
+        let pc = self.registers.PC;
+        todo!()
     }
 
     /// Execute a single step of DMA (if active).
@@ -1056,7 +1093,7 @@ mod test {
     use super::*;
 
     fn get_cpu() -> Cpu {
-        Cpu::new(None).unwrap()
+        Cpu::new(true)
     }
 
     #[test]

@@ -39,13 +39,9 @@ impl Gameboy {
     ///
     /// If no ROM is provided, the emulator will boot into the CGB BIOS ROM. You can
     /// use `Self::insert` to load a cartridge later.
-    pub fn init<P: AsRef<Path>>(rom_path: Option<P>, boot_rom: bool) -> Result<Self> {
-        let cartridge = match rom_path {
-            Some(p) => Some(Cartridge::from_file(p, boot_rom)?),
-            None => None,
-        };
-
-        let cpu = Cpu::new(cartridge)?;
+    pub fn init<P: AsRef<Path>>(rom_path: P, boot_rom: bool, trace: bool) -> Result<Self> {
+        let cartridge = Cartridge::from_file(rom_path, boot_rom)?;
+        let cpu = Cpu::from_cartridge(cartridge, trace)?;
 
         #[cfg(feature = "debug")]
         let gameboy = Self {
@@ -146,16 +142,10 @@ impl Gameboy {
 
     /// Insert a new cartridge and reset the emulator
     pub fn insert<P: AsRef<Path>>(&mut self, rom_path: P, boot_rom: bool) -> Result<()> {
-        let cartridge = Some(Cartridge::from_file(rom_path, boot_rom)?);
-        self.cpu = Cpu::new(cartridge)?;
+        let cartridge = Cartridge::from_file(rom_path, boot_rom)?;
+        self.cpu = Cpu::from_cartridge(cartridge, false)?;
         self.frame_counter = 0;
         Ok(())
-    }
-
-    /// Eject the inserted cartridge, if any, and reset the CPU
-    pub fn eject(&mut self) {
-        self.cpu = Cpu::new(None).unwrap();
-        self.frame_counter = 0;
     }
 
     /// Reset the emulator

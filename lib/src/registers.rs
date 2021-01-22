@@ -69,6 +69,7 @@ pub enum Flag {
 }
 
 #[allow(non_snake_case)]
+#[derive(Default)]
 pub struct RegisterFile {
     // Registers
     A: u8,
@@ -88,6 +89,10 @@ impl RegisterFile {
     const SUBTRACT_MASK: u8 = 1 << 6;
     const HALF_CARRY_MASK: u8 = 1 << 5;
     const CARRY_MASK: u8 = 1 << 4;
+
+    pub fn empty() -> Self {
+        Default::default()
+    }
 
     /// Returns a new register file
     ///
