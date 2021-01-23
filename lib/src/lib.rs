@@ -115,7 +115,7 @@ impl Gameboy {
     ///
     /// The frame takes in an list of joypad events as input, and returns
     /// a `FrameBuffer`.
-    pub fn frame(&mut self, mut joypad_events: Vec<Option<JoypadEvent>>) -> &FrameBuffer {
+    pub fn frame(&mut self, joypad_events: Option<Vec<JoypadEvent>>) -> &FrameBuffer {
         // Execute next instruction
         let mut cycle = 0;
         let num_cycles = self.cycles_per_frame();
@@ -126,8 +126,8 @@ impl Gameboy {
         }
 
         // Update joypad, if needed
-        for event in &mut joypad_events {
-            if let Some(event) = event.take() {
+        if let Some(events) = joypad_events {
+            for event in events {
                 if self.cpu.memory.joypad().handle_event(event) {
                     self.cpu.trigger_interrupt(Interrupt::Joypad);
                 }
@@ -158,5 +158,13 @@ impl Gameboy {
 
     pub fn cpu(&mut self) -> &mut Cpu {
         &mut self.cpu
+    }
+
+    /// Returns a String containing the serial output of this Gameboy _so far_.
+    ///
+    /// In other words, this output is cumulative and contains every character
+    /// logged to serial since the start of Gameboy.
+    pub fn serial_output(&self) -> String {
+        self.cpu.memory.io().serial_buffer().into_iter().collect()
     }
 }

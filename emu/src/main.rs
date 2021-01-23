@@ -131,14 +131,16 @@ fn gui(cli: Cli) {
                     gameboy.reset();
                 }
                 Event::KeyDown { .. } | Event::KeyUp { .. } => {
-                    joypad_events.push(event_to_joypad(event));
+                    if let Some(e) = event_to_joypad(event) {
+                        joypad_events.push(e);
+                    }
                 }
                 _ => (),
             }
         }
 
         // Run the Gameboy for a single frame and return the frame data
-        let frame_buffer = gameboy.frame(joypad_events);
+        let frame_buffer = gameboy.frame(Some(joypad_events));
 
         canvas.clear();
 
@@ -188,7 +190,7 @@ fn main() -> Result<()> {
         loop {
             // TODO: Perhaps allow user to provide joypad input file?
             // e.g., list of (input, time)
-            gameboy.frame(Vec::new());
+            gameboy.frame(None);
             std::thread::sleep(Duration::from_nanos(Gameboy::FRAME_DURATION as u64))
         }
     }
