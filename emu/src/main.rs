@@ -158,7 +158,7 @@ fn gui(cli: Cli) {
             // Draw the rendered frame
             for x in 0..LCD_WIDTH {
                 for y in 0..LCD_HEIGHT {
-                    let color = frame_buffer.data[y * 160 + x];
+                    let color = frame_buffer.read(x, y);
                     canvas.set_draw_color(Color::RGBA(color.red, color.green, color.blue, color.alpha));
                     canvas.draw_point((x as i32, y as i32)).unwrap();
                 }
