@@ -1,7 +1,7 @@
 use std::convert::{TryFrom, TryInto};
-use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
-use std::path::Path;
+use std::fs::{File, OpenOptions};
+use std::io::{Read, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
 use crate::memory::{MemoryRead, MemoryWrite};
@@ -55,6 +55,7 @@ pub struct Ram {
     pub active_bank: u8,
     num_banks: u8,
     ram_size: RamSize,
+    file: Option<File>,
 }
 
 /// 8 KB switchable/banked external RAM
@@ -85,9 +86,37 @@ impl Ram {
                     active_bank: 0,
                     num_banks,
                     ram_size,
+                    file: None,
                 })
             }
         }
+    }
+
+    /// Create a new battery-backed RAM (i.e., save file support).
+    pub fn with_battery<P: AsRef<Path>>(ram_size: RamSize, rom_path: P) -> Result<Option<Self>> {
+        let mut ram = match Self::new(ram_size) {
+            None => return Ok(None),
+            Some(v) => v,
+        };
+
+        let save_path = rom_path.as_ref().with_extension("sav");
+        let mut save_file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(save_path)?;
+
+        if save_file.metadata()?.len() as usize == ram.data.len() {
+            // If the save file exists, load all data from it into RAM
+            ram.data.clear();
+            save_file.read_to_end(&mut ram.data)?;
+        }
+
+        save_file.set_len(ram.data.len() as u64)?;
+
+        ram.file = Some(save_file);
+
+        Ok(Some(ram))
     }
 
     /// Handle a bank change request
@@ -113,7 +142,15 @@ impl MemoryWrite<u16, u8> for Ram {
     fn write(&mut self, addr: u16, value: u8) {
         let addr = (addr - Self::BASE_ADDR) as usize;
         let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
-        self.data[bank_offset + addr] = value;
+        let index = bank_offset + addr;
+
+        self.data[index] = value;
+
+        if let Some(file) = &mut self.file {
+            // Write through to the save file
+            file.seek(SeekFrom::Start(index as u64)).unwrap();
+            file.write(&[value]).unwrap();
+        }
     }
 }
 
@@ -366,11 +403,16 @@ impl Controller {
         let rom_size = cartridge.rom_size()?;
         let ram_size = cartridge.ram_size()?;
         let rom = Rom::from_file(rom_size, &mut cartridge.rom_file)?;
-        let ram = Ram::new(ram_size);
         let boot_rom = if cartridge.boot_rom {
             Some(BootRom::new())
         } else {
             None
+        };
+
+        let ram = if cartridge_type.is_battery_backed() {
+            Ram::with_battery(ram_size, cartridge.rom_path)?
+        } else {
+            Ram::new(ram_size)
         };
 
         Ok(Self {
@@ -632,6 +674,14 @@ impl CartridgeType {
             _ => false,
         }
     }
+
+    pub fn is_battery_backed(&self) -> bool {
+        use CartridgeType::*;
+        match self {
+            RomRamBattery | Mbc1RamBattery | Mbc3RamBattery | Mbc3TimerRamBattery | Mbc4RamBattery | Mbc5RamBattery | Mbc5RumbleRamBattery => true,
+            _ => false,
+        }
+    }
 }
 
 impl TryFrom<u8> for CartridgeType {
@@ -683,6 +733,7 @@ impl TryFrom<u8> for CartridgeType {
 pub struct Cartridge {
     /// ROM file
     pub rom_file: File,
+    pub rom_path: PathBuf,
 
     /// If `true`, boot ROM is executed on boot/reset,
     /// prior to loading the game
@@ -700,6 +751,7 @@ impl Cartridge {
 
     pub fn from_file<P: AsRef<Path>>(path: P, boot_rom: bool) -> Result<Self> {
         let mut rom_file = File::open(&path)?;
+        let rom_path = PathBuf::from(path.as_ref());
         let mut header = [0u8; Self::HEADER_SIZE];
 
         // Read the header in
@@ -708,6 +760,7 @@ impl Cartridge {
 
         let cartridge = Self {
             rom_file,
+            rom_path,
             boot_rom,
             header,
         };
