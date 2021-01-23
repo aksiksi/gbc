@@ -748,8 +748,9 @@ impl Ppu {
         let horizontal_flip = (tile_data_attr & (1 << 5)) != 0; // bit 5
         let vertical_flip = (tile_data_attr & (1 << 6)) != 0; // bit 6
         let bg_priority = if self.cgb {
-            (tile_data_attr & (1 << 7)) == 0 // bit 7
+            (tile_data_attr & (1 << 7)) == 1 // bit 7
         } else {
+            // On DMG, BG priority is based on the color index
             false
         };
 
