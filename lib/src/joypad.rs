@@ -19,6 +19,20 @@ impl JoypadInput {
             Self::Start | Self::Down => 3,
         }
     }
+
+    fn is_button(&self) -> bool {
+        match self {
+            Self::A | Self::B | Self::Select | Self::Start => true,
+            _ => false,
+        }
+    }
+
+    fn is_direction(&self) -> bool {
+        match self {
+            Self::Right | Self::Left | Self::Up | Self::Down => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -80,14 +94,26 @@ impl Joypad {
         };
 
         // Convert the input to its relevant bit position
-        let bit = event.input().to_bit();
+        let input = event.input();
+        let bit = input.to_bit();
 
         if is_down {
             *reg &= !(1 << bit);
-            true
+
+            // Fire an interrupt if a down event is received for an input
+            // in the current selection
+            self.is_interrupt_required(input)
         } else {
             *reg |= 1 << bit;
             false
+        }
+    }
+
+    fn is_interrupt_required(&self, input: JoypadInput) -> bool {
+        match self.selection {
+            JoypadSelection::Buttons => input.is_button(),
+            JoypadSelection::Directions => input.is_direction(),
+            JoypadSelection::None => false,
         }
     }
 
