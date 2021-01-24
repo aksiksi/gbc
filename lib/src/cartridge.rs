@@ -121,7 +121,10 @@ impl Ram {
 
     /// Handle a bank change request
     pub fn set_bank(&mut self, bank: u8) {
-        assert!(self.num_banks > 1, "Switching bank on unbanked RAM!");
+        if self.num_banks == 1 {
+            eprintln!("Switching bank on unbanked RAM!");
+        }
+
         self.active_bank = bank & (self.num_banks - 1);
     }
 }
@@ -269,11 +272,13 @@ impl Rom {
     }
 
     pub fn update_bank_0(&mut self, bank: u16) {
-        self.active_bank_0 = bank & (self.num_banks - 1);
+        assert!(bank < self.num_banks);
+        self.active_bank_0 = bank;
     }
 
     pub fn update_bank(&mut self, bank: u16) {
-        self.active_bank_1 = bank & (self.num_banks - 1);
+        assert!(bank < self.num_banks);
+        self.active_bank_1 = bank;
     }
 }
 
@@ -567,8 +572,7 @@ impl MemoryWrite<u16, u8> for Controller {
             }
             0x3000..=0x3FFF if self.cartridge_type.is_mbc5() => {
                 // MBC5 ROM bank select (9th bit)
-                let value = (value & 0x1) as u16;
-                let value = self.rom.active_bank_1 | value << 8;
+                let value = self.rom.active_bank_1 | (value as u16 & 0x1) << 8;
                 self.rom.update_bank(value);
             }
             0x4000..=0x5FFF if self.cartridge_type.is_mbc5() => {

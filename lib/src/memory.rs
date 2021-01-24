@@ -53,7 +53,12 @@ impl Ram {
     /// Update the active RAM bank
     pub fn update_bank(&mut self, bank: u8) {
         if self.cgb {
-            self.active_bank = bank & 0b0111;
+            self.active_bank = if bank == 0 {
+                1
+            } else {
+                bank & 0b0111
+            };
+
             assert!(self.active_bank < self.num_banks);
         } else {
             panic!("Received RAM bank change request on unbanked RAM");
@@ -233,7 +238,12 @@ impl MemoryRead<u16, u8> for Io {
                 self.hdma[idx]
             }
             0xFF56 => self.rp,
-            _ => panic!("Invalid write to address {}", addr),
+            0xFF03 | 0xFF08..=0xFF0E | 0xFF27..=0xFF2F | 0xFF4C..=0xFF4E | 0xFF57..=0xFF67 | 0xFF6C..=0xFF6F | 0xFF71..=0xFF7F => {
+                // Invalid registers -- ignore writes to these
+                eprintln!("Invalid read from 0x{:X}", addr);
+                0xFF
+            }
+            _ => unreachable!(),
         }
     }
 }
@@ -252,7 +262,6 @@ impl MemoryWrite<u16, u8> for Io {
                 self.serial[1] = value;
                 if value == 0x81 {
                     let c = self.serial[0] as char;
-                    print!("{}", c);
                     self.serial_buffer.push(c);
                 }
             }
@@ -289,11 +298,10 @@ impl MemoryWrite<u16, u8> for Io {
             0xFF56 => {
                 self.rp = value;
             }
-            0xFF03 | 0xFF08..=0xFF0E | 0xFF27..=0xFF2F | 0xFF4C..=0xFF4E | 0xFF57..=0xFF67 | 0xFF6C..=0xFF6F | 0xFF71..=0xFF7E => {
+            0xFF03 | 0xFF08..=0xFF0E | 0xFF27..=0xFF2F | 0xFF4C..=0xFF4E | 0xFF57..=0xFF67 | 0xFF6C..=0xFF6F | 0xFF71..=0xFF7F => {
                 // Invalid registers -- ignore writes to these
                 eprintln!("Invalid write to 0x{:X}: {}", addr, value)
             }
-            0xFF7F => (),
             _ => unreachable!(),
         }
     }
@@ -468,9 +476,12 @@ impl MemoryRead<u16, u8> for MemoryBus {
                 // If the boot ROM is active, read from it instead of cartridge ROM
                 self.controller.boot_rom.as_ref().unwrap().read(addr)
             }
-            Rom::BASE_ADDR..=Rom::LAST_ADDR => self.controller.read(addr),
-            Vram::BASE_ADDR..=Vram::LAST_ADDR => self.ppu.vram().read(addr),
-            CartridgeRam::BASE_ADDR..=CartridgeRam::LAST_ADDR => self.controller.read(addr),
+            Rom::BASE_ADDR..=Rom::LAST_ADDR | CartridgeRam::BASE_ADDR..=CartridgeRam::LAST_ADDR => {
+                self.controller.read(addr)
+            }
+            Vram::BASE_ADDR..=Vram::LAST_ADDR | 0xFE00..=0xFE9F | 0xFF40..=0xFF4B | 0xFF68..=0xFF6B | Vram::BANK_SELECT_ADDR => {
+                self.ppu.read(addr)
+            }
             Ram::BASE_ADDR..=Ram::LAST_ADDR => self.ram.read(addr),
             0xE000..=0xFDFF => {
                 // Echo RAM
@@ -494,13 +505,7 @@ impl MemoryRead<u16, u8> for MemoryBus {
                     }
                 }
             }
-            0xFE00..=0xFE9F | 0xFF40..=0xFF4B | 0xFF68..=0xFF6B => self.ppu.read(addr),
-            Vram::BANK_SELECT_ADDR => {
-                // Reading the bank select register returns the active bank in bit 0,
-                // with all other bits set to 1
-                let bank = self.ppu().vram().active_bank;
-                bank | 0xFE
-            }
+            Ram::BANK_SELECT_ADDR => self.ram.active_bank,
             0xFF00..=0xFF7F => {
                 self.io.read(addr)
             }
@@ -516,24 +521,23 @@ impl MemoryRead<u16, u8> for MemoryBus {
 impl MemoryWrite<u16, u8> for MemoryBus {
     fn write(&mut self, addr: u16, value: u8) {
         match addr {
-            Rom::BASE_ADDR..=Rom::LAST_ADDR => self.controller.write(addr, value),
-            Vram::BASE_ADDR..=Vram::LAST_ADDR => self.ppu.vram_mut().write(addr, value),
-            CartridgeRam::BASE_ADDR..=CartridgeRam::LAST_ADDR => {
-                self.controller.write(addr, value)
+            Rom::BASE_ADDR..=Rom::LAST_ADDR | CartridgeRam::BASE_ADDR..=CartridgeRam::LAST_ADDR => {
+                self.controller.write(addr, value);
             }
             Ram::BASE_ADDR..=Ram::LAST_ADDR => self.ram.write(addr, value),
             0xE000..=0xFDFF => {
                 // Echo RAM
             }
-            0xFEA0..=0xFEFF => {
-                // Prohibited memory area -- no effect on writes
+            Vram::BASE_ADDR..=Vram::LAST_ADDR | 0xFE00..=0xFE9F | 0xFF40..=0xFF4B | 0xFF68..=0xFF6B | Vram::BANK_SELECT_ADDR => {
+                self.ppu.write(addr, value);
             }
-            0xFE00..=0xFE9F | 0xFF40..=0xFF4B | 0xFF68..=0xFF6B => self.ppu.write(addr, value),
             0xFF80..=0xFFFE => {
                 let addr = addr as usize - 0xFF80;
                 self.high_ram[addr] = value;
             }
-            Vram::BANK_SELECT_ADDR => self.ppu.vram_mut().update_bank(value),
+            0xFEA0..=0xFEFF => {
+                // Prohibited memory area -- no effect on writes
+            }
             0xFF50 => {
                 // Disable boot ROM
                 if self.io.disable_boot_rom == 0 && value & 0x1 != 0 {

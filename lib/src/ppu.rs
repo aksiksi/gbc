@@ -1091,6 +1091,12 @@ impl MemoryRead<u16, u8> for Ppu {
                     0xFF
                 }
             }
+            Vram::BANK_SELECT_ADDR => {
+                // Reading the bank select register returns the active bank in bit 0,
+                // with all other bits set to 1
+                let bank = self.vram.active_bank;
+                bank | 0xFE
+            }
             0xFE00..=0xFE9F => {
                 let idx = (addr - 0xFE00) as usize;
                 self.oam[idx]
@@ -1125,6 +1131,7 @@ impl MemoryWrite<u16, u8> for Ppu {
                     self.vram.write(addr, value);
                 }
             }
+            Vram::BANK_SELECT_ADDR => self.vram.update_bank(value),
             0xFE00..=0xFE9F => {
                 if !self.oam_locked() {
                     let idx = (addr - 0xFE00) as usize;
