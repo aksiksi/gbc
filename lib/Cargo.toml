@@ -6,3 +6,6 @@ edition = "2018"
 
 [features]
 debug = []
+
+[dependencies]
+log = "0.4"

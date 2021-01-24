@@ -174,6 +174,8 @@ fn gui(cli: Cli) {
 
         let elapsed = frame_start.elapsed();
 
+        log::info!("Frame duration: {:?}", elapsed);
+
         if elapsed < frame_duration {
             std::thread::sleep(frame_duration - elapsed);
         }
@@ -181,6 +183,8 @@ fn gui(cli: Cli) {
 }
 
 fn main() -> Result<()> {
+    env_logger::init();
+
     let cli = Cli::from_args();
 
     if !cli.headless {

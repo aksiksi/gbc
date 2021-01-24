@@ -11,3 +11,5 @@ debug = ["gbc/debug"]
 gbc = { path = "../lib" }
 sdl2 = { version = "0.34.3", features = [ "bundled", "static-link" ] }
 structopt = { version = "0.3", default-features = false }
+log = "0.4"
+env_logger = "0.8"
