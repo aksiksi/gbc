@@ -61,8 +61,8 @@ impl Gameboy {
 
     /// Figure out the number of clock cycles we can execute in a single frame
     #[inline]
-    pub fn cycles_per_frame(&self) -> u32 {
-        let cycle_time = self.cpu.cycle_time();
+    pub fn cycles_per_frame(speed: bool) -> u32 {
+        let cycle_time = Cpu::cycle_time(speed);
         Self::FRAME_DURATION / cycle_time
     }
 
@@ -118,7 +118,8 @@ impl Gameboy {
     pub fn frame(&mut self, joypad_events: Option<Vec<JoypadEvent>>) -> &FrameBuffer {
         // Execute next instruction
         let mut cycle = 0;
-        let num_cycles = self.cycles_per_frame();
+        let speed = self.cpu.speed();
+        let num_cycles = Self::cycles_per_frame(speed);
 
         while cycle < num_cycles {
             let (cycles_taken, _) = self.step();

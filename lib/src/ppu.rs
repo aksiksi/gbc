@@ -47,6 +47,7 @@
 //! The combination of these two periods nets us ~60 fps.
 use std::collections::VecDeque;
 
+use crate::Gameboy;
 use crate::cpu::Interrupt;
 use crate::memory::{MemoryRead, MemoryWrite};
 
@@ -465,7 +466,7 @@ impl Ppu {
     /// If any interrupts need to be triggered, they are pushed to the input `interrupts`
     /// vector.
     pub fn step(&mut self, cycles: u16, speed: bool, interrupts: &mut Vec<Interrupt>) {
-        let cycle = self.last_cycle + cycles as u32;
+        let cycle = (self.last_cycle + cycles as u32) % Gameboy::cycles_per_frame(speed);
 
         // Figure out the current dot and scan line
         let dot = if speed {

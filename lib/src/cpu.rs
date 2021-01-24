@@ -140,8 +140,9 @@ impl Cpu {
 
     /// Current clock cycle duration, in ns. This value is based
     /// on the current value in the speed I/O register.
-    pub fn cycle_time(&self) -> u32 {
-        if self.speed() {
+    #[inline]
+    pub fn cycle_time(speed: bool) -> u32 {
+        if speed {
             Self::CYCLE_TIME / 2
         } else {
             Self::CYCLE_TIME
