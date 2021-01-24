@@ -203,7 +203,12 @@ impl Cpu {
         let pc = self.registers.PC;
         let (memory_type, bank) = self.memory.memory_info(pc);
         let f = &mut self.trace.as_mut().unwrap();
-        write!(f, "{:03}:{}:{:#06X} - {}\n", bank, memory_type, pc, inst).unwrap();
+
+        // First, write the register state prior to executing this instruction
+        write!(f, "{}\n\n", self.registers).unwrap();
+
+        // Then write the instruction
+        write!(f, "{:03}:{}:{:#06X} - {}\n\n", bank, memory_type, pc, inst).unwrap();
     }
 
     /// Execute a single step of DMA (if active).

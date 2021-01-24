@@ -290,8 +290,8 @@ impl MemoryWrite<u16, u8> for Io {
                 self.rp = value;
             }
             0xFF03 | 0xFF08..=0xFF0E | 0xFF27..=0xFF2F | 0xFF4C..=0xFF4E | 0xFF57..=0xFF67 | 0xFF6C..=0xFF6F | 0xFF71..=0xFF7E => {
-                // Invalid registers
-                panic!("Invalid write to 0x{:X}: {}", addr, value)
+                // Invalid registers -- ignore writes to these
+                eprintln!("Invalid write to 0x{:X}: {}", addr, value)
             }
             0xFF7F => (),
             _ => unreachable!(),
