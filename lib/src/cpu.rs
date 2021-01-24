@@ -86,12 +86,11 @@ impl Cpu {
     pub fn new(cgb: bool) -> Self {
         let memory = MemoryBus::new(cgb);
         let registers = RegisterFile::new(cgb);
-        let dma = DmaController::new();
 
         Self {
             registers,
             memory,
-            dma,
+            dma: DmaController::new(cgb),
             cgb,
             ime: false,
             is_halted: false,
@@ -113,7 +112,7 @@ impl Cpu {
             RegisterFile::new(cgb)
         };
 
-        let dma = DmaController::new();
+        let dma = DmaController::new(cgb);
 
         // If tracing is enabled, create a trace file in the current directory
         let trace = if trace {
@@ -155,14 +154,14 @@ impl Cpu {
     pub fn reset(&mut self) {
         self.registers = RegisterFile::new(self.cgb);
         self.memory.reset();
-        self.dma = DmaController::new();
+        self.dma = DmaController::new(self.cgb);
         self.is_halted = false;
         self.ime = false;
     }
 
     /// Executes the next instruction and returns the number of cycles it
     /// took to complete.
-    pub fn step(&mut self) -> (u8, Instruction) {
+    pub fn step(&mut self) -> (u16, Instruction) {
         // Check for pending interrupts before fetching the next instruction.
         // If an interrupt is serviced, PC will jump to the ISR address.
         let int_cycles = self.service_interrupts();
@@ -194,6 +193,8 @@ impl Cpu {
 
         let cycles = int_cycles + cycles;
 
+        let cycles = cycles as u16 + self.dma(cycles);
+
         (cycles, inst)
     }
 
@@ -212,9 +213,9 @@ impl Cpu {
     }
 
     /// Execute a single step of DMA (if active).
-    pub fn dma_step(&mut self, cycles: u8) {
+    fn dma(&mut self, cycles: u8) -> u16 {
         let memory = &mut self.memory;
-        self.dma.step(cycles, memory);
+        self.dma.step(cycles, memory)
     }
 
     /// Fetch the next instruction and return it

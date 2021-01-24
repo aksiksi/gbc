@@ -51,9 +51,7 @@ impl Timer {
     /// This function is called once per CPU step from the main Gameboy loop.
     ///
     /// Returns `true` if an interrupt should be triggered.
-    pub fn step(&mut self, cycles: u8) -> bool {
-        let cycles = cycles as u16;
-
+    pub fn step(&mut self, cycles: u16) -> bool {
         // DIV: Ticks once per 256 clock cycles
         // The TAC enable flag does not affect this
         self.div_counter += cycles;

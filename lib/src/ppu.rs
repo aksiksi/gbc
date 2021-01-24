@@ -257,7 +257,7 @@ impl LcdControl {
 
 #[derive(Clone, Copy, PartialEq)]
 #[repr(u8)]
-enum StatMode {
+pub enum StatMode {
     Hblank = 0,
     Vblank,
     OamScan,
@@ -337,7 +337,7 @@ pub struct Ppu {
     /// 6. DMG mode palette (1 bit)
     /// 7. Character blank (1 bit)
     /// 8. Color palette (3 bits)
-    oam: [u8; 160],
+    pub oam: [u8; 160],
 
     /// LCD control register (0xFF40)
     lcdc: LcdControl,
@@ -399,7 +399,7 @@ pub struct Ppu {
     write_stack: VecDeque<(u16, u8)>,
 
     /// Last cycle processed
-    cycle: u32,
+    last_cycle: u32,
 
     /// If `true`, operate in CGB mode
     cgb: bool,
@@ -418,6 +418,14 @@ impl Ppu {
 
     const DOTS_PER_LINE: u32 = 456;
     const VBLANK_START_LINE: u8 = 144;
+    const TOTAL_LINES: u8 = 154;
+    const OAM_SCAN_DOTS: u32 = 80;
+    const OAM_READ_DOTS: u32 = 250;
+    const HBLANK_DOTS: u32 = 126;
+    const VBLANK_DOTS: u32 = Self::DOTS_PER_LINE * (Self::TOTAL_LINES - Self::VBLANK_START_LINE) as u32;
+
+    pub const OAM_START_ADDR: u16 = 0xFE00;
+    pub const OAM_LAST_ADDR: u16 = 0xFE9F;
 
     pub fn new(cgb: bool) -> Self {
         Self {
@@ -443,7 +451,7 @@ impl Ppu {
             frame_buffer: FrameBuffer::new(),
             sprites: Vec::with_capacity(10),
             write_stack: VecDeque::with_capacity(5), // 5 registers use this
-            cycle: 0,
+            last_cycle: 0,
             cgb,
         }
     }
@@ -452,12 +460,12 @@ impl Ppu {
     ///
     /// This function is called once per CPU step from the main frame loop. The
     /// function is called *after* the CPU step completes. The value passed in
-    /// for `cycle` includes the time spent by the CPU.
+    /// for `cycles` is the number of cycles spent in the CPU.
     ///
-    /// This method returns a `Vec` of interrupts that need to be triggered, if
-    /// any.
-    pub fn step(&mut self, cycle: u32, speed: bool, interrupts: &mut Vec<Interrupt>) {
-        self.cycle = cycle;
+    /// If any interrupts need to be triggered, they are pushed to the input `interrupts`
+    /// vector.
+    pub fn step(&mut self, cycles: u16, speed: bool, interrupts: &mut Vec<Interrupt>) {
+        let cycle = self.last_cycle + cycles as u32;
 
         // Figure out the current dot and scan line
         let dot = if speed {
@@ -476,6 +484,8 @@ impl Ppu {
 
         // Render data to the frame
         self.render(stat_mode_change);
+
+        self.last_cycle = cycle;
     }
 
     /// Returns: (stat_mode_change, vblank_interrupt, stat_interrupt)
@@ -507,10 +517,12 @@ impl Ppu {
         let prev_mode = self.stat.mode();
         let mode = if line < Self::VBLANK_START_LINE {
             let dot = dot % Self::DOTS_PER_LINE;
-            match dot {
-                0..=79 => StatMode::OamScan,
-                80..=329 => StatMode::OamRead,
-                _ => StatMode::Hblank,
+            if dot < Self::OAM_SCAN_DOTS {
+                StatMode::OamScan
+            } else if dot >= Self::OAM_SCAN_DOTS && dot < Self::OAM_READ_DOTS {
+                StatMode::OamRead
+            } else {
+                StatMode::Hblank
             }
         } else {
             // VBLANK
@@ -551,6 +563,51 @@ impl Ppu {
         }
 
         stat_mode_change
+    }
+
+    /// Given a number of cycles, returns the _next_ mode and number of cycles
+    /// the PPU would remain in that mode.
+    pub fn next_mode(&self, cycles: u16, speed: bool) -> (StatMode, u16) {
+        let cycle = self.last_cycle + cycles as u32;
+
+        // Figure out the current dot and scan line
+        let dot = if speed {
+            // If we are in double-speed mode, we get a dot every 2 cycles
+            cycle / 2
+        } else {
+            cycle
+        };
+        let line = (dot / Self::DOTS_PER_LINE) as u8;
+
+        let mode = if line < Self::VBLANK_START_LINE {
+            let dot = dot % Self::DOTS_PER_LINE;
+            if dot < Self::OAM_SCAN_DOTS {
+                StatMode::OamScan
+            } else if dot >= Self::OAM_SCAN_DOTS && dot < Self::OAM_READ_DOTS {
+                StatMode::OamRead
+            } else {
+                StatMode::Hblank
+            }
+        } else {
+            // VBLANK
+            StatMode::Vblank
+        };
+
+        // Determine the number of cycles the PPU would spend in the next mode
+        let dots = match mode {
+            StatMode::OamScan => Self::OAM_SCAN_DOTS,
+            StatMode::OamRead => Self::OAM_READ_DOTS,
+            StatMode::Hblank => Self::HBLANK_DOTS,
+            StatMode::Vblank => Self::VBLANK_DOTS,
+        };
+
+        let cycles_in_mode = if speed {
+            dots * 2
+        } else {
+            dots
+        };
+
+        (mode, cycles_in_mode as u16)
     }
 
     /// Render pixel data to the internal frame buffer
@@ -1097,8 +1154,8 @@ impl MemoryRead<u16, u8> for Ppu {
                 let bank = self.vram.active_bank;
                 bank | 0xFE
             }
-            0xFE00..=0xFE9F => {
-                let idx = (addr - 0xFE00) as usize;
+            Self::OAM_START_ADDR..=Self::OAM_LAST_ADDR => {
+                let idx = (addr - Self::OAM_START_ADDR) as usize;
                 self.oam[idx]
             }
             Self::LCDC_ADDR => self.lcdc.raw,
@@ -1132,9 +1189,9 @@ impl MemoryWrite<u16, u8> for Ppu {
                 }
             }
             Vram::BANK_SELECT_ADDR => self.vram.update_bank(value),
-            0xFE00..=0xFE9F => {
+            Self::OAM_START_ADDR..=Self::OAM_LAST_ADDR => {
                 if !self.oam_locked() {
-                    let idx = (addr - 0xFE00) as usize;
+                    let idx = (addr - Self::OAM_START_ADDR) as usize;
                     self.oam[idx] = value;
                 }
             }

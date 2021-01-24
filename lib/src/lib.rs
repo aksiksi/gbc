@@ -69,7 +69,7 @@ impl Gameboy {
     /// Run the Gameboy for a single step.
     ///
     /// Returns a tuple of: (cycles consumed, pointer to `FrameBuffer`)
-    pub fn step(&mut self, cycle: u32) -> (u32, &FrameBuffer) {
+    pub fn step(&mut self) -> (u32, &FrameBuffer) {
         let speed = self.cpu.speed();
 
         #[cfg(feature = "debug")]
@@ -79,6 +79,8 @@ impl Gameboy {
         }
 
         // Execute a step of the CPU
+        //
+        // This handles interrupt processing and DMA internally.
         let (cycles_taken, _inst) = self.cpu.step();
 
         let mut interrupts = Vec::new();
@@ -86,7 +88,7 @@ impl Gameboy {
         // Execute a step of the PPU.
         //
         // The PPU will "catch up" based on what happened in the CPU.
-        self.cpu.memory.ppu_mut().step(cycle + cycles_taken as u32, speed, &mut interrupts);
+        self.cpu.memory.ppu_mut().step(cycles_taken, speed, &mut interrupts);
 
         // Check if a serial interrupt needs to be triggered
         //
@@ -95,8 +97,6 @@ impl Gameboy {
             // TODO: Implement correct timing for serial interrupts
             //interrupts.push(Interrupt::Serial);
         }
-
-        self.cpu.dma_step(cycles_taken);
 
         // Update the internal timer and trigger an interrupt, if needed
         // Note that the timer may tick multiple times for a single instruction
@@ -121,7 +121,7 @@ impl Gameboy {
         let num_cycles = self.cycles_per_frame();
 
         while cycle < num_cycles {
-            let (cycles_taken, _) = self.step(cycle);
+            let (cycles_taken, _) = self.step();
             cycle += cycles_taken;
         }
 

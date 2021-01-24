@@ -137,6 +137,7 @@ pub struct Io {
 
     /// HDMA1-HDMA5 (0xFF51-0xFF55)
     hdma: [u8; 5],
+    pub hdma_active: bool,
 
     /// Infrared comm. register (0xFF56)
     rp: u8,
@@ -161,6 +162,7 @@ impl Io {
             prep_speed_switch: 0,
             disable_boot_rom: 0,
             hdma: [0; 5],
+            hdma_active: false,
             rp: 0,
         }
     }
@@ -234,6 +236,7 @@ impl MemoryRead<u16, u8> for Io {
             0xFF4D => self.prep_speed_switch,
             0xFF50 => self.disable_boot_rom,
             0xFF51..=0xFF55 => {
+                // HDMA registers
                 let idx = (addr - 0xFF51) as usize;
                 self.hdma[idx]
             }
@@ -292,6 +295,11 @@ impl MemoryWrite<u16, u8> for Io {
                 self.disable_boot_rom = value;
             }
             0xFF51..=0xFF55 => {
+                // HDMA registers
+                if addr == 0xFF55 {
+                    self.hdma_active = true;
+                }
+
                 let idx = (addr - 0xFF51) as usize;
                 self.hdma[idx] = value;
             }
@@ -559,6 +567,7 @@ impl MemoryWrite<u16, u8> for MemoryBus {
 /// Write a 16-bit word to memory. This maps into 2 8-bit writes
 /// to the relevant memory region.
 impl MemoryWrite<u16, u16> for MemoryBus {
+    #[inline]
     fn write(&mut self, addr: u16, value: u16) {
         let value = value.to_le_bytes();
         self.write(addr, value[0]);
