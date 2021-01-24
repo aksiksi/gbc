@@ -165,7 +165,13 @@ impl Vram {
 
     /// Update the active VRAM bank
     pub fn update_bank(&mut self, bank: u8) {
-        assert!(self.cgb && bank < 2);
+        let bank = bank & 0x1;
+
+        if !self.cgb {
+            // No VRAM bank switching on DMG
+            assert!(bank == 0);
+        }
+
         self.active_bank = bank;
     }
 
@@ -598,11 +604,22 @@ impl Ppu {
             let tile_number = chunk[2];
             let attr = chunk[3];
 
-            let y_pos = y.wrapping_sub(16);
+            let sprite_start = y.wrapping_sub(16);
+            let sprite_end = sprite_start.wrapping_add(size);
 
-            // A sprite can be partially visible at the top or bottom edge of the screen.
-            // The wrapping add calculations are done to cover these edge cases.
-            let visible = scanline.wrapping_add(16) >= y && scanline < y_pos.wrapping_add(size);
+            // There are two cases of vertical position of a sprite:
+            //
+            // 1. Sprite is _partially_ visible at top of screen. This means that the
+            //    upper edge of the sprite will wrap around 0.
+            // 2. Sprite is within the screen OR _partially_ visible at the bottom. If
+            //    the sprite is at the bottom, no wrap around will occur.
+            let visible = if sprite_start < sprite_end {
+                // Case (2)
+                sprite_start <= scanline && scanline < sprite_end
+            } else {
+                // Case (1)
+                scanline < sprite_end
+            };
 
             // We can only have 10 sprites on a single scanline
             if visible && self.sprites.len() < 10 {
@@ -814,20 +831,27 @@ impl Ppu {
         };
 
         for sprite in &self.sprites {
-            let x_pos = sprite.x.wrapping_sub(8);
-            let visible = pixel.wrapping_add(8) >= sprite.x && pixel < x_pos.wrapping_add(8);
+            // Same logic as vertical position check in `find_visible_sprites()`.
+            let sprite_start = sprite.x.wrapping_sub(8);
+            let sprite_end = sprite.x;
+            let visible = if sprite_start < sprite_end {
+                sprite_start <= pixel && pixel < sprite_end
+            } else {
+                pixel < sprite_end
+            };
+
             if !visible {
                 // If the sprite is not visible at this pixel, skip it
                 continue;
             }
 
-            // Upper left corner of the tile
-            //
-            // Note: We need to use wrapping adds here to address the boundary conditions.
+            // Find the position of upper left corner of the tile on the screen. We
+            // need to use wrapping adds here to address the boundary conditions.
             //
             // For example, suppose we have a 8x16 sprite that is halfway above the screen -
             // i.e., y = 8 -> y - 16 = -8. The upper corner of the tile is indeed at y = -8,
-            // but we still need to display pixels that are within the )lower_ half of the tile.
+            // but we still need to display pixels that are within the _lower_ half of the tile.
+            //
             // This is why wrapping operations are used throughout this function. Once we have
             // the pixel positions within the tile (e.g. `tile_pixel_x`), we are done.
             let tile_y = sprite.y.wrapping_sub(16);
@@ -866,9 +890,8 @@ impl Ppu {
             // If this is true, pixel data is part of the lower tile for this
             // 8x16 sprite
             let lower_tile = tile_pixel_y >= 8;
-
-            // Correct pixel_y in lower sprite tile
-            if lower_tile && tile_pixel_y >= 8 {
+            if lower_tile {
+                // Correct pixel_y in lower sprite tile
                 tile_pixel_y -= 8;
             }
 
