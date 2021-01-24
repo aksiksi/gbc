@@ -562,7 +562,7 @@ impl MemoryWrite<u16, u8> for Controller {
             }
             0x2000..=0x2FFF if self.cartridge_type.is_mbc5() => {
                 // MBC5 ROM bank select (lower 8 bits)
-                let value = self.rom.active_bank_1 | value as u16;
+                let value = (self.rom.active_bank_1 & !0xFF) | value as u16;
                 self.rom.update_bank(value);
             }
             0x3000..=0x3FFF if self.cartridge_type.is_mbc5() => {
