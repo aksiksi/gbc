@@ -112,6 +112,8 @@ fn gui(cli: Cli) {
     let mut gameboy = Gameboy::init(cli.rom_file, cli.boot_rom, cli.trace).unwrap();
     let frame_duration = Duration::new(0, Gameboy::FRAME_DURATION);
 
+    let mut paused = false;
+
     // Start the event loop
     let mut event_pump = sdl_context.event_pump().unwrap();
     'running: loop {
@@ -130,6 +132,9 @@ fn gui(cli: Cli) {
                     // Reset the emulator
                     gameboy.reset();
                 }
+                Event::KeyDown { keycode: Some(Keycode::P), .. } => {
+                    paused = !paused;
+                }
                 Event::KeyDown { .. } | Event::KeyUp { .. } => {
                     if let Some(e) = event_to_joypad(event) {
                         joypad_events.push(e);
@@ -139,8 +144,12 @@ fn gui(cli: Cli) {
             }
         }
 
-        // Run the Gameboy for a single frame and return the frame data
-        let frame_buffer = gameboy.frame(Some(joypad_events));
+        let mut frame_buffer = None;
+
+        if !paused {
+            // Run the Gameboy for a single frame and return the frame data
+            frame_buffer = Some(gameboy.frame(Some(joypad_events)));
+        }
 
         canvas.clear();
 
@@ -156,16 +165,18 @@ fn gui(cli: Cli) {
         // Once this closure ends, the canvas target is reset back for us.
         //
         // Helpful C example: https://wiki.libsdl.org/SDL_CreateTexture
-        canvas.with_texture_canvas(&mut texture, |canvas| {
-            // Draw the rendered frame
-            for x in 0..LCD_WIDTH {
-                for y in 0..LCD_HEIGHT {
-                    let color = frame_buffer.read(x, y);
-                    canvas.set_draw_color(Color::RGBA(color.red, color.green, color.blue, color.alpha));
-                    canvas.draw_point((x as i32, y as i32)).unwrap();
+        if let Some(frame_buffer) = frame_buffer {
+            canvas.with_texture_canvas(&mut texture, |canvas| {
+                // Draw the rendered frame
+                for x in 0..LCD_WIDTH {
+                    for y in 0..LCD_HEIGHT {
+                        let color = frame_buffer.read(x, y);
+                        canvas.set_draw_color(Color::RGBA(color.red, color.green, color.blue, color.alpha));
+                        canvas.draw_point((x as i32, y as i32)).unwrap();
+                    }
                 }
-            }
-        }).unwrap();
+            }).unwrap();
+        }
 
         // Once we've completed our texture operations, we need to copy the texture
         // back to the canvas to be able to present it.
