@@ -138,6 +138,7 @@ pub struct Io {
     /// HDMA1-HDMA5 (0xFF51-0xFF55)
     hdma: [u8; 5],
     pub hdma_active: bool,
+    pub hdma_stopped: bool,
 
     /// Infrared comm. register (0xFF56)
     rp: u8,
@@ -163,6 +164,7 @@ impl Io {
             disable_boot_rom: 0,
             hdma: [0; 5],
             hdma_active: false,
+            hdma_stopped: false,
             rp: 0,
         }
     }
@@ -197,6 +199,12 @@ impl Io {
         } else {
             false
         }
+    }
+
+    /// Write to the HDMA start register without triggering HDMA start.
+    #[inline]
+    pub fn hdma_reg_write(&mut self, value: u8) {
+        self.hdma[4] = value;
     }
 
     /// Returns a handle to the serial buffer
@@ -297,7 +305,11 @@ impl MemoryWrite<u16, u8> for Io {
             0xFF51..=0xFF55 => {
                 // HDMA registers
                 if addr == 0xFF55 {
-                    self.hdma_active = true;
+                    if !self.hdma_active {
+                        self.hdma_active = true;
+                    } else if value & 1 << 7 == 0 {
+                        self.hdma_stopped = true;
+                    }
                 }
 
                 let idx = (addr - 0xFF51) as usize;

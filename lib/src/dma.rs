@@ -109,10 +109,13 @@ impl DmaController {
         let source_addr_lower = memory.read(0xFF52) as u16;
         let dest_addr_upper = memory.read(0xFF53) as u16;
         let dest_addr_lower = memory.read(0xFF54) as u16;
-        let source_addr = source_addr_upper << 8 | source_addr_lower;
-        let dest_addr = dest_addr_upper << 8 | dest_addr_lower;
 
-        let start_reg = memory.read(0xFF55);
+        let source_addr = source_addr_upper << 8 | source_addr_lower;
+        let source_addr = source_addr & 0xFFF0; // lower 4 bits are ignored
+        let dest_addr = dest_addr_upper << 8 | dest_addr_lower;
+        let dest_addr = 0x8000 + (dest_addr & 0x1FF0); // only bits 12-4 are taken
+
+        let mut start_reg = memory.read(0xFF55);
 
         if !self.hdma_active {
             // New transfer is being started
@@ -120,12 +123,19 @@ impl DmaController {
             self.hdma_hblank = start_reg & (1 << 7) != 0;
             self.hdma_chunks_completed = 0;
             self.hdma_active = true;
+
+            // Clear bit 7 to indicate that HDMA is active
+            start_reg &= !1 << 7;
         } else {
             // If we are currently in HBLANK HDMA but see that bit 7 has been reset,
             // we need to terminate the transfer.
-            if self.hdma_hblank && (start_reg & 1 << 7) == 0 {
+            if self.hdma_hblank && memory.io().hdma_stopped {
                 self.hdma_active = false;
-                memory.write(0xFF55, start_reg | 1 << 7);
+
+                memory.io_mut().hdma_active = false;
+                memory.io_mut().hdma_stopped = false;
+                memory.io_mut().hdma_reg_write(start_reg | 1 << 7);
+
                 return 0;
             }
         }
@@ -158,27 +168,51 @@ impl DmaController {
             num_chunks as u8
         };
 
+        // Figure out the start and end chunks for this step
+        let mut chunk = self.hdma_chunks_completed;
+        let end = self.hdma_chunks_completed + num_chunks;
+        let end = if end > self.hdma_length {
+            self.hdma_length
+        } else {
+            end
+        };
+
         // Perform the transfer starting from the last transferred chunk
-        for chunk in self.hdma_chunks_completed..num_chunks {
+        loop {
+            // Stop once all current chunks have been copied OR overall HDMA
+            // transfer is complete
+            if chunk == end {
+                break;
+            }
+
+            // Copy over this chunk
             let chunk_start = chunk as u16 * 16;
             let chunk_end = chunk_start + 16;
             for offset in chunk_start..chunk_end {
                 let byte = memory.read(source_addr + offset);
                 memory.write(dest_addr + offset, byte);
             }
+
+            chunk += 1;
         }
 
-        self.hdma_chunks_completed += num_chunks;
+        // Adjust to the _actual_ number of chunks copied this cycle
+        let num_chunks = chunk - self.hdma_chunks_completed;
+
+        self.hdma_chunks_completed = chunk;
 
         if !self.hdma_hblank || self.hdma_chunks_completed == self.hdma_length {
-            // Write 0xFF to the start register to signal completion
-            memory.write(0xFF55, 0xFFu8);
             self.hdma_active = false;
+
+            // Write 0xFF to the start register to signal completion
+            memory.io_mut().hdma_active = false;
+            memory.io_mut().hdma_stopped = false;
+            memory.io_mut().hdma_reg_write(0xFF);
         } else {
             // If HBLANK HDMA is still pending, write the remaining transfer
-            // length (minus 1) to the lower 7 bits.
+            // length (minus 1) to the lower 7 bits of the start register.
             let remaining_length = self.hdma_length - self.hdma_chunks_completed - 1;
-            memory.write(0xFF55, (start_reg & 0x7F) | remaining_length);
+            memory.io_mut().hdma_reg_write((start_reg & 1 << 7) | remaining_length);
         }
 
         if speed {

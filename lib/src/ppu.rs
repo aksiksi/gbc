@@ -520,7 +520,7 @@ impl Ppu {
             let dot = dot % Self::DOTS_PER_LINE;
             if dot < Self::OAM_SCAN_DOTS {
                 StatMode::OamScan
-            } else if dot >= Self::OAM_SCAN_DOTS && dot < Self::OAM_READ_DOTS {
+            } else if dot >= Self::OAM_SCAN_DOTS && dot < Self::OAM_SCAN_DOTS + Self::OAM_READ_DOTS {
                 StatMode::OamRead
             } else {
                 StatMode::Hblank
@@ -584,7 +584,7 @@ impl Ppu {
             let dot = dot % Self::DOTS_PER_LINE;
             if dot < Self::OAM_SCAN_DOTS {
                 StatMode::OamScan
-            } else if dot >= Self::OAM_SCAN_DOTS && dot < Self::OAM_READ_DOTS {
+            } else if dot >= Self::OAM_SCAN_DOTS && dot < Self::OAM_SCAN_DOTS + Self::OAM_READ_DOTS {
                 StatMode::OamRead
             } else {
                 StatMode::Hblank

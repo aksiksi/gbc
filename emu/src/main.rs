@@ -174,7 +174,7 @@ fn gui(cli: Cli) {
 
         let elapsed = frame_start.elapsed();
 
-        log::info!("Frame duration: {:?}", elapsed);
+        log::debug!("Frame duration: {:?}", elapsed);
 
         if elapsed < frame_duration {
             std::thread::sleep(frame_duration - elapsed);
