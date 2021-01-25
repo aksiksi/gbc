@@ -295,6 +295,7 @@ impl LcdStat {
         self.raw & (1 << 3) != 0
     }
 
+    #[allow(dead_code)]
     pub fn coincidence(&self) -> bool {
         self.raw & (1 << 2) != 0
     }
@@ -402,6 +403,9 @@ pub struct Ppu {
     /// Last cycle processed
     last_cycle: u32,
 
+    /// Previous STAT interrupt state
+    prev_stat_interrupt: bool,
+
     /// If `true`, operate in CGB mode
     cgb: bool,
 }
@@ -453,6 +457,7 @@ impl Ppu {
             sprites: Vec::with_capacity(10),
             write_stack: VecDeque::with_capacity(5), // 5 registers use this
             last_cycle: 0,
+            prev_stat_interrupt: false,
             cgb,
         }
     }
@@ -508,10 +513,6 @@ impl Ppu {
         // Set LY to current scan line
         self.ly = line;
 
-        // Compute LY conincidence
-        let prev_ly_coincidence = self.stat.coincidence();
-        let ly_coincidence = self.ly == self.lyc;
-
         // Figure out which stat mode we are in based on line and dot.
         //
         // Recall that we have 456 dots in a line.
@@ -530,13 +531,13 @@ impl Ppu {
             StatMode::Vblank
         };
 
+        let ly_coincidence = self.ly == self.lyc;
+
         let mut stat = mode as u8;
         if ly_coincidence {
+            // Set the LY conincidence bit
             stat |= 1 << 2;
         }
-
-        // Update STAT register
-        self.stat.raw = stat;
 
         let stat_mode_change = prev_mode != mode;
 
@@ -551,17 +552,22 @@ impl Ppu {
         //
         // 1. LY coincidence interrupt is enabled and changed from false to true
         // 2. STAT mode interrupt is enabled and has changed
-        let stat_interrupt = (self.stat.ly_enabled() && !prev_ly_coincidence && ly_coincidence) || {
-            stat_mode_change && match mode {
+        let stat_interrupt = (ly_coincidence && self.stat.ly_enabled()) || {
+            match mode {
                 StatMode::Hblank => self.stat.hblank_enabled(),
                 StatMode::Vblank => self.stat.vblank_enabled(),
                 StatMode::OamScan | StatMode::OamRead => self.stat.oam_enabled(),
             }
         };
 
-        if stat_interrupt {
+        if !self.prev_stat_interrupt && stat_interrupt {
             interrupts.push(Interrupt::LcdStat);
         }
+
+        // Update STAT register (upper 5 bits are user-controlled)
+        self.stat.raw = self.stat.raw & 0xF8 | stat;
+
+        self.prev_stat_interrupt = stat_interrupt;
 
         stat_mode_change
     }
@@ -1198,7 +1204,9 @@ impl MemoryWrite<u16, u8> for Ppu {
             }
             Self::LCDC_ADDR => self.lcdc.raw = value,
             Self::STAT_ADDR => {
-                self.stat.raw = value;
+                // Lower 3 bits are read-only
+                let value = value & 0xF8;
+                self.stat.raw = value | self.stat.raw & 0x07;
             }
             Self::SCY_ADDR | Self::SCX_ADDR | Self::LYC_ADDR | Self::WY_ADDR | Self::WX_ADDR => {
                 // Latch these writes until the next scanline change (FIFO)
