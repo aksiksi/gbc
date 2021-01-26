@@ -4,7 +4,7 @@ use std::time::{Instant, Duration};
 
 use gbc::{Gameboy, Result};
 use gbc::joypad::{JoypadEvent, JoypadInput};
-use gbc::ppu::{LCD_WIDTH, LCD_HEIGHT};
+use gbc::ppu::{GameboyRgba, LCD_WIDTH, LCD_HEIGHT};
 
 use sdl2::render::TextureAccess;
 use sdl2::pixels::Color;
@@ -113,14 +113,15 @@ fn gui(cli: Cli) {
     let frame_duration = Duration::new(0, Gameboy::FRAME_DURATION);
 
     let mut paused = false;
+    let mut outline = false;
+
+    // List of joypad events to push to the Gameboy
+    let mut joypad_events = Vec::new();
 
     // Start the event loop
     let mut event_pump = sdl_context.event_pump().unwrap();
     'running: loop {
         let frame_start = Instant::now();
-
-        // List of joypad events to push to the Gameboy this frame
-        let mut joypad_events = Vec::new();
 
         for event in event_pump.poll_iter() {
             match event {
@@ -135,6 +136,9 @@ fn gui(cli: Cli) {
                 Event::KeyDown { keycode: Some(Keycode::P), .. } => {
                     paused = !paused;
                 }
+                Event::KeyDown { keycode: Some(Keycode::O), .. } => {
+                    outline = !outline;
+                }
                 Event::KeyDown { .. } | Event::KeyUp { .. } => {
                     if let Some(e) = event_to_joypad(event) {
                         joypad_events.push(e);
@@ -148,10 +152,11 @@ fn gui(cli: Cli) {
 
         if !paused {
             // Run the Gameboy for a single frame and return the frame data
-            frame_buffer = Some(gameboy.frame(Some(joypad_events)));
-        }
+            frame_buffer = Some(gameboy.frame(Some(&joypad_events)));
 
-        canvas.clear();
+            // Clear out all processed input events
+            joypad_events.clear();
+        }
 
         // With the following, we are setting the texture as a render target for
         // our main canvas. This allows us to use regular canvas drawing functions -
@@ -167,12 +172,28 @@ fn gui(cli: Cli) {
         // Helpful C example: https://wiki.libsdl.org/SDL_CreateTexture
         if let Some(frame_buffer) = frame_buffer {
             canvas.with_texture_canvas(&mut texture, |canvas| {
+                canvas.clear();
+                canvas.set_draw_color(Color::BLACK);
+
                 // Draw the rendered frame
                 for x in 0..LCD_WIDTH {
                     for y in 0..LCD_HEIGHT {
-                        let color = frame_buffer.read(x, y);
-                        canvas.set_draw_color(Color::RGBA(color.red, color.green, color.blue, color.alpha));
+                        let GameboyRgba { red, green, blue, alpha } = frame_buffer.read(x, y);
+                        canvas.set_draw_color(Color::RGBA(red, green, blue, alpha));
                         canvas.draw_point((x as i32, y as i32)).unwrap();
+                    }
+                }
+
+                if outline {
+                    // Draw an outline showing the tiles in the frame
+                    canvas.set_draw_color(Color::GRAY);
+
+                    for row in (0i32..LCD_HEIGHT as i32).step_by(8) {
+                        canvas.draw_line((0, row), (LCD_WIDTH as i32 - 1, row)).unwrap();
+                    }
+
+                    for col in (0i32..LCD_WIDTH as i32).step_by(8) {
+                        canvas.draw_line((col, 0), (col, LCD_HEIGHT as i32 - 1)).unwrap();
                     }
                 }
             }).unwrap();

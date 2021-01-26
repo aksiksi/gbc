@@ -81,7 +81,7 @@ impl Joypad {
     }
 
     /// Update raw joypad register based on incoming joypad event.
-    pub fn handle_event(&mut self, event: JoypadEvent) -> bool {
+    pub fn handle_event(&mut self, event: &JoypadEvent) -> bool {
         let reg = match event.selection() {
             JoypadSelection::Buttons => &mut self.buttons,
             _ => &mut self.directions,

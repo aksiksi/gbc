@@ -115,7 +115,7 @@ impl Gameboy {
     ///
     /// The frame takes in an list of joypad events as input, and returns
     /// a `FrameBuffer`.
-    pub fn frame(&mut self, joypad_events: Option<Vec<JoypadEvent>>) -> &FrameBuffer {
+    pub fn frame(&mut self, joypad_events: Option<&[JoypadEvent]>) -> &FrameBuffer {
         // Execute next instruction
         let mut cycle = 0;
         let speed = self.cpu.speed();
