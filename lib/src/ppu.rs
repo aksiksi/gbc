@@ -45,9 +45,6 @@
 //! This is when VRAM data can be accessed.
 //!
 //! The combination of these two periods nets us ~60 fps.
-use std::collections::VecDeque;
-
-use crate::Gameboy;
 use crate::cpu::Interrupt;
 use crate::memory::{MemoryRead, MemoryWrite};
 
@@ -393,15 +390,8 @@ pub struct Ppu {
     /// Sprites that are visible on this scanline
     sprites: Vec<Sprite>,
 
-    /// Register write stack
-    ///
-    /// Some of the registers, e.g., SCY and SCX, can be written to mid-scanline,
-    /// but the write does not go into affect until the end of the scanline. This
-    /// stack keeps track of these writes and flushes them on a scanline change.
-    write_stack: VecDeque<(u16, u8)>,
-
-    /// Last cycle processed
-    last_cycle: u32,
+    /// Current dot being rendered in this scanline
+    dot: u16,
 
     /// Previous STAT interrupt state
     prev_stat_interrupt: bool,
@@ -421,13 +411,13 @@ impl Ppu {
     const WY_ADDR: u16 = 0xFF4A;
     const WX_ADDR: u16 = 0xFF4B;
 
-    const DOTS_PER_LINE: u32 = 456;
+    const DOTS_PER_LINE: u16 = 456;
     const VBLANK_START_LINE: u8 = 144;
     const TOTAL_LINES: u8 = 154;
-    const OAM_SCAN_DOTS: u32 = 80;
-    const OAM_READ_DOTS: u32 = 250;
-    const HBLANK_DOTS: u32 = 126;
-    const VBLANK_DOTS: u32 = Self::DOTS_PER_LINE * (Self::TOTAL_LINES - Self::VBLANK_START_LINE) as u32;
+    const OAM_SCAN_DOTS: u16 = 80;
+    const OAM_READ_DOTS: u16 = 250;
+    const HBLANK_DOTS: u16 = 126;
+    const VBLANK_DOTS: u16 = Self::DOTS_PER_LINE * (Self::TOTAL_LINES - Self::VBLANK_START_LINE) as u16;
 
     pub const OAM_START_ADDR: u16 = 0xFE00;
     pub const OAM_LAST_ADDR: u16 = 0xFE9F;
@@ -455,70 +445,42 @@ impl Ppu {
             sprite_palette_ram: [0xFF; 64],
             frame_buffer: FrameBuffer::new(),
             sprites: Vec::with_capacity(10),
-            write_stack: VecDeque::with_capacity(5), // 5 registers use this
-            last_cycle: 0,
+            dot: 0,
             prev_stat_interrupt: false,
             cgb,
         }
     }
 
-    /// Update the PPU status registers based on current cycle and CPU speed.
-    ///
-    /// This function is called once per CPU step from the main frame loop. The
-    /// function is called *after* the CPU step completes. The value passed in
-    /// for `cycles` is the number of cycles spent in the CPU.
-    ///
-    /// If any interrupts need to be triggered, they are pushed to the input `interrupts`
-    /// vector.
-    pub fn step(&mut self, cycles: u16, speed: bool, interrupts: &mut Vec<Interrupt>) {
-        let cycle = (self.last_cycle + cycles as u32) % Gameboy::cycles_per_frame(speed);
+    /// Returns the next: (dot, scanline, STAT mode)
+    fn get_next_dot(&self, cycles: u16, speed: bool) -> (u16, u8, StatMode) {
+        let mut line = self.ly;
+        let mut dot = self.dot;
 
-        // Figure out the current dot and scan line
-        let dot = if speed {
-            // If we are in double-speed mode, we get a dot every 2 cycles
-            cycle / 2
+        // Figure out the number of pixels to render in this step
+        let dots = if speed {
+            // If we are in double-speed mode, we render a pixel every 2 cycles
+            cycles / 2
         } else {
-            cycle
+            cycles
         };
 
-        let line = (dot / Self::DOTS_PER_LINE) as u8;
+        dot += dots;
 
-        // Update the internal PPU status
-        //
-        // This also returns which interrupts need to be triggered
-        let stat_mode_change = self.update_status(dot, line, interrupts);
-
-        // Render data to the frame
-        self.render(stat_mode_change);
-
-        self.last_cycle = cycle;
-    }
-
-    /// Returns: (stat_mode_change, vblank_interrupt, stat_interrupt)
-    fn update_status(&mut self, dot: u32, line: u8, interrupts: &mut Vec<Interrupt>) -> bool {
-        // If we have a scanline change, flush the write stack to affected registers
-        if line != self.ly {
-            while let Some((addr, value)) = self.write_stack.pop_back() {
-                match addr {
-                    Self::SCY_ADDR => self.scy = value,
-                    Self::SCX_ADDR => self.scx = value,
-                    Self::LYC_ADDR => self.lyc = value,
-                    Self::WY_ADDR => self.wy = value,
-                    Self::WX_ADDR => self.wx = value,
-                    _ => unreachable!("Unexpected address on stack: {}", addr),
-                }
-            }
+        if dot >= Self::DOTS_PER_LINE {
+            // Move to the next scanline
+            line += 1;
+            dot -= Self::DOTS_PER_LINE;
         }
 
-        // Set LY to current scan line
-        self.ly = line;
+        if line == Self::TOTAL_LINES {
+            // Start of new frame
+            line = 0;
+        }
 
         // Figure out which stat mode we are in based on line and dot.
         //
         // Recall that we have 456 dots in a line.
-        let prev_mode = self.stat.mode();
         let mode = if line < Self::VBLANK_START_LINE {
-            let dot = dot % Self::DOTS_PER_LINE;
             if dot < Self::OAM_SCAN_DOTS {
                 StatMode::OamScan
             } else if dot >= Self::OAM_SCAN_DOTS && dot < Self::OAM_SCAN_DOTS + Self::OAM_READ_DOTS {
@@ -531,6 +493,38 @@ impl Ppu {
             StatMode::Vblank
         };
 
+        (dot, line, mode)
+    }
+
+    /// Update the PPU status registers based on current cycle and CPU speed.
+    ///
+    /// This function is called once per CPU step from the main frame loop. The
+    /// function is called *after* the CPU step completes. The value passed in
+    /// for `cycles` is the number of cycles spent in the CPU.
+    ///
+    /// If any interrupts need to be triggered, they are pushed to the input `interrupts`
+    /// vector.
+    pub fn step(&mut self, cycles: u16, speed: bool, interrupts: &mut Vec<Interrupt>) {
+        let (dot, line, mode) = self.get_next_dot(cycles, speed);
+
+        self.dot = dot;
+        self.ly = line;
+
+        if self.lcdc.lcd_display_enable() {
+            // Update the internal PPU status
+            //
+            // This also returns which interrupts need to be triggered
+            let stat_mode_change = self.update_status(mode, interrupts);
+
+            if stat_mode_change {
+                // Render data to the frame
+                self.render();
+            }
+        }
+    }
+
+    /// Returns: (stat_mode_change, vblank_interrupt, stat_interrupt)
+    fn update_status(&mut self, mode: StatMode, interrupts: &mut Vec<Interrupt>) -> bool {
         let ly_coincidence = self.ly == self.lyc;
 
         let mut stat = mode as u8;
@@ -539,6 +533,7 @@ impl Ppu {
             stat |= 1 << 2;
         }
 
+        let prev_mode = self.stat.mode();
         let stat_mode_change = prev_mode != mode;
 
         // VBLANK interrupt is fired if the mode has changed and the current mode is VBLANK.
@@ -575,30 +570,7 @@ impl Ppu {
     /// Given a number of cycles, returns the _next_ mode and number of cycles
     /// the PPU would remain in that mode.
     pub fn next_mode(&self, cycles: u16, speed: bool) -> (StatMode, u16) {
-        let cycle = self.last_cycle + cycles as u32;
-
-        // Figure out the current dot and scan line
-        let dot = if speed {
-            // If we are in double-speed mode, we get a dot every 2 cycles
-            cycle / 2
-        } else {
-            cycle
-        };
-        let line = (dot / Self::DOTS_PER_LINE) as u8;
-
-        let mode = if line < Self::VBLANK_START_LINE {
-            let dot = dot % Self::DOTS_PER_LINE;
-            if dot < Self::OAM_SCAN_DOTS {
-                StatMode::OamScan
-            } else if dot >= Self::OAM_SCAN_DOTS && dot < Self::OAM_SCAN_DOTS + Self::OAM_READ_DOTS {
-                StatMode::OamRead
-            } else {
-                StatMode::Hblank
-            }
-        } else {
-            // VBLANK
-            StatMode::Vblank
-        };
+        let (.., mode) = self.get_next_dot(cycles, speed);
 
         // Determine the number of cycles the PPU would spend in the next mode
         let dots = match mode {
@@ -618,25 +590,20 @@ impl Ppu {
     }
 
     /// Render pixel data to the internal frame buffer
-    fn render(&mut self, stat_mode_change: bool) {
-        // If the display is currently disabled, no rendering needs to be done
-        if !self.lcdc.lcd_display_enable() {
-            return;
-        }
-
+    fn render(&mut self) {
         // If we are in VBLANK, no rendering needs to be done
         if self.stat.mode() == StatMode::Vblank {
             return;
         }
 
         match self.stat.mode() {
-            StatMode::OamRead if stat_mode_change => {
+            StatMode::OamRead => {
                 // At the end of OAM scan/start of OAM read, build a list of
                 // visible sprites on this scanline. OAM is locked in this mode.
                 self.sprites.clear();
                 self.find_visible_sprites();
             }
-            StatMode::Hblank if stat_mode_change => {
+            StatMode::Hblank => {
                 // If we are at the end of OAM read/start of HBLANK, render a
                 // scanline worth of BG and sprites to the frame buffer.
                 //
@@ -1202,16 +1169,23 @@ impl MemoryWrite<u16, u8> for Ppu {
                     self.oam[idx] = value;
                 }
             }
-            Self::LCDC_ADDR => self.lcdc.raw = value,
+            Self::LCDC_ADDR => {
+                self.lcdc.raw = value;
+                if value & 1 << 7 == 0 {
+                    // Disabling the LCD resets LY
+                    self.ly = 0;
+                }
+            }
             Self::STAT_ADDR => {
                 // Lower 3 bits are read-only
                 let value = value & 0xF8;
                 self.stat.raw = value | self.stat.raw & 0x07;
             }
-            Self::SCY_ADDR | Self::SCX_ADDR | Self::LYC_ADDR | Self::WY_ADDR | Self::WX_ADDR => {
-                // Latch these writes until the next scanline change (FIFO)
-                self.write_stack.push_front((addr, value));
-            }
+            Self::SCY_ADDR => self.scy = value,
+            Self::SCX_ADDR => self.scx = value,
+            Self::LYC_ADDR => self.lyc = value,
+            Self::WY_ADDR => self.wy = value,
+            Self::WX_ADDR => self.wx = value,
             Self::LY_ADDR => {
                 if self.ly & (1 << 7) != 0 {
                     // If bit 7 == 1 and it is getting reset, clear out LY entirely
