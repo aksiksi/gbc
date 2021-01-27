@@ -25,9 +25,6 @@ use ppu::FrameBuffer;
 pub struct Gameboy {
     cpu: Cpu,
 
-    /// Number of frames executed
-    frame_counter: u64,
-
     #[cfg(feature = "debug")]
     debugger: debug::Debugger,
 }
@@ -49,14 +46,12 @@ impl Gameboy {
         #[cfg(feature = "debug")]
         let gameboy = Self {
             cpu,
-            frame_counter: 0,
             debugger: debug::Debugger::new(),
         };
 
         #[cfg(not(feature = "debug"))]
         let gameboy = Self {
             cpu,
-            frame_counter: 0,
         };
 
         Ok(gameboy)
@@ -64,15 +59,15 @@ impl Gameboy {
 
     /// Figure out the number of clock cycles we can execute in a single frame
     #[inline]
-    pub fn cycles_per_frame(speed: bool) -> u32 {
+    fn cycles_per_frame(speed: bool) -> u32 {
         let cycle_time = Cpu::cycle_time(speed);
         Self::FRAME_DURATION as u32 / cycle_time
     }
 
     /// Run the Gameboy for a single step.
     ///
-    /// Returns a tuple of: (cycles consumed, pointer to `FrameBuffer`)
-    pub fn step(&mut self) -> (u32, Option<&FrameBuffer>) {
+    /// Returns a tuple of: (pointer to `FrameBuffer`, cycles consumed)
+    pub fn step(&mut self) -> (Option<&FrameBuffer>, u32) {
         let speed = self.cpu.speed();
 
         #[cfg(feature = "debug")]
@@ -111,29 +106,21 @@ impl Gameboy {
             self.cpu.trigger_interrupt(interrupt);
         }
 
-        (cycles_taken as u32, self.cpu.memory.ppu_mut().frame_buffer())
+        (self.cpu.memory.ppu_mut().frame_buffer(), cycles_taken as u32)
     }
 
-    /// Run a Gameboy for a single frame.
-    ///
-    /// The frame takes in an list of joypad events as input, and returns
-    /// a `FrameBuffer`.
-    pub fn frame(&mut self, joypad_events: Option<&[JoypadEvent]>) -> &FrameBuffer {
+    /// Runs the Gameboy for a single frame.
+    pub fn frame(&mut self, joypad_events: Option<&[JoypadEvent]>) {
         let mut cycle = 0;
         let speed = self.cpu.speed();
         let num_cycles = Self::cycles_per_frame(speed);
 
         while cycle < num_cycles {
-            let (cycles_taken, _) = self.step();
+            let (_, cycles_taken) = self.step();
             cycle += cycles_taken;
         }
 
         self.update_joypad(joypad_events);
-
-        self.frame_counter += 1;
-
-        // Return the rendered frame as a frame buffer
-        self.cpu.memory.ppu_mut().frame_buffer().unwrap()
     }
 
     pub fn update_joypad(&mut self, joypad_events: Option<&[JoypadEvent]>) {
@@ -150,14 +137,11 @@ impl Gameboy {
     pub fn insert<P: AsRef<Path>>(&mut self, rom_path: P, boot_rom: bool) -> Result<()> {
         let cartridge = Cartridge::from_file(rom_path, boot_rom)?;
         self.cpu = Cpu::from_cartridge(cartridge, false)?;
-        self.frame_counter = 0;
         Ok(())
     }
 
     /// Reset the emulator
     pub fn reset(&mut self) {
-        self.frame_counter = 0;
-
         // Reset the CPU
         self.cpu.reset();
     }

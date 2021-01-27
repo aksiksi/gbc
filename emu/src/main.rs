@@ -27,9 +27,6 @@ struct Cli {
 
     #[structopt(default_value = "6", long)]
     scale: u32,
-
-    #[structopt(long)]
-    headless: bool,
 }
 
 fn keycode_to_joypad_input(keycode: Option<Keycode>) -> Option<JoypadInput> {
@@ -127,18 +124,20 @@ fn render_frame(frame_buffer: &FrameBuffer, canvas: &mut Canvas<Window>, texture
 /// picked up in the next frame.
 fn handle_frame(gameboy: &mut Gameboy, canvas: &mut Canvas<Window>, texture: &mut Texture,
                 joypad_events: &[JoypadEvent], outline: bool) {
-    let mut cycle = 0;
-    let speed = gameboy.speed();
-    let num_cycles = Gameboy::cycles_per_frame(speed);
+    // Run the Gameboy until the next frame is ready (i.e., start of VBLANK).
+    //
+    // This means we run from VBLANK to VBLANK. From the rendering side, it doesn't
+    // really matter: as long as the frame is ready, we can render. The emulator
+    // will catch up & process the VBLANK in the next call to this function.
+    loop {
+        // Runs the CPU and all peripherals in lock step for a single "step". The size
+        // of this step is controlled by the CPU based on the last executed instruction.
+        let (frame_buffer, _) = gameboy.step();
 
-    while cycle < num_cycles {
-        let (cycles_taken, frame_buffer) = gameboy.step();
-
-        if frame_buffer.is_some() {
-            render_frame(frame_buffer.unwrap(), canvas, texture, outline);
+        if let Some(frame_buffer) = frame_buffer {
+            render_frame(frame_buffer, canvas, texture, outline);
+            break;
         }
-
-        cycle += cycles_taken;
     }
 
     gameboy.update_joypad(Some(joypad_events));
@@ -196,6 +195,9 @@ fn gui(cli: Cli) {
     // List of joypad events to push to the Gameboy
     let mut joypad_events = Vec::new();
 
+    // More accurate sleep, especially on Windows
+    let sleeper = spin_sleep::SpinSleeper::default();
+
     // Start the event loop
     let mut event_pump = sdl_context.event_pump().unwrap();
     'running: loop {
@@ -238,8 +240,11 @@ fn gui(cli: Cli) {
 
         log::debug!("Frame duration: {:?}", elapsed);
 
+        // Sleep for the rest of the frame
+        //
+        // TODO: Evaluate if we need VSYNC to avoid tearing on higher Hz displays
         if elapsed < frame_duration {
-            std::thread::sleep(frame_duration - elapsed);
+            sleeper.sleep(frame_duration - elapsed);
         }
     }
 }
@@ -249,17 +254,7 @@ fn main() -> Result<()> {
 
     let cli = Cli::from_args();
 
-    if !cli.headless {
-        gui(cli);
-    } else {
-        let mut gameboy = Gameboy::init(cli.rom_file, false, false)?;
-        loop {
-            // TODO: Perhaps allow user to provide joypad input file?
-            // e.g., list of (input, time)
-            gameboy.frame(None);
-            std::thread::sleep(Duration::from_nanos(Gameboy::FRAME_DURATION as u64))
-        }
-    }
+    gui(cli);
 
     Ok(())
 }
