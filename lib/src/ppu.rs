@@ -105,12 +105,14 @@ static DMG_PALETTE: [GameboyRgba; 4] = [
 /// Buffer that holds pixel data for a single frame.
 pub struct FrameBuffer {
     data: Box<[GameboyRgba; LCD_WIDTH * LCD_HEIGHT]>,
+    pub(crate) ready: bool,
 }
 
 impl FrameBuffer {
     pub fn new() -> Self {
         Self {
             data: Box::new([GameboyRgba::white(); LCD_WIDTH * LCD_HEIGHT]),
+            ready: false,
         }
     }
 
@@ -401,6 +403,9 @@ pub struct Ppu {
 }
 
 impl Ppu {
+    pub const OAM_START_ADDR: u16 = 0xFE00;
+    pub const OAM_LAST_ADDR: u16 = 0xFE9F;
+
     // Register addresses
     const LCDC_ADDR: u16 = 0xFF40;
     const STAT_ADDR: u16 = 0xFF41;
@@ -418,9 +423,6 @@ impl Ppu {
     const OAM_READ_DOTS: u16 = 172;
     const HBLANK_DOTS: u16 = 204;
     const VBLANK_DOTS: u16 = Self::DOTS_PER_LINE * (Self::TOTAL_LINES - Self::VBLANK_START_LINE) as u16;
-
-    pub const OAM_START_ADDR: u16 = 0xFE00;
-    pub const OAM_LAST_ADDR: u16 = 0xFE9F;
 
     pub fn new(cgb: bool) -> Self {
         Self {
@@ -590,12 +592,10 @@ impl Ppu {
     }
 
     /// Render pixel data to the internal frame buffer
+    ///
+    /// Once we get to VBLANK, we mark the frame buffer as ready for
+    /// rendering.
     fn render(&mut self) {
-        // If we are in VBLANK, no rendering needs to be done
-        if self.stat.mode() == StatMode::Vblank {
-            return;
-        }
-
         match self.stat.mode() {
             StatMode::OamRead => {
                 // At the end of OAM scan/start of OAM read, build a list of
@@ -610,7 +610,11 @@ impl Ppu {
                 // Both VRAM and OAM are locked in this mode.
                 self.render_scanline();
             }
-            _ => ()
+            StatMode::Vblank => {
+                // Mark the frame as ready for rendering
+                self.frame_buffer.ready = true;
+            }
+            _ => (),
         }
     }
 
@@ -1107,9 +1111,16 @@ impl Ppu {
         &mut self.vram
     }
 
-    /// Get a reference to the frame buffer
-    pub fn frame_buffer(&self) -> &FrameBuffer {
-        &self.frame_buffer
+    /// Get a reference to the frame buffer, if it's ready.
+    ///
+    /// The frame will be ready only during VBLANK.
+    pub fn frame_buffer(&mut self) -> Option<&FrameBuffer> {
+        if self.frame_buffer.ready {
+            self.frame_buffer.ready = false;
+            Some(&self.frame_buffer)
+        } else {
+            None
+        }
     }
 }
 

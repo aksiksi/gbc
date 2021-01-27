@@ -4,7 +4,7 @@ use std::time::{Instant, Duration};
 
 use gbc::{Gameboy, Result};
 use gbc::joypad::{JoypadEvent, JoypadInput};
-use gbc::ppu::{GameboyRgba, LCD_WIDTH, LCD_HEIGHT};
+use gbc::ppu::{FrameBuffer, GameboyRgba, LCD_WIDTH, LCD_HEIGHT};
 
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
@@ -67,11 +67,11 @@ fn event_to_joypad(event: Event) -> Option<JoypadEvent> {
     }
 }
 
-fn render_frame(gameboy: &mut Gameboy, canvas: &mut Canvas<Window>, texture: &mut Texture,
-                joypad_events: &[JoypadEvent], outline: bool) {
-    // Run the Gameboy for a single frame and return the frame data
-    let frame_buffer = gameboy.frame(Some(&joypad_events));
-
+/// Renders a single Gameboy frame to the SDL canvas using a texture as the render target.
+///
+/// Once the texture is ready, it is copied back to the canvas and presented.
+fn render_frame(frame_buffer: &FrameBuffer, canvas: &mut Canvas<Window>, texture: &mut Texture,
+                outline: bool) {
     // With the following, we are setting the texture as a render target for
     // our main canvas. This allows us to use regular canvas drawing functions -
     // e.g., rect, point - to update the underlyinh texture. Note that the texture
@@ -110,6 +110,38 @@ fn render_frame(gameboy: &mut Gameboy, canvas: &mut Canvas<Window>, texture: &mu
             }
         }
     }).unwrap();
+
+    // Once we've completed our texture operations, we need to copy the texture
+    // back to the canvas and then present to the screen.
+    canvas.copy(&texture, None, None).unwrap();
+    canvas.present();
+}
+
+/// Handles a single Gameboy frame.
+///
+/// This advances the Gameboy for the number of CPU cycles in a single frame. Once the
+/// underlying frame buffer is ready (i.e., on VBLANK), the frame is picked up and rendered
+/// to an SDL texture.
+///
+/// At the end of the frame, any input joypad events are passed on to the Gameboy to be
+/// picked up in the next frame.
+fn handle_frame(gameboy: &mut Gameboy, canvas: &mut Canvas<Window>, texture: &mut Texture,
+                joypad_events: &[JoypadEvent], outline: bool) {
+    let mut cycle = 0;
+    let speed = gameboy.speed();
+    let num_cycles = Gameboy::cycles_per_frame(speed);
+
+    while cycle < num_cycles {
+        let (cycles_taken, frame_buffer) = gameboy.step();
+
+        if frame_buffer.is_some() {
+            render_frame(frame_buffer.unwrap(), canvas, texture, outline);
+        }
+
+        cycle += cycles_taken;
+    }
+
+    gameboy.update_joypad(Some(joypad_events));
 }
 
 fn gui(cli: Cli) {
@@ -156,7 +188,7 @@ fn gui(cli: Cli) {
                                                      LCD_HEIGHT as u32).unwrap();
 
     let mut gameboy = Gameboy::init(cli.rom_file, cli.boot_rom, cli.trace).unwrap();
-    let frame_duration = Duration::new(0, Gameboy::FRAME_DURATION);
+    let frame_duration = Duration::from_nanos(Gameboy::FRAME_DURATION as u64);
 
     let mut paused = false;
     let mut outline = false;
@@ -196,16 +228,11 @@ fn gui(cli: Cli) {
 
         if !paused {
             // Render a single frame
-            render_frame(&mut gameboy, &mut canvas, &mut texture, &joypad_events, outline);
+            handle_frame(&mut gameboy, &mut canvas, &mut texture, &joypad_events, outline);
 
             // Clear out all processed input events
             joypad_events.clear();
         }
-
-        // Once we've completed our texture operations, we need to copy the texture
-        // back to the canvas to be able to present it.
-        canvas.copy(&texture, None, None).unwrap();
-        canvas.present();
 
         let elapsed = frame_start.elapsed();
 

@@ -33,8 +33,10 @@ pub struct Gameboy {
 }
 
 impl Gameboy {
+    const FRAME_FREQUENCY: f64 = 59.7; // Hz
+
     /// Frame duration, in ns
-    pub const FRAME_DURATION: u32 = 16_666_666;
+    pub const FRAME_DURATION: u64 = ((1f64 / Self::FRAME_FREQUENCY) * 1e9) as u64;
 
     /// Initialize the emulator with an optional ROM.
     ///
@@ -64,13 +66,13 @@ impl Gameboy {
     #[inline]
     pub fn cycles_per_frame(speed: bool) -> u32 {
         let cycle_time = Cpu::cycle_time(speed);
-        Self::FRAME_DURATION / cycle_time
+        Self::FRAME_DURATION as u32 / cycle_time
     }
 
     /// Run the Gameboy for a single step.
     ///
     /// Returns a tuple of: (cycles consumed, pointer to `FrameBuffer`)
-    pub fn step(&mut self) -> (u32, &FrameBuffer) {
+    pub fn step(&mut self) -> (u32, Option<&FrameBuffer>) {
         let speed = self.cpu.speed();
 
         #[cfg(feature = "debug")]
@@ -109,7 +111,7 @@ impl Gameboy {
             self.cpu.trigger_interrupt(interrupt);
         }
 
-        (cycles_taken as u32, self.cpu.memory.ppu().frame_buffer())
+        (cycles_taken as u32, self.cpu.memory.ppu_mut().frame_buffer())
     }
 
     /// Run a Gameboy for a single frame.
@@ -131,7 +133,7 @@ impl Gameboy {
         self.frame_counter += 1;
 
         // Return the rendered frame as a frame buffer
-        self.cpu.memory.ppu().frame_buffer()
+        self.cpu.memory.ppu_mut().frame_buffer().unwrap()
     }
 
     pub fn update_joypad(&mut self, joypad_events: Option<&[JoypadEvent]>) {
@@ -162,6 +164,10 @@ impl Gameboy {
 
     pub fn cpu(&mut self) -> &mut Cpu {
         &mut self.cpu
+    }
+
+    pub fn speed(&self) -> bool {
+        self.cpu.speed()
     }
 
     /// Returns a String containing the serial output of this Gameboy _so far_.
