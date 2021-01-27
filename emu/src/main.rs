@@ -2,7 +2,7 @@
 use std::path::PathBuf;
 use std::time::{Instant, Duration};
 
-use gbc::{Gameboy, Result};
+use gbc::Gameboy;
 use gbc::joypad::{JoypadEvent, JoypadInput};
 use gbc::ppu::{FrameBuffer, GameboyRgba, LCD_WIDTH, LCD_HEIGHT};
 
@@ -27,6 +27,9 @@ struct Cli {
 
     #[structopt(default_value = "6", long)]
     scale: u32,
+
+    #[structopt(default_value = "1", long)]
+    speed: u8,
 }
 
 fn keycode_to_joypad_input(keycode: Option<Keycode>) -> Option<JoypadInput> {
@@ -187,7 +190,6 @@ fn gui(cli: Cli) {
                                                      LCD_HEIGHT as u32).unwrap();
 
     let mut gameboy = Gameboy::init(cli.rom_file, cli.boot_rom, cli.trace).unwrap();
-    let frame_duration = Duration::from_nanos(Gameboy::FRAME_DURATION as u64);
 
     let mut paused = false;
     let mut outline = false;
@@ -197,6 +199,9 @@ fn gui(cli: Cli) {
 
     // More accurate sleep, especially on Windows
     let sleeper = spin_sleep::SpinSleeper::default();
+
+    let frame_time_ns = Gameboy::FRAME_DURATION / cli.speed as u64;
+    let frame_duration = Duration::from_nanos(frame_time_ns);
 
     // Start the event loop
     let mut event_pump = sdl_context.event_pump().unwrap();
@@ -249,12 +254,15 @@ fn gui(cli: Cli) {
     }
 }
 
-fn main() -> Result<()> {
+fn main() {
     env_logger::init();
 
     let cli = Cli::from_args();
 
-    gui(cli);
+    if cli.speed == 0 || cli.speed > 5 {
+        eprintln!("Error: Maximum supported emulator speed is 5x!");
+        return;
+    }
 
-    Ok(())
+    gui(cli);
 }
