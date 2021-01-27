@@ -6,10 +6,11 @@ use gbc::{Gameboy, Result};
 use gbc::joypad::{JoypadEvent, JoypadInput};
 use gbc::ppu::{GameboyRgba, LCD_WIDTH, LCD_HEIGHT};
 
-use sdl2::render::TextureAccess;
-use sdl2::pixels::Color;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
+use sdl2::render::{Canvas, Texture, TextureAccess};
+use sdl2::pixels::Color;
+use sdl2::video::Window;
 
 use structopt::StructOpt;
 
@@ -64,6 +65,51 @@ fn event_to_joypad(event: Event) -> Option<JoypadEvent> {
         }
         _ => unreachable!(),
     }
+}
+
+fn render_frame(gameboy: &mut Gameboy, canvas: &mut Canvas<Window>, texture: &mut Texture,
+                joypad_events: &[JoypadEvent], outline: bool) {
+    // Run the Gameboy for a single frame and return the frame data
+    let frame_buffer = gameboy.frame(Some(&joypad_events));
+
+    // With the following, we are setting the texture as a render target for
+    // our main canvas. This allows us to use regular canvas drawing functions -
+    // e.g., rect, point - to update the underlyinh texture. Note that the texture
+    // will be updated only when all canvas operations are complete.
+    //
+    // Note that, if GPU rendering is enabled, the texture lives in GPU VRAM. If
+    // this is the case, updates are fairly expensive, as we need to round-trip
+    // to GPU VRAM on every frame (?).
+    //
+    // Once this closure ends, the canvas target is reset back for us.
+    //
+    // Helpful C example: https://wiki.libsdl.org/SDL_CreateTexture
+    canvas.with_texture_canvas(texture, |canvas| {
+        canvas.clear();
+        canvas.set_draw_color(Color::BLACK);
+
+        // Draw the rendered frame
+        for x in 0..LCD_WIDTH {
+            for y in 0..LCD_HEIGHT {
+                let GameboyRgba { red, green, blue, alpha } = frame_buffer.read(x, y);
+                canvas.set_draw_color(Color::RGBA(red, green, blue, alpha));
+                canvas.draw_point((x as i32, y as i32)).unwrap();
+            }
+        }
+
+        if outline {
+            // Draw an outline showing the tiles in the frame
+            canvas.set_draw_color(Color::GRAY);
+
+            for row in (0i32..LCD_HEIGHT as i32).step_by(8) {
+                canvas.draw_line((0, row), (LCD_WIDTH as i32 - 1, row)).unwrap();
+            }
+
+            for col in (0i32..LCD_WIDTH as i32).step_by(8) {
+                canvas.draw_line((col, 0), (col, LCD_HEIGHT as i32 - 1)).unwrap();
+            }
+        }
+    }).unwrap();
 }
 
 fn gui(cli: Cli) {
@@ -148,55 +194,12 @@ fn gui(cli: Cli) {
             }
         }
 
-        let mut frame_buffer = None;
-
         if !paused {
-            // Run the Gameboy for a single frame and return the frame data
-            frame_buffer = Some(gameboy.frame(Some(&joypad_events)));
+            // Render a single frame
+            render_frame(&mut gameboy, &mut canvas, &mut texture, &joypad_events, outline);
 
             // Clear out all processed input events
             joypad_events.clear();
-        }
-
-        // With the following, we are setting the texture as a render target for
-        // our main canvas. This allows us to use regular canvas drawing functions -
-        // e.g., rect, point - to update the underlyinh texture. Note that the texture
-        // will be updated only when all canvas operations are complete.
-        //
-        // Note that, if GPU rendering is enabled, the texture lives in GPU VRAM. If
-        // this is the case, updates are fairly expensive, as we need to round-trip
-        // to GPU VRAM on every frame (?).
-        //
-        // Once this closure ends, the canvas target is reset back for us.
-        //
-        // Helpful C example: https://wiki.libsdl.org/SDL_CreateTexture
-        if let Some(frame_buffer) = frame_buffer {
-            canvas.with_texture_canvas(&mut texture, |canvas| {
-                canvas.clear();
-                canvas.set_draw_color(Color::BLACK);
-
-                // Draw the rendered frame
-                for x in 0..LCD_WIDTH {
-                    for y in 0..LCD_HEIGHT {
-                        let GameboyRgba { red, green, blue, alpha } = frame_buffer.read(x, y);
-                        canvas.set_draw_color(Color::RGBA(red, green, blue, alpha));
-                        canvas.draw_point((x as i32, y as i32)).unwrap();
-                    }
-                }
-
-                if outline {
-                    // Draw an outline showing the tiles in the frame
-                    canvas.set_draw_color(Color::GRAY);
-
-                    for row in (0i32..LCD_HEIGHT as i32).step_by(8) {
-                        canvas.draw_line((0, row), (LCD_WIDTH as i32 - 1, row)).unwrap();
-                    }
-
-                    for col in (0i32..LCD_WIDTH as i32).step_by(8) {
-                        canvas.draw_line((col, 0), (col, LCD_HEIGHT as i32 - 1)).unwrap();
-                    }
-                }
-            }).unwrap();
         }
 
         // Once we've completed our texture operations, we need to copy the texture

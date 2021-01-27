@@ -415,8 +415,8 @@ impl Ppu {
     const VBLANK_START_LINE: u8 = 144;
     const TOTAL_LINES: u8 = 154;
     const OAM_SCAN_DOTS: u16 = 80;
-    const OAM_READ_DOTS: u16 = 250;
-    const HBLANK_DOTS: u16 = 126;
+    const OAM_READ_DOTS: u16 = 172;
+    const HBLANK_DOTS: u16 = 204;
     const VBLANK_DOTS: u16 = Self::DOTS_PER_LINE * (Self::TOTAL_LINES - Self::VBLANK_START_LINE) as u16;
 
     pub const OAM_START_ADDR: u16 = 0xFE00;
@@ -725,19 +725,20 @@ impl Ppu {
             bg_color_index = 0;
         }
 
+        // Render sprites
         if self.lcdc.sprite_enable() {
             // Fetch sprite pixel data
             //
             // The method returns `None` if the sprite pixel is transparent.
-            if let Some((data, priority)) = self.fetch_sprite_pixel_data(pixel, scanline) {
+            if let Some((data, priority)) = self.fetch_sprite_pixel_data(pixel) {
                 if bg_color_index == 0 || (!bg_priority && priority) || pixel_data.is_none() {
                     pixel_data = Some(data);
                 }
             }
         }
 
+        // Push the pixel to the frame buffer
         if let Some(data) = pixel_data {
-            // Push the pixel to the frame buffer
             self.frame_buffer.write(pixel as usize, scanline as usize, data);
         }
     }
@@ -846,13 +847,13 @@ impl Ppu {
 
     /// We go through a similar sequence as in the BG method.
     ///
-    /// The first difference is that sprite info is stored in OAM, so we need  to
+    /// The first difference is that sprite info is stored in OAM, so we need to
     /// walk through OAM to determine which sprite needs to be rendered at this location.
     ///
     /// The second difference is that sprites can be either a single tile (8x8) or two
     /// vertically stacked tiles (8x16). In case of the latter, we need to adjust our logic
     /// based on which tile the current pixel lies in (upper vs. lower).
-    fn fetch_sprite_pixel_data(&self, pixel: u8, scanline: u8) -> Option<(GameboyRgba, bool)> {
+    fn fetch_sprite_pixel_data(&self, pixel: u8) -> Option<(GameboyRgba, bool)> {
         let tile_data_base = 0x8000;
 
         let size = if self.lcdc.sprite_size() {
@@ -860,6 +861,8 @@ impl Ppu {
         } else {
             8
         };
+
+        let scanline = self.ly;
 
         for sprite in &self.sprites {
             // Same logic as vertical position check in `find_visible_sprites()`.

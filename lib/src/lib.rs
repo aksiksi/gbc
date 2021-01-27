@@ -33,7 +33,8 @@ pub struct Gameboy {
 }
 
 impl Gameboy {
-    pub const FRAME_DURATION: u32 = 16_666_666; // in ns
+    /// Frame duration, in ns
+    pub const FRAME_DURATION: u32 = 16_666_666;
 
     /// Initialize the emulator with an optional ROM.
     ///
@@ -116,7 +117,6 @@ impl Gameboy {
     /// The frame takes in an list of joypad events as input, and returns
     /// a `FrameBuffer`.
     pub fn frame(&mut self, joypad_events: Option<&[JoypadEvent]>) -> &FrameBuffer {
-        // Execute next instruction
         let mut cycle = 0;
         let speed = self.cpu.speed();
         let num_cycles = Self::cycles_per_frame(speed);
@@ -126,7 +126,15 @@ impl Gameboy {
             cycle += cycles_taken;
         }
 
-        // Update joypad, if needed
+        self.update_joypad(joypad_events);
+
+        self.frame_counter += 1;
+
+        // Return the rendered frame as a frame buffer
+        self.cpu.memory.ppu().frame_buffer()
+    }
+
+    pub fn update_joypad(&mut self, joypad_events: Option<&[JoypadEvent]>) {
         if let Some(events) = joypad_events {
             for event in events {
                 if self.cpu.memory.joypad().handle_event(event) {
@@ -134,11 +142,6 @@ impl Gameboy {
                 }
             }
         }
-
-        self.frame_counter += 1;
-
-        // Return the rendered frame as a frame buffer
-        self.cpu.memory.ppu().frame_buffer()
     }
 
     /// Insert a new cartridge and reset the emulator
