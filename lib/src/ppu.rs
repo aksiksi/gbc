@@ -1174,6 +1174,8 @@ impl MemoryWrite<u16, u8> for Ppu {
             Vram::BASE_ADDR..=Vram::LAST_ADDR => {
                 if !self.vram_locked() {
                     self.vram.write(addr, value);
+                } else {
+                    log::info!("Blocked VRAM write to 0x{:X}: 0x{:X}", addr, value);
                 }
             }
             Vram::BANK_SELECT_ADDR => self.vram.update_bank(value),
@@ -1222,12 +1224,16 @@ impl MemoryWrite<u16, u8> for Ppu {
             0xFF69 => {
                 if !self.vram_locked() {
                     self.palette_write(value, false);
+                } else {
+                    log::info!("Blocked BG palette write to 0x{:X}: 0x{:X}", addr, value);
                 }
             }
             0xFF6A => self.ocps = value,
             0xFF6B => {
                 if !self.vram_locked() {
                     self.palette_write(value, true);
+                } else {
+                    log::info!("Blocked sprite palette write to 0x{:X}: 0x{:X}", addr, value);
                 }
             }
             _ => panic!("Unexpected write to addr {} value {}", addr, value),

@@ -190,7 +190,11 @@ impl DmaController {
             let chunk_end = chunk_start + 16;
             for offset in chunk_start..chunk_end {
                 let byte = memory.read(source_addr + offset);
-                memory.write(dest_addr + offset, byte);
+
+                // Write directly to VRAM to avoid being blocked if at boundary
+                // of OAM read mode
+                let vram = memory.ppu_mut().vram_mut();
+                vram.write(dest_addr + offset, byte);
             }
 
             chunk += 1;
