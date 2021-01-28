@@ -20,16 +20,6 @@ There are two types of tests:
 
 These tests run on every commit to the repo.
 
-## Examples
-
-### Dr. Mario
-
-![dr_mario](https://user-images.githubusercontent.com/916621/105101343-a07e2c00-5a7c-11eb-8b3e-bf3e5d9c3eeb.mp4)
-
-### Blargg's cpu_instrs ROM
-
-![cpu_instrs](https://user-images.githubusercontent.com/916621/104858877-21f48380-58f0-11eb-8a83-d5087da6d7a7.png)
-
 ## Building
 
 Due to the SDL dependency, you have to install some dependencies before you can build the emulator. Note that SDL is automatically built as part of the Rust-SDL2 build script, but the script needs a few tools:
