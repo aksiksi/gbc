@@ -4,6 +4,15 @@
 
 A Gameboy Color (GBC) emulator written in Rust. This is intended as a learning project. 
 
+## Games Tested
+
+- [x] Dr. Mario (DMG, no ROM banking)
+- [x] Tetris World (DMG, no ROM banking)
+- [x] Kirby's Dream Land (DMG, MBC1)
+- [x] Tetris World DX (GBC, MBC1)
+- [x] Super Mario Bros. Deluxe (GBC, MBC5)
+- [x] Pokemon Yellow (GBC, MBC5)
+
 ## Project Structure
 
 The emulator is divided into two crates:

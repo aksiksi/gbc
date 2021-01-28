@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::time::{Instant, Duration};
 
 use gbc::Gameboy;
+use gbc::cartridge::Cartridge;
 use gbc::joypad::{JoypadEvent, JoypadInput};
 use gbc::ppu::{FrameBuffer, GameboyRgba, LCD_WIDTH, LCD_HEIGHT};
 
@@ -15,21 +16,30 @@ use sdl2::video::Window;
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
-struct Cli {
-    #[structopt(parse(from_os_str))]
-    rom_file: PathBuf,
+#[structopt(about = "A simple GBC emulator")]
+enum Args {
+    #[structopt(about = "Run a ROM on the emulator")]
+    Run {
+        #[structopt(parse(from_os_str))]
+        rom_file: PathBuf,
 
-    #[structopt(long)]
-    boot_rom: bool,
+        #[structopt(default_value = "6", long)]
+        scale: u32,
 
-    #[structopt(long)]
-    trace: bool,
+        #[structopt(default_value = "1", long)]
+        speed: u8,
 
-    #[structopt(default_value = "6", long)]
-    scale: u32,
+        #[structopt(long)]
+        boot_rom: bool,
 
-    #[structopt(default_value = "1", long)]
-    speed: u8,
+        #[structopt(long)]
+        trace: bool,
+    },
+    #[structopt(about = "Inspect a ROM")]
+    Inspect {
+        #[structopt(parse(from_os_str))]
+        rom_file: Vec<PathBuf>,
+    }
 }
 
 fn keycode_to_joypad_input(keycode: Option<Keycode>) -> Option<JoypadInput> {
@@ -146,8 +156,8 @@ fn handle_frame(gameboy: &mut Gameboy, canvas: &mut Canvas<Window>, texture: &mu
     gameboy.update_joypad(Some(joypad_events));
 }
 
-fn gui(cli: Cli) {
-    let rom_name = match cli.rom_file.file_name() {
+fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
+    let rom_name = match rom_file.file_name() {
         None => None,
         Some(n) => Some(n.to_str().unwrap()),
     }.unwrap_or("Unknown ROM");
@@ -157,8 +167,8 @@ fn gui(cli: Cli) {
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
 
-    let width = LCD_WIDTH as u32 * cli.scale;
-    let height = LCD_HEIGHT as u32 * cli.scale;
+    let width = LCD_WIDTH as u32 * scale;
+    let height = LCD_HEIGHT as u32 * scale;
 
     // Setup an SDL2 Window
     let window = video_subsystem.window(&title, width, height)
@@ -189,7 +199,7 @@ fn gui(cli: Cli) {
                                                      LCD_WIDTH as u32,
                                                      LCD_HEIGHT as u32).unwrap();
 
-    let mut gameboy = Gameboy::init(cli.rom_file, cli.boot_rom, cli.trace).unwrap();
+    let mut gameboy = Gameboy::init(rom_file, boot_rom, trace).unwrap();
 
     let mut paused = false;
     let mut outline = false;
@@ -200,7 +210,7 @@ fn gui(cli: Cli) {
     // More accurate sleep, especially on Windows
     let sleeper = spin_sleep::SpinSleeper::default();
 
-    let frame_time_ns = Gameboy::FRAME_DURATION / cli.speed as u64;
+    let frame_time_ns = Gameboy::FRAME_DURATION / speed as u64;
     let frame_duration = Duration::from_nanos(frame_time_ns);
 
     // Start the event loop
@@ -257,12 +267,34 @@ fn gui(cli: Cli) {
 fn main() {
     env_logger::init();
 
-    let cli = Cli::from_args();
+    let cli = Args::from_args();
 
-    if cli.speed == 0 || cli.speed > 5 {
-        eprintln!("Error: Maximum supported emulator speed is 5x!");
-        return;
+    match cli {
+        Args::Run { rom_file, scale, speed, boot_rom, trace } => {
+            if speed == 0 || speed > 5 {
+                eprintln!("Error: Maximum supported emulator speed is 5x!");
+                return;
+            }
+
+            gui(rom_file, scale, speed, boot_rom, trace);
+        }
+        Args::Inspect { rom_file } => {
+            for f in &rom_file {
+                let cartridge = match Cartridge::from_file(f, false) {
+                    Err(e) => {
+                        eprintln!("Error reading cartridge: {}", e);
+                        return;
+                    }
+                    Ok(c) => c,
+                };
+
+                println!("\nTitle: {}", cartridge.title().unwrap());
+                println!("Manufacturer: {}", cartridge.manufacturer_code().unwrap());
+                println!("GBC support: {}", cartridge.cgb());
+                println!("Cartridge type: {:?}", cartridge.cartridge_type().unwrap());
+                println!("ROM size: {:?}", cartridge.rom_size().unwrap());
+                println!("RAM size: {:?}\n", cartridge.ram_size().unwrap());
+            }
+        }
     }
-
-    gui(cli);
 }
