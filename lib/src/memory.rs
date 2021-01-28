@@ -130,7 +130,7 @@ pub struct Io {
     waveform_ram: [u8; 16],
 
     // KEY1: 0xFF4D
-    prep_speed_switch: u8,
+    pub prep_speed_switch: u8,
 
     /// Range: 0xFF50
     pub disable_boot_rom: u8,
@@ -291,13 +291,7 @@ impl MemoryWrite<u16, u8> for Io {
                 self.waveform_ram[idx] = value;
             }
             0xFF4D => {
-                // Switch speed immediately
-                // TODO: See if this needs to happen after a STOP?
-                if value & 0x1 != 0 {
-                    self.prep_speed_switch = 1 << 7;
-                } else {
-                    self.prep_speed_switch = 0;
-                }
+                self.prep_speed_switch = value;
             }
             0xFF50 => {
                 self.disable_boot_rom = value;

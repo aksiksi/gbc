@@ -49,7 +49,7 @@ impl DmaController {
     /// Execute a single step of the DMA controller.
     ///
     /// If HDMA is executed, this returns the number of cycles consumed.
-    pub fn step(&mut self, cycles: u8, memory: &mut MemoryBus) -> u16 {
+    pub fn step(&mut self, cycles: u16, memory: &mut MemoryBus) -> u16 {
         let mut cycles_taken = 0;
 
         // OAM DMA
@@ -68,7 +68,7 @@ impl DmaController {
         cycles_taken
     }
 
-    fn oam_dma(&mut self, mut cycles: u8, memory: &mut MemoryBus) {
+    fn oam_dma(&mut self, mut cycles: u16, memory: &mut MemoryBus) {
         let dma_reg = memory.read(Self::DMA_ADDR);
         let source_start_addr = (dma_reg as u16) << 8;
 
@@ -101,7 +101,7 @@ impl DmaController {
         }
     }
 
-    fn hdma(&mut self, cycles: u8, memory: &mut MemoryBus) -> u16 {
+    fn hdma(&mut self, cycles: u16, memory: &mut MemoryBus) -> u16 {
         let speed = memory.io().speed();
 
         // Determine source and destination addresses
@@ -151,7 +151,7 @@ impl DmaController {
             // This needs to be done because we could be _just before_ HBLANK, but since
             // DMA kicks in before the PPU has a chance to catch up, we need to look ahead
             // based on the number of cycles spent in the CPU.
-            let (next_mode, cycles_in_mode) = memory.ppu().next_mode(cycles as u16, speed);
+            let (next_mode, cycles_in_mode) = memory.ppu().next_mode(cycles, speed);
 
             if next_mode != StatMode::Hblank {
                 // If we are not in HBLANK, there is nothing to do

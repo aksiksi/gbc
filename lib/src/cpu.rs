@@ -67,7 +67,10 @@ pub struct Cpu {
 
     /// Global interrupt enable flag (Interrupt Master Enable)
     ime: bool,
-    pub is_halted: bool,
+
+    pub halted: bool,
+    pub stopped: bool,
+    pub speed: bool,
 
     /// Trace all instructions executed to a file
     trace: Option<BufWriter<File>>,
@@ -93,7 +96,9 @@ impl Cpu {
             dma: DmaController::new(cgb),
             cgb,
             ime: false,
-            is_halted: false,
+            halted: false,
+            stopped: false,
+            speed: false,
             trace: None,
         }
     }
@@ -128,14 +133,11 @@ impl Cpu {
             dma,
             cgb,
             ime: false,
-            is_halted: false,
+            halted: false,
+            stopped: false,
+            speed: false,
             trace,
         })
-    }
-
-    /// Returns `true` if this CPU is in double-speed mode.
-    pub fn speed(&self) -> bool {
-        self.memory.io().speed()
     }
 
     /// Current clock cycle duration, in ns. This value is based
@@ -156,8 +158,10 @@ impl Cpu {
         self.registers = RegisterFile::new(self.cgb);
         self.memory.reset();
         self.dma = DmaController::new(self.cgb);
-        self.is_halted = false;
         self.ime = false;
+        self.halted = false;
+        self.stopped = false;
+        self.speed = false;
     }
 
     /// Executes the next instruction and returns the number of cycles it
@@ -168,7 +172,7 @@ impl Cpu {
         let int_cycles = self.service_interrupts();
 
         // If the CPU is halted, bail out
-        if self.is_halted {
+        if self.halted {
             return (4, Instruction::Nop);
         }
 
@@ -181,22 +185,41 @@ impl Cpu {
 
         // Execute the instruction on this CPU
         let (jump, taken) = self.execute(inst);
-        let cycles = if !jump || jump && !taken {
+        let mut cycles = if !jump || jump && !taken {
             // For regular instructions and jumps that are *not* taken,
             // update the PC based on the size of this instruction
             self.registers.PC += size as u16;
-
-            cycles.not_taken()
+            cycles.not_taken() as u16
         } else {
             // For jumps that are taken, the PC is updated within `execute()`
-            cycles.taken()
+            cycles.taken() as u16
         };
 
-        let cycles = int_cycles + cycles;
-
-        let cycles = cycles as u16 + self.dma(cycles);
+        if self.stopped {
+            // If we've entered STOP mode for a speed switch, block the CPU for a bit.
+            // Also, do not run through DMA.
+            cycles += 8200;
+        } else {
+            cycles += int_cycles as u16;
+            cycles += self.dma(cycles);
+        }
 
         (cycles, inst)
+    }
+
+    /// Switch CPU speed
+    fn speed_switch(&mut self) {
+        if !self.speed {
+            // Normal to double speed
+            self.memory.io_mut().prep_speed_switch = 1 << 7;
+            self.speed = true;
+        } else {
+            // Double to normal speed
+            self.memory.io_mut().prep_speed_switch = 0;
+            self.speed = false;
+        }
+
+        self.stopped = true;
     }
 
     #[inline]
@@ -214,7 +237,7 @@ impl Cpu {
     }
 
     /// Execute a single step of DMA (if active).
-    fn dma(&mut self, cycles: u8) -> u16 {
+    fn dma(&mut self, cycles: u16) -> u16 {
         let memory = &mut self.memory;
         self.dma.step(cycles, memory)
     }
@@ -268,8 +291,8 @@ impl Cpu {
 
         // If the CPU is currently halted and there is a pending interrupt,
         // leave HALT state, *even if IME is disabled*.
-        if self.is_halted {
-            self.is_halted = (int_enable & int_flags) == 0;
+        if self.halted {
+            self.halted = (int_enable & int_flags) == 0;
         }
 
         // If the IME is disabled, do not process any interrupts
@@ -328,9 +351,14 @@ impl Cpu {
         match instruction {
             Nop => (),
             Halt => {
-                self.is_halted = true;
+                self.halted = true;
             }
-            Stop => (),
+            Stop => {
+                if self.cgb && self.memory.io().prep_speed_switch & 0x1 != 0 {
+                    // Switch speed
+                    self.speed_switch();
+                }
+            }
             Di => {
                 self.ime = false;
             }

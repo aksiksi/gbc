@@ -19,6 +19,7 @@ use cpu::Interrupt;
 use cartridge::Cartridge;
 pub use error::{Error, Result};
 use joypad::JoypadEvent;
+use memory::MemoryWrite;
 use ppu::FrameBuffer;
 
 /// Gameboy
@@ -68,7 +69,7 @@ impl Gameboy {
     ///
     /// Returns a tuple of: (pointer to `FrameBuffer`, cycles consumed)
     pub fn step(&mut self) -> (Option<&FrameBuffer>, u32) {
-        let speed = self.cpu.speed();
+        let speed = self.cpu.speed;
 
         #[cfg(feature = "debug")]
         // If the debugger is triggered, step into the REPL.
@@ -106,13 +107,19 @@ impl Gameboy {
             self.cpu.trigger_interrupt(interrupt);
         }
 
+        if self.cpu.stopped {
+            // Reset DIV on speed switch
+            self.cpu.memory.write(0xFF04u16, 0u8);
+            self.cpu.stopped = false;
+        }
+
         (self.cpu.memory.ppu_mut().frame_buffer(), cycles_taken as u32)
     }
 
     /// Runs the Gameboy for a single frame.
     pub fn frame(&mut self, joypad_events: Option<&[JoypadEvent]>) {
         let mut cycle = 0;
-        let speed = self.cpu.speed();
+        let speed = self.cpu.speed;
         let num_cycles = Self::cycles_per_frame(speed);
 
         while cycle < num_cycles {
@@ -151,7 +158,7 @@ impl Gameboy {
     }
 
     pub fn speed(&self) -> bool {
-        self.cpu.speed()
+        self.cpu.speed
     }
 
     /// Returns a String containing the serial output of this Gameboy _so far_.
