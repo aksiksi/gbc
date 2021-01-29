@@ -19,19 +19,19 @@ use structopt::StructOpt;
 enum Args {
     #[structopt(about = "Run a ROM on the emulator")]
     Run {
-        #[structopt(parse(from_os_str))]
+        #[structopt(parse(from_os_str), help = "Path to ROM file")]
         rom_file: PathBuf,
 
-        #[structopt(default_value = "6", long)]
+        #[structopt(default_value = "4", long, help = "Emulation resolution multiplier")]
         scale: u32,
 
-        #[structopt(default_value = "1", long)]
+        #[structopt(default_value = "1", long, help = "Emulation speed multiplier")]
         speed: u8,
 
-        #[structopt(long)]
+        #[structopt(long, help = "Boot into the DMG boot ROM")]
         boot_rom: bool,
 
-        #[structopt(long)]
+        #[structopt(long, help = "Trace all instructions to a file in the current directory")]
         trace: bool,
     },
     #[structopt(about = "Inspect a ROM")]
@@ -248,7 +248,6 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
         if !paused {
             // Render a single frame
             handle_frame(&mut gameboy, &mut canvas, &mut texture, &mut joypad_events, outline);
-
         }
 
         let elapsed = frame_start.elapsed();
@@ -288,8 +287,8 @@ fn main() {
                     Ok(c) => c,
                 };
 
-                println!("\nTitle: {}", cartridge.title().unwrap());
-                println!("Manufacturer: {}", cartridge.manufacturer_code().unwrap());
+                println!("\nTitle: {}", cartridge.title().unwrap_or("N/A"));
+                println!("Manufacturer: {}", cartridge.manufacturer_code().unwrap_or("N/A"));
                 println!("GBC support: {}", cartridge.cgb());
                 println!("Cartridge type: {:?}", cartridge.cartridge_type().unwrap());
                 println!("ROM size: {:?}", cartridge.rom_size().unwrap());

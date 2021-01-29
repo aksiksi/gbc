@@ -512,16 +512,14 @@ impl Ppu {
         self.dot = dot;
         self.ly = line;
 
-        if self.lcdc.lcd_display_enable() {
-            // Update the internal PPU status
-            //
-            // This also returns which interrupts need to be triggered
-            let stat_mode_change = self.update_status(mode, interrupts);
+        // Update the internal PPU status
+        //
+        // This also returns which interrupts need to be triggered
+        let stat_mode_change = self.update_status(mode, interrupts);
 
-            if stat_mode_change {
-                // Render data to the frame
-                self.render();
-            }
+        if self.lcdc.lcd_display_enable() && stat_mode_change {
+            // Render data to the frame
+            self.render();
         }
     }
 
@@ -1133,6 +1131,7 @@ impl MemoryRead<u16, u8> for Ppu {
                     self.vram.read(addr)
                 } else {
                     // PPU returns 0xFF if VRAM is locked
+                    log::info!("Blocked VRAM read from 0x{:X}", addr);
                     0xFF
                 }
             }
@@ -1183,6 +1182,8 @@ impl MemoryWrite<u16, u8> for Ppu {
                 if !self.oam_locked() {
                     let idx = (addr - Self::OAM_START_ADDR) as usize;
                     self.oam[idx] = value;
+                } else {
+                    log::info!("Blocked OAM write to 0x{:X}: 0x{:X}", addr, value);
                 }
             }
             Self::LCDC_ADDR => {

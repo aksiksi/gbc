@@ -234,6 +234,8 @@ impl Cpu {
 
         // Then write the instruction
         write!(f, "{:03}:{}:{:#06X} - {}\n\n", bank, memory_type, pc, inst).unwrap();
+
+        f.flush().unwrap();
     }
 
     /// Execute a single step of DMA (if active).
