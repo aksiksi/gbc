@@ -4,6 +4,38 @@
 
 A Gameboy Color (GBC) emulator written in Rust. This is intended as a learning project. 
 
+## Quick Start
+
+### 1. Download
+
+Visit the [Releases](https://github.com/aksiksi/gbc/releases) page and download the latest version for your OS.
+
+### 2. Run
+
+Run a ROM:
+
+```
+gbcemu run [path_to_rom]
+```
+
+Run with `-h` to view all flags and options.
+
+### 3. Play
+
+Controls:
+
+* Arrows for direction keys
+* `S`: A button
+* `A`: B button
+* `Enter`: start button
+* `Shift`: select button
+
+Emulator keys:
+
+* `*`: reset the emulator
+* `O`: draw basic tile outline (toggle)
+* `P`: pause (toggle)
+
 ## Games Tested
 
 - [x] Dr. Mario (DMG, no ROM banking)
@@ -16,14 +48,16 @@ A Gameboy Color (GBC) emulator written in Rust. This is intended as a learning p
 - [x] Dragon Warrior Monsters (GBC, MBC5)
 - [x] The Legend of Zelda: Link's Awakening DX (GBC, MBC5)
 
-## Project Structure
+## Details
+
+### Project Structure
 
 The emulator is divided into two crates:
 
 1. `lib`: the main library for emulating a Gameboy
 2. `emu`: the emulator frontend GUI (using SDL)
 
-## Tests
+### Tests
 
 There are two types of tests:
 
@@ -32,7 +66,7 @@ There are two types of tests:
 
 These tests run on every commit to the repo.
 
-## Building
+### Building
 
 Due to the SDL dependency, you have to install some dependencies before you can build the emulator. Note that SDL is automatically built as part of the Rust-SDL2 build script, but the script needs a few tools:
 
@@ -41,7 +75,7 @@ Due to the SDL dependency, you have to install some dependencies before you can 
 
 Since we statically link against `libsdl` on all platforms to avoid having to ship the DLL with the emulator, you do not need to install SDL for the build.
 
-### Windows
+#### Windows
 
 1. Install the VSC++ build tools: https://visualstudio.microsoft.com/visual-cpp-build-tools/
 2. Install `rustup` (this also installs `rustc` and `cargo`): https://www.rust-lang.org/tools/install
@@ -50,7 +84,7 @@ Since we statically link against `libsdl` on all platforms to avoid having to sh
 
 The full build in release mode (including SDL) on a 10 core Windows VM takes ~1 min.
 
-## Debugger
+### Debugger
 
 The emulator comes with a simple GDB-like debugger CLI. Note that the debugger is not included by default.
 

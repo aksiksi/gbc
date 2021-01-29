@@ -43,11 +43,11 @@ enum Args {
 
 fn keycode_to_joypad_input(keycode: Option<Keycode>) -> Option<JoypadInput> {
     match keycode.unwrap() {
-        // TODO: Make key mapping configurable
-        Keycode::X => Some(JoypadInput::A),
-        Keycode::Z => Some(JoypadInput::B),
-        Keycode::A => Some(JoypadInput::Select),
-        Keycode::S => Some(JoypadInput::Start),
+        // TODO: Make the key mapping configurable
+        Keycode::A => Some(JoypadInput::B),
+        Keycode::S => Some(JoypadInput::A),
+        Keycode::Return | Keycode::KpEnter => Some(JoypadInput::Start),
+        Keycode::RShift | Keycode::LShift => Some(JoypadInput::Select),
         Keycode::Up => Some(JoypadInput::Up),
         Keycode::Down => Some(JoypadInput::Down),
         Keycode::Left => Some(JoypadInput::Left),
@@ -226,7 +226,7 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
                 Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
                     break 'running
                 },
-                Event::KeyDown { keycode: Some(Keycode::R), .. } => {
+                Event::KeyDown { keycode: Some(Keycode::Asterisk), .. } => {
                     // Reset the emulator
                     gameboy.reset();
                 }
