@@ -13,6 +13,8 @@ A Gameboy Color (GBC) emulator written in Rust. This is intended as a learning p
 - [x] Super Mario Bros. Deluxe (GBC, MBC5)
 - [x] Pokemon Yellow (GBC, MBC5)
 - [x] Donkey Kong Country (GBC, MBC5)
+- [x] Dragon Warrior Monsters (GBC, MBC5)
+- [x] The Legend of Zelda: Link's Awakening DX (GBC, MBC5)
 
 ## Project Structure
 

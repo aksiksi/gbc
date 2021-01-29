@@ -122,7 +122,7 @@ impl Ram {
     /// Handle a bank change request
     pub fn set_bank(&mut self, bank: u8) {
         if self.num_banks == 1 {
-            eprintln!("Switching bank on unbanked RAM!");
+            log::warn!("Switching bank on unbanked RAM!");
         }
 
         self.active_bank = bank & (self.num_banks - 1);

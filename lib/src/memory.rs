@@ -250,8 +250,8 @@ impl MemoryRead<u16, u8> for Io {
             }
             0xFF56 => self.rp,
             0xFF03 | 0xFF08..=0xFF0E | 0xFF27..=0xFF2F | 0xFF4C..=0xFF4E | 0xFF57..=0xFF67 | 0xFF6C..=0xFF6F | 0xFF71..=0xFF7F => {
-                // Invalid registers -- ignore writes to these
-                eprintln!("Invalid read from 0x{:X}", addr);
+                // Invalid registers -- ignore reads from these
+                log::warn!("Invalid read from 0x{:X}", addr);
                 0xFF
             }
             _ => unreachable!(),
@@ -314,7 +314,7 @@ impl MemoryWrite<u16, u8> for Io {
             }
             0xFF03 | 0xFF08..=0xFF0E | 0xFF27..=0xFF2F | 0xFF4C..=0xFF4E | 0xFF57..=0xFF67 | 0xFF6C..=0xFF6F | 0xFF71..=0xFF7F => {
                 // Invalid registers -- ignore writes to these
-                eprintln!("Invalid write to 0x{:X}: {}", addr, value)
+                log::warn!("Invalid write to 0x{:X}: {}", addr, value)
             }
             _ => unreachable!(),
         }
