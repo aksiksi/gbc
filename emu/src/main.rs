@@ -135,7 +135,7 @@ fn render_frame(frame_buffer: &FrameBuffer, canvas: &mut Canvas<Window>, texture
 /// At the end of the frame, any input joypad events are passed on to the Gameboy to be
 /// picked up in the next frame.
 fn handle_frame(gameboy: &mut Gameboy, canvas: &mut Canvas<Window>, texture: &mut Texture,
-                joypad_events: &[JoypadEvent], outline: bool) {
+                joypad_events: &mut Vec<JoypadEvent>, outline: bool) {
     // Run the Gameboy until the next frame is ready (i.e., start of VBLANK).
     //
     // This means we run from VBLANK to VBLANK. From the rendering side, it doesn't
@@ -153,6 +153,9 @@ fn handle_frame(gameboy: &mut Gameboy, canvas: &mut Canvas<Window>, texture: &mu
     }
 
     gameboy.update_joypad(Some(joypad_events));
+
+    // Clear out all processed input events
+    joypad_events.clear();
 }
 
 fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
@@ -244,10 +247,8 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
 
         if !paused {
             // Render a single frame
-            handle_frame(&mut gameboy, &mut canvas, &mut texture, &joypad_events, outline);
+            handle_frame(&mut gameboy, &mut canvas, &mut texture, &mut joypad_events, outline);
 
-            // Clear out all processed input events
-            joypad_events.clear();
         }
 
         let elapsed = frame_start.elapsed();

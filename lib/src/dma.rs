@@ -115,17 +115,17 @@ impl DmaController {
         let dest_addr = dest_addr_upper << 8 | dest_addr_lower;
         let dest_addr = 0x8000 + (dest_addr & 0x1FF0); // only bits 12-4 are taken
 
-        let mut start_reg = memory.read(0xFF55);
+        let start_reg = memory.read(0xFF55);
 
         if !self.hdma_active {
             // New transfer is being started
+            self.hdma_active = true;
             self.hdma_length = (start_reg & 0x7F) + 1;
             self.hdma_hblank = start_reg & (1 << 7) != 0;
             self.hdma_chunks_completed = 0;
-            self.hdma_active = true;
 
             // Clear bit 7 to indicate that HDMA is active
-            start_reg &= !1 << 7;
+            memory.io_mut().hdma_reg_write(start_reg & !1 << 7);
         } else {
             // If we are currently in HBLANK HDMA but see that bit 7 has been reset,
             // we need to terminate the transfer.
@@ -216,7 +216,7 @@ impl DmaController {
             // If HBLANK HDMA is still pending, write the remaining transfer
             // length (minus 1) to the lower 7 bits of the start register.
             let remaining_length = self.hdma_length - self.hdma_chunks_completed - 1;
-            memory.io_mut().hdma_reg_write((start_reg & 1 << 7) | remaining_length);
+            memory.io_mut().hdma_reg_write(start_reg | remaining_length);
         }
 
         if speed {

@@ -12,6 +12,7 @@ A Gameboy Color (GBC) emulator written in Rust. This is intended as a learning p
 - [x] Tetris World DX (GBC, MBC1)
 - [x] Super Mario Bros. Deluxe (GBC, MBC5)
 - [x] Pokemon Yellow (GBC, MBC5)
+- [x] Donkey Kong Country (GBC, MBC5)
 
 ## Project Structure
 
