@@ -226,7 +226,7 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
                 Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
                     break 'running
                 },
-                Event::KeyDown { keycode: Some(Keycode::Asterisk), .. } => {
+                Event::KeyDown { keycode: Some(Keycode::KpMultiply), .. } => {
                     // Reset the emulator
                     gameboy.reset();
                 }

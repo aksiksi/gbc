@@ -4,6 +4,8 @@
 
 A Gameboy Color (GBC) emulator written in Rust. This is intended as a learning project. 
 
+![donkey_kong_country](https://user-images.githubusercontent.com/916621/106340437-ca4b0600-6267-11eb-818a-961c4f499110.gif)
+
 ## Quick Start
 
 ### 1. Download
