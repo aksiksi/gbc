@@ -22,6 +22,7 @@ pub trait MemoryWrite<A, V> {
 /// * 0xC000 - 0xCFFF: Bank 0,   4K, static
 /// * 0xD000 - 0xDFFF: Bank 1,   4K  (non-CGB mode)
 /// * 0xD000 - 0xDFFF: Bank 1-7, 4K, switchable (CGB mode)
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 pub struct Ram {
     data: Vec<u8>,
     active_bank: u8,
@@ -109,6 +110,7 @@ impl MemoryWrite<u16, u8> for Ram {
 /// Memory-mapped I/O registers and buffers
 ///
 /// TODO: Move some stuff to PPU
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 pub struct Io {
     /// Joypad register: 0xFF00
     joypad: Joypad,
@@ -343,6 +345,7 @@ impl std::fmt::Display for MemoryType {
     }
 }
 
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 /// 64K memory map for the GBC
 pub struct MemoryBus {
     /// ROM:       0x0000 - 0x7FFF
@@ -362,8 +365,8 @@ pub struct MemoryBus {
     // I/O:        0xFF00 - 0xFF7F
     io: Io,
 
-    /// High RAM:  0xFF80 - 0xFFFE
-    high_ram: [u8; 0x80],
+    /// High RAM:  0xFF80 - 0xFFFE (120 bytes)
+    high_ram: Box<[u8]>,
 
     /// Interrupt enable  - 0xFFFF
     pub int_enable: u8,
@@ -383,7 +386,7 @@ impl MemoryBus {
             ppu: Ppu::new(cgb, false),
             ram: Ram::new(cgb),
             io: Io::new(),
-            high_ram: [0u8; 0x80],
+            high_ram: Box::new([0u8; 0x80]),
             int_enable: 0,
             cgb: true,
             boot_rom: false,
@@ -400,7 +403,7 @@ impl MemoryBus {
             ppu: Ppu::new(cgb, boot_rom),
             ram: Ram::new(cgb),
             io: Io::new(),
-            high_ram: [0u8; 0x80],
+            high_ram: Box::new([0u8; 0x80]),
             int_enable: 0,
             cgb,
             boot_rom,
@@ -417,7 +420,7 @@ impl MemoryBus {
         self.ppu = Ppu::new(cgb, boot_rom);
         self.ram = Ram::new(cgb);
         self.io = Io::new();
-        self.high_ram = [0u8; 0x80];
+        self.high_ram = Box::new([0u8; 0x80]);
         self.int_enable = 0;
     }
 

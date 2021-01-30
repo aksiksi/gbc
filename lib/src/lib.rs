@@ -1,3 +1,4 @@
+use std::fs::File;
 use std::path::Path;
 
 pub mod cartridge;
@@ -22,11 +23,13 @@ use joypad::JoypadEvent;
 use memory::MemoryWrite;
 use ppu::FrameBuffer;
 
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 /// Gameboy
 pub struct Gameboy {
     cpu: Cpu,
 
     #[cfg(feature = "debug")]
+    #[cfg_attr(feature = "save", serde(skip))]
     debugger: debug::Debugger,
 }
 
@@ -144,6 +147,34 @@ impl Gameboy {
     pub fn insert<P: AsRef<Path>>(&mut self, rom_path: P, boot_rom: bool) -> Result<()> {
         let cartridge = Cartridge::from_file(rom_path, boot_rom)?;
         self.cpu = Cpu::from_cartridge(cartridge, false)?;
+        Ok(())
+    }
+
+    /// Load a Gameboy from a save state file on disk.
+    #[cfg(feature = "save")]
+    pub fn load<P: AsRef<Path>, Q: AsRef<Path>>(rom_path: P, save_path: Q) -> Result<Self> {
+        let mut cartridge = Cartridge::from_file(&rom_path, false)?;
+        let file = File::open(save_path)?;
+        let mut gameboy: Self = bincode::deserialize_from(&file).unwrap();
+
+        // Load the Rom onto the memory bus
+        gameboy.cpu.memory.controller().rom.load(&mut cartridge.rom_file)?;
+
+        // Check if we need to create a file for battery-backed cartridge RAM
+        let cartridge_type = cartridge.cartridge_type().unwrap();
+        if cartridge_type.is_battery_backed() {
+            let ram = gameboy.cpu.memory.controller().ram.as_mut().unwrap();
+            ram.with_battery(&rom_path, true)?;
+        }
+
+        Ok(gameboy)
+    }
+
+    /// Dump the current state of this Gameboy to a file on disk.
+    #[cfg(feature = "save")]
+    pub fn dump<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        let mut file = File::create(path)?;
+        bincode::serialize_into(&mut file, self).unwrap();
         Ok(())
     }
 

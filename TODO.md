@@ -47,26 +47,36 @@
     - [x] Pass the list of sprites to each sprite pixel fetch call
     - [x] If pixel has color index 0, try the next sprite in priority order
 - [x] Buffer up serial writes and expose as API on `Gameboy`
-    - [ ] This way, we can run tests in-line w/o calling into the CLI
+    - [x] This way, we can run tests in-line w/o calling into the CLI
 - [x] Add option to load boot ROM (cartridge must be present)
 - [x] Resizeable and scalable window
 - [x] Fix partial sprite rendering at boundaries
     - [x] For example, in Kirby, moving Kirby to the top of the screen leads to it disappearing partially
-- [ ] Add basic logging throughout
-- [ ] Get OAM HDMA working
+- [x] Get OAM HDMA working
+- [x] Get MBC5 controller working
+- [x] Implement HDMA
+- [x] Speed change might need to be handled explicitly
+- [x] Save state support
+    - [x] CPU: serialize as-is w/ register file
+    - [x] Memory: serialize as-is
+    - [x] Controller: serialize everything except the ROM and cartridge RAM
+        - [x] Load the ROM from the cartridge
+        - [x] If the cartridge has battery-backed RAM, create the backing file on save state load
+    - [x] PPU: serialize as-is, including the frame buffer
+    - [x] Timer: serialize as-is
+    - [x] DMA: as-is
 - [ ] Get MBC3 controller working
 - [ ] Implement RTC logic for relevant MBCs
-- [ ] Speed change might need to be handled explicitly
-- [ ] Save state support
-    - [ ] Gameboy: Serialize as-is **at the end of a frame**
-    - [ ] CPU: serialize as-is w/ register file
-    - [ ] Memory: serialize as-is
-    - [ ] Controller: serialize everything except the ROM
-        - [ ] On restore, we will reset the Gameboy anyways, which will ensure that the ROM is loaded and memory is blank
-    - [ ] PPU: serialize as-is
-    - [ ] Timer: serialize as-is
-- [ ] Look into dot clock pauses: https://gbdev.io/pandocs/#properties-of-stat-modes
+- [ ] WASM build
+   - [ ] Identify areas where we will need conditional compilation
+   - [ ] Get a basic WASM build working for the lib
+   - [ ] Simple example of emulator running in JS (no rendering)
 - [ ] FPS counter
     - [x] Static linking SDL2 TTF library does not seem to work on Windows
     - [ ] Find an alternative approach
+- [ ] Split instruction handling into steps and allow all other peripherals to advance (interrupts, timer, PPU, sound, etc.)
+    - [ ] For example, if the arg. is in memory, fetch the arg and return control back to the core Gameboy loop. On next CPU step, execute the instruction.
+- [ ] Add basic logging throughout
 - [ ] Get correct serial timing for interrupt handling
+- [ ] Implement pixel FIFO
+    - [ ] Look into dot clock pauses: https://gbdev.io/pandocs/#properties-of-stat-modes

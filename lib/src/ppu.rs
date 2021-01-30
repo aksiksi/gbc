@@ -52,6 +52,7 @@ pub const LCD_WIDTH: usize = 160;
 pub const LCD_HEIGHT: usize = 144;
 
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 pub struct GameboyRgba {
     pub red: u8,
     pub green: u8,
@@ -103,8 +104,9 @@ static DMG_PALETTE: [GameboyRgba; 4] = [
 ];
 
 /// Buffer that holds pixel data for a single frame.
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 pub struct FrameBuffer {
-    data: Box<[GameboyRgba; LCD_WIDTH * LCD_HEIGHT]>,
+    data: Box<[GameboyRgba]>,
     pub(crate) ready: bool,
 }
 
@@ -133,6 +135,7 @@ impl FrameBuffer {
     }
 }
 
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 pub struct Vram {
     /// DMG: One static bank, 8K
     /// CGB: Two static banks, 8K each
@@ -202,6 +205,7 @@ impl MemoryWrite<u16, u8> for Vram {
 }
 
 #[derive(Clone, Copy)]
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 struct LcdControl {
     /// Raw register value
     pub raw: u8,
@@ -264,6 +268,7 @@ impl LcdControl {
 }
 
 #[derive(Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 #[repr(u8)]
 pub enum StatMode {
     Hblank = 0,
@@ -274,6 +279,7 @@ pub enum StatMode {
 
 /// LCD STAT register
 #[derive(Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 struct LcdStat {
     /// Raw register value
     pub raw: u8,
@@ -321,6 +327,7 @@ impl LcdStat {
 /// Contains raw data for a single sprite in OAM
 ///
 /// Note: y and x coordinates need to be converted
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 struct Sprite {
     pub y: u8,
     pub x: u8,
@@ -328,11 +335,12 @@ struct Sprite {
     pub attr: u8,
 }
 
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 pub struct Ppu {
     /// Video RAM (0x8000 - 0x9FFF)
     pub vram: Vram,
 
-    /// OAM (0xFE00-0xFE9F)
+    /// OAM (0xFE00-0xFE9F, 160 bytes)
     ///
     /// 40 sprites/objects can be loaded into this RAM. Each 4-byte object
     /// consists of:
@@ -346,7 +354,7 @@ pub struct Ppu {
     /// 6. DMG mode palette (1 bit)
     /// 7. Character blank (1 bit)
     /// 8. Color palette (3 bits)
-    pub oam: [u8; 160],
+    pub oam: Box<[u8]>,
 
     /// LCD control register (0xFF40)
     lcdc: LcdControl,
@@ -389,10 +397,10 @@ pub struct Ppu {
     ///
     /// Writes and reads to and from BCPD go directly to this RAM area,
     /// based on the current index in BCPS.
-    bg_palette_ram: [u8; 64],
+    bg_palette_ram: Box<[u8]>,
 
     /// Same as above, but for sprites
-    sprite_palette_ram: [u8; 64],
+    sprite_palette_ram: Box<[u8]>,
 
     /// Buffer for the current frame
     frame_buffer: FrameBuffer,
@@ -435,7 +443,7 @@ impl Ppu {
     pub fn new(cgb: bool, boot_rom: bool) -> Self {
         Self {
             vram: Vram::new(cgb),
-            oam: [0u8; 160],
+            oam: Box::new([0u8; 160]),
             lcdc: LcdControl::new(boot_rom),
             stat: LcdStat::new(),
             scy: 0,
@@ -451,8 +459,8 @@ impl Ppu {
             wx: 0,
             bcps: 0,
             ocps: 0,
-            bg_palette_ram: [0xFF; 64],
-            sprite_palette_ram: [0xFF; 64],
+            bg_palette_ram: Box::new([0xFF; 64]),
+            sprite_palette_ram: Box::new([0xFF; 64]),
             frame_buffer: FrameBuffer::new(),
             sprites: Vec::with_capacity(10),
             dot: 0,

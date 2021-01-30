@@ -1,6 +1,7 @@
 use crate::memory::{MemoryBus, MemoryRead, MemoryWrite};
 use crate::ppu::{Ppu, StatMode};
 
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 pub struct DmaController {
     /// OAM DMA counter
     ///

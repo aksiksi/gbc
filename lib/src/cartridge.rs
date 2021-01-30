@@ -8,6 +8,7 @@ use crate::memory::{MemoryRead, MemoryWrite};
 
 // Cartridge RAM size
 #[derive(Copy, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 #[repr(u8)]
 pub enum RamSize {
     NotPresent,
@@ -49,12 +50,14 @@ impl TryFrom<u8> for RamSize {
 }
 
 /// Cartridge RAM
-#[allow(dead_code)]
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 pub struct Ram {
     data: Vec<u8>,
     pub active_bank: u8,
     num_banks: u8,
     ram_size: RamSize,
+
+    #[cfg_attr(feature = "save", serde(skip))]
     file: Option<File>,
 }
 
@@ -93,12 +96,7 @@ impl Ram {
     }
 
     /// Create a new battery-backed RAM (i.e., save file support).
-    pub fn with_battery<P: AsRef<Path>>(ram_size: RamSize, rom_path: P) -> Result<Option<Self>> {
-        let mut ram = match Self::new(ram_size) {
-            None => return Ok(None),
-            Some(v) => v,
-        };
-
+    pub fn with_battery<P: AsRef<Path>>(&mut self, rom_path: P, overwrite: bool) -> Result<()> {
         let save_path = rom_path.as_ref().with_extension("sav");
         let mut save_file = OpenOptions::new()
             .read(true)
@@ -106,17 +104,21 @@ impl Ram {
             .create(true)
             .open(save_path)?;
 
-        if save_file.metadata()?.len() as usize == ram.data.len() {
-            // If the save file exists, load all data from it into RAM
-            ram.data.clear();
-            save_file.read_to_end(&mut ram.data)?;
+        if save_file.metadata()?.len() as usize == self.data.len() {
+            if !overwrite {
+                // Load all data from the file into RAM
+                save_file.read_exact(&mut self.data)?;
+            } else {
+                // Overwrite the contents of the backing file
+                save_file.write_all(&self.data)?;
+            }
         }
 
-        save_file.set_len(ram.data.len() as u64)?;
+        save_file.set_len(self.data.len() as u64)?;
 
-        ram.file = Some(save_file);
+        self.file = Some(save_file);
 
-        Ok(Some(ram))
+        Ok(())
     }
 
     /// Handle a bank change request
@@ -159,6 +161,7 @@ impl MemoryWrite<u16, u8> for Ram {
 
 /// ROM size
 #[derive(Copy, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 #[repr(u8)]
 pub enum RomSize {
     _32K,
@@ -217,12 +220,14 @@ impl TryFrom<u8> for RomSize {
     }
 }
 
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 /// ROM
 pub struct Rom {
     /// ROM data for all banks
     ///
     /// Bank 0: static, 16K
     /// Bank 1-7: dynamic
+    #[cfg_attr(feature = "save", serde(skip))]
     data: Vec<u8>,
 
     /// Active bank 0 -- used in large MBC1 carts, otherwise always 0
@@ -233,6 +238,9 @@ pub struct Rom {
 
     /// Total number of banks
     num_banks: u16,
+
+    /// Size of ROM
+    rom_size: RomSize,
 }
 
 impl Rom {
@@ -240,35 +248,29 @@ impl Rom {
     pub const BASE_ADDR: u16 = 0x0000;
     pub const LAST_ADDR: u16 = 0x7FFF;
 
-    // TODO: Define method(s) for interrupts and jump vectors
-    // Jump Vectors in first ROM bank
-
     pub fn new(rom_size: RomSize) -> Self {
         let size = usize::from(rom_size);
         let num_banks = size / Self::BANK_SIZE;
 
-        // Construct a `Vec` for all ROM banks based on total ROM size
-        let data = vec![0u8; size];
-
         Self {
-            data,
+            data: Vec::with_capacity(size),
             active_bank_0: 0,
             active_bank_1: 1,
             num_banks: num_banks as u16,
+            rom_size,
         }
     }
 
-    pub fn from_file(rom_size: RomSize, rom_file: &mut File) -> Result<Self> {
-        // Create a ROM with the required size
-        let mut rom = Self::new(rom_size);
+    pub fn load(&mut self, rom_file: &mut File) -> Result<()> {
+        let size = usize::from(self.rom_size);
 
-        // Seek to beginning of the ROM file
+        // Seek to beginning of the ROM file and read all banks
         rom_file.seek(SeekFrom::Start(0))?;
+        rom_file.read_to_end(&mut self.data)?;
 
-        // Read all banks from ROM file
-        rom_file.read_exact(&mut rom.data)?;
+        assert!(self.data.len() == size, "Expected {} bytes in ROM, found {}", size, self.data.len());
 
-        Ok(rom)
+        Ok(())
     }
 
     pub fn update_bank_0(&mut self, bank: u16) {
@@ -350,9 +352,11 @@ impl MemoryRead<u16, u8> for BootRom {
     }
 }
 
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 /// Cartridge ROM + RAM controller.
 pub struct Controller {
     /// Boot ROM
+    #[cfg_attr(feature = "save", serde(skip))]
     pub boot_rom: Option<BootRom>,
 
     /// Cartridge ROM
@@ -390,7 +394,7 @@ impl Controller {
 
         Self {
             boot_rom: None,
-            rom: Rom::new(rom_size),
+            rom: Rom::new(rom_size).into(),
             ram: Ram::new(ram_size),
             rom_size,
             ram_size,
@@ -407,18 +411,17 @@ impl Controller {
         let cartridge_type = cartridge.cartridge_type()?;
         let rom_size = cartridge.rom_size()?;
         let ram_size = cartridge.ram_size()?;
-        let rom = Rom::from_file(rom_size, &mut cartridge.rom_file)?;
+        let rom = cartridge.rom()?;
         let boot_rom = if cartridge.boot_rom {
-            Some(BootRom::new())
+            BootRom::new().into()
         } else {
             None
         };
 
-        let ram = if cartridge_type.is_battery_backed() {
-            Ram::with_battery(ram_size, cartridge.rom_path)?
-        } else {
-            Ram::new(ram_size)
-        };
+        let mut ram = Ram::new(ram_size);
+        if ram.is_some() && cartridge_type.is_battery_backed() {
+            ram.as_mut().unwrap().with_battery(cartridge.rom_path, false)?;
+        }
 
         Ok(Self {
             boot_rom,
@@ -595,6 +598,7 @@ impl MemoryWrite<u16, u8> for Controller {
 
 /// GB/GBC cartridge types
 #[derive(Copy, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 #[repr(u8)]
 pub enum CartridgeType {
     Rom,
@@ -873,6 +877,14 @@ impl Cartridge {
         let upper = self.header[0x4E] as u16;
         let lower = self.header[0x4F] as u16;
         upper << 8 | lower
+    }
+
+    /// Get a Rom from this Cartridge.
+    pub fn rom(&mut self) -> Result<Rom> {
+        let rom_size = self.rom_size().unwrap();
+        let mut rom = Rom::new(rom_size);
+        rom.load(&mut self.rom_file)?;
+        Ok(rom)
     }
 }
 

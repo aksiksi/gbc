@@ -70,6 +70,7 @@ pub enum Flag {
 
 #[allow(non_snake_case)]
 #[derive(Default)]
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 pub struct RegisterFile {
     // Registers
     A: u8,

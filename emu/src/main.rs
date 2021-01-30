@@ -201,7 +201,7 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
                                                      LCD_WIDTH as u32,
                                                      LCD_HEIGHT as u32).unwrap();
 
-    let mut gameboy = Gameboy::init(rom_file, boot_rom, trace).unwrap();
+    let mut gameboy = Gameboy::init(&rom_file, boot_rom, trace).unwrap();
 
     let mut paused = false;
     let mut outline = false;
@@ -235,6 +235,14 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
                 }
                 Event::KeyDown { keycode: Some(Keycode::O), .. } => {
                     outline = !outline;
+                }
+                Event::KeyDown { keycode: Some(Keycode::K), .. } => {
+                    // Save this Gameboy to disk
+                    gameboy.dump("save.state").unwrap();
+                }
+                Event::KeyDown { keycode: Some(Keycode::L), .. } => {
+                    // Load a Gameboy from disk
+                    gameboy = Gameboy::load(&rom_file, "save.state").unwrap();
                 }
                 Event::KeyDown { .. } | Event::KeyUp { .. } => {
                     if let Some(e) = event_to_joypad(event) {

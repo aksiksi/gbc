@@ -1,4 +1,5 @@
 /// Internal CGB timer functionality
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 pub struct Timer {
     /// Divider register (0xFF04)
     ///

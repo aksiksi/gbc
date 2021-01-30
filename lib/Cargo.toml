@@ -5,7 +5,11 @@ authors = ["Assil Ksiksi <cyph0nik@gmail.com>"]
 edition = "2018"
 
 [features]
+default = ["save"]
 debug = []
+save = ["serde", "bincode"]
 
 [dependencies]
 log = "0.4"
+serde = { version = "1", features = ["derive"], optional = true }
+bincode = { version = "1", optional = true }

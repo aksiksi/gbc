@@ -57,6 +57,7 @@ impl JoypadEvent {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 enum JoypadSelection {
     None,
     Buttons,
@@ -64,6 +65,7 @@ enum JoypadSelection {
 }
 
 #[derive(Debug)]
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 pub struct Joypad {
     buttons: u8,
     directions: u8,

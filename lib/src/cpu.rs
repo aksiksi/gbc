@@ -59,20 +59,22 @@ impl HalfCarry<u16> for u16 {
     }
 }
 
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 pub struct Cpu {
     pub registers: RegisterFile,
     pub memory: MemoryBus,
     dma: DmaController,
     pub cgb: bool,
 
-    /// Global interrupt enable flag (Interrupt Master Enable)
-    ime: bool,
-
     pub halted: bool,
     pub stopped: bool,
     pub speed: bool,
 
+    /// Global interrupt enable flag (Interrupt Master Enable)
+    ime: bool,
+
     /// Trace all instructions executed to a file
+    #[cfg_attr(feature = "save", serde(skip))]
     trace: Option<BufWriter<File>>,
 }
 
