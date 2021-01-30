@@ -253,7 +253,7 @@ impl Rom {
         let num_banks = size / Self::BANK_SIZE;
 
         Self {
-            data: Vec::with_capacity(size),
+            data: vec![0; size],
             active_bank_0: 0,
             active_bank_1: 1,
             num_banks: num_banks as u16,
@@ -266,7 +266,13 @@ impl Rom {
 
         // Seek to beginning of the ROM file and read all banks
         rom_file.seek(SeekFrom::Start(0))?;
-        rom_file.read_to_end(&mut self.data)?;
+
+        if self.data.len() == size {
+            rom_file.read_exact(&mut self.data)?;
+        } else {
+            // No data in ROM; read everything from the file
+            rom_file.read_to_end(&mut self.data)?;
+        }
 
         assert!(self.data.len() == size, "Expected {} bytes in ROM, found {}", size, self.data.len());
 
@@ -394,7 +400,7 @@ impl Controller {
 
         Self {
             boot_rom: None,
-            rom: Rom::new(rom_size).into(),
+            rom: Rom::new(rom_size),
             ram: Ram::new(ram_size),
             rom_size,
             ram_size,
@@ -881,7 +887,7 @@ impl Cartridge {
 
     /// Get a Rom from this Cartridge.
     pub fn rom(&mut self) -> Result<Rom> {
-        let rom_size = self.rom_size().unwrap();
+        let rom_size = self.rom_size()?;
         let mut rom = Rom::new(rom_size);
         rom.load(&mut self.rom_file)?;
         Ok(rom)

@@ -161,9 +161,13 @@ impl Gameboy {
         gameboy.cpu.memory.controller().rom.load(&mut cartridge.rom_file)?;
 
         // Check if we need to create a file for battery-backed cartridge RAM
-        let cartridge_type = cartridge.cartridge_type().unwrap();
+        let cartridge_type = cartridge.cartridge_type()?;
         if cartridge_type.is_battery_backed() {
-            let ram = gameboy.cpu.memory.controller().ram.as_mut().unwrap();
+            let ram = match gameboy.cpu.memory.controller().ram.as_mut() {
+                None => panic!("Cartridge is battery-backed, yet save file contains no RAM!"),
+                Some(ram) => ram,
+            };
+
             ram.with_battery(&rom_path, true)?;
         }
 
