@@ -208,9 +208,17 @@ struct LcdControl {
 }
 
 impl LcdControl {
-    pub fn new() -> Self {
+    pub fn new(boot_rom: bool) -> Self {
+        let raw;
+
+        if boot_rom {
+            raw = 0;
+        } else {
+            raw = 0x91;
+        }
+
         Self {
-            raw: 0x91,
+            raw,
         }
     }
 
@@ -424,11 +432,11 @@ impl Ppu {
     const HBLANK_DOTS: u16 = 204;
     const VBLANK_DOTS: u16 = Self::DOTS_PER_LINE * (Self::TOTAL_LINES - Self::VBLANK_START_LINE) as u16;
 
-    pub fn new(cgb: bool) -> Self {
+    pub fn new(cgb: bool, boot_rom: bool) -> Self {
         Self {
             vram: Vram::new(cgb),
             oam: [0u8; 160],
-            lcdc: LcdControl::new(),
+            lcdc: LcdControl::new(boot_rom),
             stat: LcdStat::new(),
             scy: 0,
             scx: 0,

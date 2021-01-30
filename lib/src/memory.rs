@@ -369,6 +369,8 @@ pub struct MemoryBus {
     pub int_enable: u8,
 
     cgb: bool,
+
+    boot_rom: bool,
 }
 
 impl MemoryBus {
@@ -378,36 +380,41 @@ impl MemoryBus {
     pub fn new(cgb: bool) -> Self {
         Self {
             controller: Controller::new(),
-            ppu: Ppu::new(cgb),
+            ppu: Ppu::new(cgb, false),
             ram: Ram::new(cgb),
             io: Io::new(),
             high_ram: [0u8; 0x80],
             int_enable: 0,
             cgb: true,
+            boot_rom: false,
         }
     }
 
     pub fn from_cartridge(cartridge: Cartridge) -> Result<Self> {
         let cgb = cartridge.cgb();
+        let boot_rom = cartridge.boot_rom;
         let controller = Controller::from_cartridge(cartridge)?;
 
         Ok(Self {
             controller,
-            ppu: Ppu::new(cgb),
+            ppu: Ppu::new(cgb, boot_rom),
             ram: Ram::new(cgb),
             io: Io::new(),
             high_ram: [0u8; 0x80],
             int_enable: 0,
             cgb,
+            boot_rom,
         })
     }
 
     /// Reset the memory bus
     pub fn reset(&mut self) {
         let cgb = self.cgb;
+        let boot_rom = self.boot_rom;
 
         self.controller.reset();
-        self.ppu = Ppu::new(cgb);
+
+        self.ppu = Ppu::new(cgb, boot_rom);
         self.ram = Ram::new(cgb);
         self.io = Io::new();
         self.high_ram = [0u8; 0x80];
