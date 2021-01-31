@@ -96,7 +96,7 @@ impl Ram {
     }
 
     /// Create a new battery-backed RAM (i.e., save file support).
-    pub fn with_battery<P: AsRef<Path>>(&mut self, rom_path: P, overwrite: bool) -> Result<()> {
+    pub fn enable_battery<P: AsRef<Path>>(&mut self, rom_path: P, overwrite: bool) -> Result<()> {
         let save_path = rom_path.as_ref().with_extension("sav");
         let mut save_file = OpenOptions::new()
             .read(true)
@@ -267,11 +267,11 @@ impl Rom {
         // Seek to beginning of the ROM file and read all banks
         rom_file.seek(SeekFrom::Start(0))?;
 
-        if self.data.len() == size {
-            rom_file.read_exact(&mut self.data)?;
-        } else {
+        if self.data.len() == 0 {
             // No data in ROM; read everything from the file
             rom_file.read_to_end(&mut self.data)?;
+        } else {
+            rom_file.read_exact(&mut self.data)?;
         }
 
         assert!(self.data.len() == size, "Expected {} bytes in ROM, found {}", size, self.data.len());
@@ -426,7 +426,7 @@ impl Controller {
 
         let mut ram = Ram::new(ram_size);
         if ram.is_some() && cartridge_type.is_battery_backed() {
-            ram.as_mut().unwrap().with_battery(cartridge.rom_path, false)?;
+            ram.as_mut().unwrap().enable_battery(cartridge.rom_path, false)?;
         }
 
         Ok(Self {

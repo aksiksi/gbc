@@ -14,6 +14,39 @@ use sdl2::video::Window;
 
 use structopt::StructOpt;
 
+struct FpsCounter {
+    // FPS calculation
+    start_time: Instant,
+    last_elapsed: Duration,
+    frame_count: u64,
+}
+
+impl FpsCounter {
+    const WEIGHT: f32 = 0.1;
+
+    pub fn new() -> Self {
+        Self {
+            start_time: Instant::now(),
+            last_elapsed: Duration::default(),
+            frame_count: 0,
+        }
+    }
+
+    // Records a new frame and outputs the current FPS
+    pub fn frame(&mut self) -> f32 {
+        self.frame_count += 1;
+
+        let elapsed = self.start_time.elapsed().as_millis() as f32;
+        let last_elapsed = self.last_elapsed.as_millis() as f32;
+        let weighted_duration = elapsed * (1.0 - Self::WEIGHT) + last_elapsed * Self::WEIGHT;
+        let fps = self.frame_count as f32 / (weighted_duration / 1000.0);
+
+        self.last_elapsed = self.start_time.elapsed();
+
+        fps
+    }
+}
+
 #[derive(Debug, StructOpt)]
 #[structopt(about = "A simple GBC emulator")]
 enum Args {
@@ -164,8 +197,6 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
         Some(n) => Some(n.to_str().unwrap()),
     }.unwrap_or("Unknown ROM");
 
-    let title = format!("{} - gbc", rom_name);
-
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
 
@@ -173,7 +204,7 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
     let height = LCD_HEIGHT as u32 * scale;
 
     // Setup an SDL2 Window
-    let window = video_subsystem.window(&title, width, height)
+    let window = video_subsystem.window(rom_name, width, height)
         .position_centered()
         .allow_highdpi()
         .resizable()
@@ -214,6 +245,8 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
 
     let frame_time_ns = Gameboy::FRAME_DURATION / speed as u64;
     let frame_duration = Duration::from_nanos(frame_time_ns);
+
+    let mut fps_counter = FpsCounter::new();
 
     // Start the event loop
     let mut event_pump = sdl_context.event_pump().unwrap();
@@ -260,14 +293,17 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
 
         let elapsed = frame_start.elapsed();
 
-        log::debug!("Frame duration: {:?}", elapsed);
-
         // Sleep for the rest of the frame
         //
         // TODO: Evaluate if we need VSYNC to avoid tearing on higher Hz displays
         if elapsed < frame_duration {
             sleeper.sleep(frame_duration - elapsed);
         }
+
+        // Update FPS counter in window title
+        let fps = fps_counter.frame();
+        let title = format!("{} - {:.2} fps", rom_name, fps);
+        canvas.window_mut().set_title(&title).unwrap();
     }
 }
 

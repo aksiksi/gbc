@@ -168,7 +168,7 @@ impl Gameboy {
                 Some(ram) => ram,
             };
 
-            ram.with_battery(&rom_path, true)?;
+            ram.enable_battery(&rom_path, true)?;
         }
 
         Ok(gameboy)
