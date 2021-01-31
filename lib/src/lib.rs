@@ -10,6 +10,7 @@ pub mod joypad;
 pub mod memory;
 pub mod ppu;
 pub mod registers;
+mod rtc;
 pub mod timer;
 
 #[cfg(feature = "debug")]
@@ -153,23 +154,11 @@ impl Gameboy {
     /// Load a Gameboy from a save state file on disk.
     #[cfg(feature = "save")]
     pub fn load<P: AsRef<Path>, Q: AsRef<Path>>(rom_path: P, save_path: Q) -> Result<Self> {
-        let mut cartridge = Cartridge::from_file(&rom_path, false)?;
         let file = File::open(save_path)?;
         let mut gameboy: Self = bincode::deserialize_from(&file).unwrap();
 
-        // Load the Rom onto the memory bus
-        gameboy.cpu.memory.controller().rom.load(&mut cartridge.rom_file)?;
-
-        // Check if we need to create a file for battery-backed cartridge RAM
-        let cartridge_type = cartridge.cartridge_type()?;
-        if cartridge_type.is_battery_backed() {
-            let ram = match gameboy.cpu.memory.controller().ram.as_mut() {
-                None => panic!("Cartridge is battery-backed, yet save file contains no RAM!"),
-                Some(ram) => ram,
-            };
-
-            ram.enable_battery(&rom_path, true)?;
-        }
+        // Load ROM and any other cartridge-related info
+        gameboy.cpu.memory.controller().load(rom_path)?;
 
         Ok(gameboy)
     }

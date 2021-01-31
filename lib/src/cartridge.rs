@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
 use crate::memory::{MemoryRead, MemoryWrite};
+use crate::rtc::Rtc;
 
 // Cartridge RAM size
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -96,6 +97,9 @@ impl Ram {
     }
 
     /// Create a new battery-backed RAM (i.e., save file support).
+    ///
+    /// If `overwrite` is `true`, overwrite any existing file with the current state. This
+    /// is used when loading from a save state.
     pub fn enable_battery<P: AsRef<Path>>(&mut self, rom_path: P, overwrite: bool) -> Result<()> {
         let save_path = rom_path.as_ref().with_extension("sav");
         let mut save_file = OpenOptions::new()
@@ -104,14 +108,12 @@ impl Ram {
             .create(true)
             .open(save_path)?;
 
-        if save_file.metadata()?.len() as usize == self.data.len() {
-            if !overwrite {
-                // Load all data from the file into RAM
-                save_file.read_exact(&mut self.data)?;
-            } else {
-                // Overwrite the contents of the backing file
-                save_file.write_all(&self.data)?;
-            }
+        if overwrite {
+            // Overwrite the contents of the backing file
+            save_file.write_all(&self.data)?;
+        } else if !overwrite && save_file.metadata()?.len() as usize == self.data.len() {
+            // Load all data from the file into RAM
+            save_file.read_exact(&mut self.data)?;
         }
 
         save_file.set_len(self.data.len() as u64)?;
@@ -380,10 +382,16 @@ pub struct Controller {
     /// Cartridge type
     cartridge_type: CartridgeType,
 
+    /// RTC
+    pub rtc: Option<Rtc>,
+
+    /// If `true`, RTC will be mapped in to cartridge RAM address range
+    rtc_active: bool,
+
     /// Bank mode (simple: false, advanced: true)
     banking_mode: bool,
 
-    /// RAM enable flag
+    /// RAM/RTC enable flag
     ///
     /// If `false`, writes are ignored
     ram_enable: bool,
@@ -405,6 +413,8 @@ impl Controller {
             rom_size,
             ram_size,
             cartridge_type: CartridgeType::Mbc1,
+            rtc: None,
+            rtc_active: false,
             banking_mode: false,
             ram_enable: false,
             ram_rom_bank: 0,
@@ -426,8 +436,16 @@ impl Controller {
 
         let mut ram = Ram::new(ram_size);
         if ram.is_some() && cartridge_type.is_battery_backed() {
-            ram.as_mut().unwrap().enable_battery(cartridge.rom_path, false)?;
+            ram.as_mut().unwrap().enable_battery(&cartridge.rom_path, false)?;
         }
+
+        let rtc = if cartridge_type.is_rtc() {
+            let mut rtc = Rtc::new();
+            rtc.enable_battery(&cartridge.rom_path, false)?;
+            rtc.into()
+        } else {
+            None
+        };
 
         Ok(Self {
             boot_rom,
@@ -436,10 +454,42 @@ impl Controller {
             rom_size,
             ram_size,
             cartridge_type,
+            rtc,
+            rtc_active: false,
             banking_mode: false,
             ram_enable: false,
             ram_rom_bank: 0,
         })
+    }
+
+    #[cfg(feature = "save")]
+    /// Load data into controller from a ROM file
+    pub fn load<P: AsRef<Path>>(&mut self, rom_path: P) -> Result<()> {
+        // Load the ROM contents from disk
+        let mut rom_file = File::open(&rom_path)?;
+        self.rom.load(&mut rom_file)?;
+
+        // Check if we need to create a file for battery-backed cartridge RAM
+        if self.cartridge_type.is_battery_backed() {
+            let ram = match self.ram.as_mut() {
+                None => panic!("Cartridge is battery-backed, yet save file contains no RAM!"),
+                Some(ram) => ram,
+            };
+
+            ram.enable_battery(&rom_path, true)?;
+        }
+
+        // Check if we need to create a file for the RTC
+        if self.cartridge_type.is_rtc() {
+            let rtc = match self.rtc.as_mut() {
+                None => panic!("Cartridge has RTC enabled, yet save file contains no RTC!"),
+                Some(rtc) => rtc,
+            };
+
+            rtc.enable_battery(&rom_path, true)?;
+        }
+
+        Ok(())
     }
 
     /// Reset this controller
@@ -455,7 +505,13 @@ impl MemoryRead<u16, u8> for Controller {
     fn read(&self, addr: u16) -> u8 {
         match addr {
             Rom::BASE_ADDR..=Rom::LAST_ADDR => self.rom.read(addr),
-            Ram::BASE_ADDR..=Ram::LAST_ADDR => self.ram.as_ref().unwrap().read(addr),
+            Ram::BASE_ADDR..=Ram::LAST_ADDR => {
+                if !self.rtc_active {
+                    self.ram.as_ref().unwrap().read(addr)
+                } else {
+                    self.rtc.as_ref().unwrap().read()
+                }
+            }
             _ => unreachable!("Invalid read from 0x{:X}", addr),
         }
     }
@@ -549,7 +605,7 @@ impl MemoryWrite<u16, u8> for Controller {
             }
             0x0000..=0x1FFF if self.cartridge_type.is_mbc3() => {
                 // Cartridge RAM and RTC enable/disable
-                println!("RAM/RTC enable/disable");
+                self.ram_enable = value == 0xA;
             }
             0x2000..=0x3FFF if self.cartridge_type.is_mbc3() => {
                 // MBC3 ROM bank select (7 bit register)
@@ -558,17 +614,23 @@ impl MemoryWrite<u16, u8> for Controller {
                 self.rom.update_bank(value as u16);
             }
             0x4000..=0x5FFF if self.cartridge_type.is_mbc3() => {
-                // MBC3 RAM bank select OR RTC register select (2 bits)
-                let value = value & 0x03;
+                // MBC3 RAM bank select OR RTC register select
+                let value = value & 0x0F;
 
                 match value {
-                    0x0..=0x3 => self.ram.as_mut().unwrap().set_bank(value),
-                    0x8..=0xC => todo!("Enable reading/writing to RTC register"),
+                    0x0..=0x3 => {
+                        self.ram.as_mut().unwrap().set_bank(value);
+                        self.rtc_active = false;
+                    }
+                    0x8..=0xC => {
+                        self.rtc.as_mut().unwrap().select(value);
+                        self.rtc_active = true;
+                    }
                     _ => unreachable!(),
                 }
             }
             0x6000..=0x7FFF if self.cartridge_type.is_mbc3() => {
-                todo!("Latch clock data, write only")
+                self.rtc.as_mut().unwrap().latch(value);
             }
             0x0000..=0x1FFF if self.cartridge_type.is_mbc5() => {
                 // Cartridge RAM enable/disable
@@ -589,10 +651,16 @@ impl MemoryWrite<u16, u8> for Controller {
                 self.ram.as_mut().unwrap().set_bank(value & 0xF);
             }
 
-            // Forward RAM writes as-is
-            Ram::BASE_ADDR..=Ram::LAST_ADDR => {
+            Ram::BASE_ADDR..=Ram::LAST_ADDR if !self.rtc_active => {
+                // Forward RAM writes as-is
                 if self.ram_enable {
                     self.ram.as_mut().unwrap().write(addr, value)
+                }
+            }
+            Ram::BASE_ADDR..=Ram::LAST_ADDR if self.rtc_active => {
+                // If RTC is active, writes go to the RTC registers
+                if self.ram_enable {
+                    self.rtc.as_mut().unwrap().write(value);
                 }
             }
 
@@ -693,6 +761,14 @@ impl CartridgeType {
         use CartridgeType::*;
         match self {
             RomRamBattery | Mbc1RamBattery | Mbc3RamBattery | Mbc3TimerRamBattery | Mbc4RamBattery | Mbc5RamBattery | Mbc5RumbleRamBattery => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_rtc(&self) -> bool {
+        use CartridgeType::*;
+        match self {
+            Mbc3TimerBattery | Mbc3TimerRamBattery => true,
             _ => false,
         }
     }
