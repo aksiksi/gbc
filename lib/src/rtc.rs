@@ -1,15 +1,15 @@
 //! Real-time Clock implementation for MBC3.
 use std::fs::{File, OpenOptions};
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{Seek, SeekFrom};
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 use crate::cpu::Cpu;
 use crate::error::Result;
 
-#[derive(Clone, Copy)]
-#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub struct RtcTime {
     pub seconds: u8,
     pub minutes: u8,
@@ -32,18 +32,15 @@ impl RtcTime {
     }
 }
 
-#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
-/// Real-time Clock implementation for MBC3
-///
-/// On every tick of the clock, the last UTC timestamp is written
-/// to a backing file, if any.
-pub struct Rtc {
+#[derive(Debug, Deserialize, Serialize)]
+struct RtcState {
     /// Current time
     current: RtcTime,
 
     /// Latched time
     latched: RtcTime,
 
+    /// If `true`, a latch operation has been started
     latch_started: bool,
 
     /// Last timestamp
@@ -57,16 +54,9 @@ pub struct Rtc {
 
     /// Selected register
     selected: u8,
-
-    /// Backing file
-    #[cfg_attr(feature = "save", serde(skip))]
-    file: Option<File>,
 }
 
-impl Rtc {
-    // Tick interval for the RTC, in ns
-    const TICK_INTERVAL: u64 = (1e9 / 32768 as f32) as u64;
-
+impl RtcState {
     pub fn new() -> Self {
         Self {
             current: RtcTime::new(),
@@ -76,30 +66,37 @@ impl Rtc {
             tick_cycle: 0,
             cycle: 0,
             selected: 0,
-            file: None,
         }
     }
 
-    pub fn step(&mut self, cycles: u16, speed: bool) {
+    pub fn step(&mut self, cycles: u16, speed: bool) -> bool {
         let cycle_time = Cpu::cycle_time(speed) as u64;
 
         if self.current.halt {
             // Clock is halted
-            return;
+            self.timestamp = Utc::now();
+            return false;
         }
 
         self.cycle += cycles as u64;
 
-        if (self.cycle - self.tick_cycle) / cycle_time >= Self::TICK_INTERVAL {
+        if (self.cycle - self.tick_cycle) / cycle_time >= Rtc::TICK_INTERVAL {
             self.tick();
+            true
+        } else {
+            false
         }
     }
 
     fn tick(&mut self) {
-        self.current.seconds += 1;
+        // Adjust for skew by getting the actual number of seconds
+        // since the last tick
+        let now = Utc::now();
+        let seconds = (now - self.timestamp).num_seconds();
+        self.current.seconds += seconds as u8;
 
         if self.current.seconds > 0x3B {
-            self.current.seconds = 0;
+            self.current.seconds -= 60;
             self.current.minutes += 1;
         }
 
@@ -118,13 +115,8 @@ impl Rtc {
             self.current.carry = true;
         }
 
-        self.timestamp = Utc::now();
+        self.timestamp = now;
         self.tick_cycle = self.cycle;
-
-        if let Some(file) = &mut self.file {
-            file.seek(SeekFrom::Start(0)).unwrap();
-            file.write(self.timestamp.to_rfc3339().as_bytes()).unwrap();
-        }
     }
 
     pub fn select(&mut self, register: u8) {
@@ -210,46 +202,135 @@ impl Rtc {
         }
     }
 
-    /// If an RTC file exists, load timestamp from the file. Otherwise, create a new one.
+    /// Advance the RTC to the current timestamp.
     ///
-    /// Once a timestamp is loaded, adjust current clock based on difference between it and the
+    /// This needs to be done right after loading an RTC state from a file.
+    pub fn advance(&mut self) {
+        let now = Utc::now();
+
+        if self.current.halt {
+            self.timestamp = now;
+            return;
+        }
+
+        let delta = now - self.timestamp;
+
+        // Figure out the number of seconds, minutes, hours, and days that have
+        // occurred since the last RTC timestamp
+        let seconds = delta.num_seconds();
+        assert!(seconds >= 0, "RTC timestamp is more recent than current UTC time");
+        let minutes = seconds / 60;
+        let hours = minutes / 60;
+        let days = hours / 24;
+
+        self.current.seconds = ((self.current.seconds as i64 + seconds) % 60) as u8;
+        self.current.minutes = ((self.current.minutes as i64 + minutes) % 60) as u8;
+        self.current.hours = ((self.current.hours as i64 + hours) % 24) as u8;
+        self.current.days = ((self.current.days as i64 + days) % 512) as u16;
+
+        self.timestamp = now;
+    }
+}
+
+/// Real-time Clock implementation for MBC3
+///
+/// On every tick of the clock, the last UTC timestamp is written
+/// to a backing file, if any.
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
+pub struct Rtc {
+    /// RTC state
+    state: RtcState,
+
+    /// RTC state file
+    #[cfg_attr(feature = "save", serde(skip))]
+    file: Option<File>,
+}
+
+impl Rtc {
+    // RTC tick frequency, in Hz
+    const FREQUENCY: f32 = 32768.0;
+
+    // Tick interval for the RTC, in ns
+    const TICK_INTERVAL: u64 = (1e9 / Self::FREQUENCY) as u64;
+
+    pub fn new() -> Self {
+        Self {
+            state: RtcState::new(),
+            file: None,
+        }
+    }
+
+    pub fn step(&mut self, cycles: u16, speed: bool) {
+        let tick = self.state.step(cycles, speed);
+        if tick {
+            // Serialize RTC state to file after each tick
+            self.dump().unwrap();
+        }
+    }
+
+    pub fn select(&mut self, register: u8) {
+        self.state.select(register);
+    }
+
+    pub fn latch(&mut self, value: u8) {
+        self.state.latch(value);
+    }
+
+    pub fn read(&self) -> u8 {
+        self.state.read()
+    }
+
+    pub fn write(&mut self, value: u8) {
+        self.state.write(value);
+
+        // Serialize RTC state to file after each write
+        self.dump().unwrap();
+    }
+
+    /// Dump current RTC state to a file. The file is overwritten
+    /// every time.
+    fn dump(&mut self) -> Result<()> {
+        if let Some(file) = &mut self.file {
+            file.seek(SeekFrom::Start(0))?;
+            bincode::serialize_into(file, &self.state)?;
+        }
+
+        Ok(())
+    }
+
+    /// If an RTC file exists, load the state it. Otherwise, create a new state.
+    ///
+    /// Once the state is loaded, adjust current clock based on difference between it and the
     /// last timestamp.
     ///
     /// If `overwrite` is `true`, overwrite any existing file with the current state. This
     /// is used when loading from a save state.
-    pub fn enable_battery<P: AsRef<Path>>(&mut self, rom_path: P, overwrite: bool) -> Result<()> {
-        let rtc_path = rom_path.as_ref().with_extension("rtc");
-        let mut rtc_file = OpenOptions::new()
+    pub fn with_file<P: AsRef<Path>>(&mut self, rom_path: P, overwrite: bool) -> Result<()> {
+        let rtc_path = rom_path.as_ref().with_extension("rtcs");
+        let rtc_file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .open(rtc_path)?;
 
+        self.file = Some(rtc_file);
+
+        let rtc_file = self.file.as_mut().unwrap();
+
         if overwrite {
-            // Overwrite the contents of the backing file
-            let s = self.timestamp.to_rfc3339();
-            rtc_file.write_all(s.as_bytes())?;
-            self.file = Some(rtc_file);
-            return Ok(());
+            // Overwrite the contents of the backing file with the current RTC state
+            self.dump()?;
+        } else if rtc_file.metadata()?.len() > 0 {
+            // Load last RTC state from file
+            self.state = bincode::deserialize_from(rtc_file)?;
+
+            // If the RTC was not halted, advance the RTC until the current time in UTC
+            self.state.advance();
+
+            // Persist the updated state to disk
+            self.dump()?;
         }
 
-        let timestamp = if rtc_file.metadata()?.len() != 0 {
-            // Load last timestamp from the file
-            let mut s = String::new();
-            rtc_file.read_to_string(&mut s)?;
-            DateTime::parse_from_rfc3339(&s)
-                .expect("Failed to parse time from file")
-                .with_timezone(&Utc)
-                .into()
-        } else {
-            None
-        };
-
-        if let Some(timestamp) = timestamp {
-
-        }
-
-        // TODO
         Ok(())
     }
 }

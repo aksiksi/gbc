@@ -7,10 +7,10 @@ edition = "2018"
 [features]
 default = ["save"]
 debug = []
-save = ["serde", "bincode", "chrono/serde"]
+save = []
 
 [dependencies]
 log = "0.4"
-chrono = { version = "0.4" }
-serde = { version = "1", features = ["derive"], optional = true }
-bincode = { version = "1", optional = true }
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+bincode = { version = "1" }

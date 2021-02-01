@@ -441,7 +441,7 @@ impl Controller {
 
         let rtc = if cartridge_type.is_rtc() {
             let mut rtc = Rtc::new();
-            rtc.enable_battery(&cartridge.rom_path, false)?;
+            rtc.with_file(&cartridge.rom_path, false)?;
             rtc.into()
         } else {
             None
@@ -486,7 +486,7 @@ impl Controller {
                 Some(rtc) => rtc,
             };
 
-            rtc.enable_battery(&rom_path, true)?;
+            rtc.with_file(&rom_path, true)?;
         }
 
         Ok(())
