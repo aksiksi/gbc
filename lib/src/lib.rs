@@ -2,15 +2,16 @@ use std::fs::File;
 use std::path::Path;
 
 pub mod cartridge;
-pub mod cpu;
-pub mod dma;
+mod cpu;
+mod dma;
 pub mod error;
-pub mod instructions;
+mod instructions;
 pub mod joypad;
-pub mod memory;
+mod memory;
 pub mod ppu;
-pub mod registers;
-pub mod timer;
+mod registers;
+mod rtc;
+mod timer;
 
 #[cfg(feature = "debug")]
 pub mod debug;
@@ -87,25 +88,17 @@ impl Gameboy {
 
         let mut interrupts = Vec::new();
 
-        // Execute a step of the PPU.
+        // Update the memory bus
         //
-        // The PPU will "catch up" based on what happened in the CPU.
-        self.cpu.memory.ppu_mut().step(cycles_taken, speed, &mut interrupts);
-
-        // Check if a serial interrupt needs to be triggered
+        // Internally, this executes a step for each of:
         //
-        // TODO: This does not happen every cycle, right?
-        if self.cpu.memory.io_mut().serial_interrupt() {
-            // TODO: Implement correct timing for serial interrupts
-            //interrupts.push(Interrupt::Serial);
-        }
+        // 1. PPU
+        // 2. Timer
+        // 3. Serial
+        // 4. RTC (if present)
+        self.cpu.memory.step(cycles_taken, speed, &mut interrupts);
 
-        // Update the internal timer and trigger an interrupt, if needed
-        // Note that the timer may tick multiple times for a single instruction
-        if self.cpu.memory.timer().step(cycles_taken) {
-            interrupts.push(Interrupt::Timer);
-        }
-
+        // Trigger any pending interrupts
         for interrupt in interrupts {
             self.cpu.trigger_interrupt(interrupt);
         }
@@ -153,23 +146,11 @@ impl Gameboy {
     /// Load a Gameboy from a save state file on disk.
     #[cfg(feature = "save")]
     pub fn load<P: AsRef<Path>, Q: AsRef<Path>>(rom_path: P, save_path: Q) -> Result<Self> {
-        let mut cartridge = Cartridge::from_file(&rom_path, false)?;
         let file = File::open(save_path)?;
-        let mut gameboy: Self = bincode::deserialize_from(&file).unwrap();
+        let mut gameboy: Self = bincode::deserialize_from(&file)?;
 
-        // Load the Rom onto the memory bus
-        gameboy.cpu.memory.controller().rom.load(&mut cartridge.rom_file)?;
-
-        // Check if we need to create a file for battery-backed cartridge RAM
-        let cartridge_type = cartridge.cartridge_type()?;
-        if cartridge_type.is_battery_backed() {
-            let ram = match gameboy.cpu.memory.controller().ram.as_mut() {
-                None => panic!("Cartridge is battery-backed, yet save file contains no RAM!"),
-                Some(ram) => ram,
-            };
-
-            ram.enable_battery(&rom_path, true)?;
-        }
+        // Load ROM and any other cartridge-related info
+        gameboy.cpu.memory.controller().load(rom_path)?;
 
         Ok(gameboy)
     }
@@ -178,7 +159,7 @@ impl Gameboy {
     #[cfg(feature = "save")]
     pub fn dump<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         let mut file = File::create(path)?;
-        bincode::serialize_into(&mut file, self).unwrap();
+        bincode::serialize_into(&mut file, self)?;
         Ok(())
     }
 

@@ -1,4 +1,5 @@
 use crate::cartridge::{BootRom, Cartridge, Controller, Ram as CartridgeRam, Rom};
+use crate::cpu::Interrupt;
 use crate::error::Result;
 use crate::joypad::Joypad;
 use crate::ppu::{Ppu, Vram};
@@ -408,6 +409,32 @@ impl MemoryBus {
             cgb,
             boot_rom,
         })
+    }
+
+    pub fn step(&mut self, cycles: u16, speed: bool, interrupts: &mut Vec<Interrupt>) {
+        // Execute a step of the PPU.
+        //
+        // The PPU will "catch up" based on what happened in the CPU.
+        self.ppu.step(cycles, speed, interrupts);
+
+        // Update the internal timer and trigger an interrupt, if needed
+        // Note that the timer may tick multiple times for a single instruction
+        if self.timer().step(cycles) {
+            interrupts.push(Interrupt::Timer);
+        }
+
+        // Check if a serial interrupt needs to be triggered
+        //
+        // TODO: This does not happen every cycle, right?
+        if self.io.serial_interrupt() {
+            // TODO: Implement correct timing for serial interrupts
+            //interrupts.push(Interrupt::Serial);
+        }
+
+        // Update the RTC, if present
+        if let Some(rtc) = self.controller.rtc.as_mut() {
+            rtc.step(cycles, speed);
+        }
     }
 
     /// Reset the memory bus

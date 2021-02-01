@@ -15,13 +15,13 @@ use sdl2::video::Window;
 use structopt::StructOpt;
 
 struct FpsCounter {
-    // FPS calculation
     start_time: Instant,
     last_elapsed: Duration,
     frame_count: u64,
 }
 
 impl FpsCounter {
+    /// The weight for older frames - current frame gets 1 - WEIGHT
     const WEIGHT: f32 = 0.1;
 
     pub fn new() -> Self {
@@ -32,7 +32,7 @@ impl FpsCounter {
         }
     }
 
-    // Records a new frame and outputs the current FPS
+    /// Records a new frame and outputs the current FPS
     pub fn frame(&mut self) -> f32 {
         self.frame_count += 1;
 
@@ -204,7 +204,8 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
     let height = LCD_HEIGHT as u32 * scale;
 
     // Setup an SDL2 Window
-    let window = video_subsystem.window(rom_name, width, height)
+    let window = video_subsystem
+        .window(rom_name, width, height)
         .position_centered()
         .allow_highdpi()
         .resizable()
@@ -214,10 +215,11 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
     // Convert the Window into a Canvas
     // This is what we will use to render content in the Window
     // TODO: Add flag for software vs. GPU
-    let mut canvas = window.into_canvas()
-                           .software()
-                           .build()
-                           .unwrap();
+    let mut canvas = window
+        .into_canvas()
+        .software()
+        .build()
+        .unwrap();
 
     // Fix aspect ratio of canvas
     canvas.set_logical_size(width, height).unwrap();
