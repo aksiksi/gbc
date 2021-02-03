@@ -34,7 +34,9 @@ Controls:
 
 Emulator keys:
 
-* `*`: reset the emulator
+* `K`: save emulator state
+* `L`: load emulator state
+* `;`: reset the emulator
 * `O`: draw basic tile outline (toggle)
 * `P`: pause (toggle)
 
