@@ -391,6 +391,9 @@ pub struct Ppu {
     bcps: u8,
     ocps: u8,
 
+    /// Sprite/object priority mode (0xFF6C)
+    opri: u8,
+
     /// BG color palette RAM:
     ///
     /// * 8 BG palettes     x 4 colors x 2 bytes per color = 64 bytes
@@ -459,6 +462,7 @@ impl Ppu {
             wx: 0,
             bcps: 0,
             ocps: 0,
+            opri: 0,
             bg_palette_ram: Box::new([0xFF; 64]),
             sprite_palette_ram: Box::new([0xFF; 64]),
             frame_buffer: FrameBuffer::new(),
@@ -681,8 +685,11 @@ impl Ppu {
             }
         }
 
-        // Sort according to x-pos
-        if !self.cgb {
+        // Sort according to x-pos in two cases:
+        //
+        // 1. Non-DMG mode
+        // 2. Bit 0 of OPRI is set
+        if !self.cgb || (self.opri & 1 != 0) {
             self.sprites.sort_by(|a, b| {
                 a.x.cmp(&b.x)
             });
@@ -1177,6 +1184,7 @@ impl MemoryRead<u16, u8> for Ppu {
             0xFF69 => self.palette_read(false),
             0xFF6A => self.ocps,
             0xFF6B => self.palette_read(true),
+            0xFF6C => self.opri,
             _ => panic!("Unexpected read from addr {}", addr),
         }
     }
@@ -1252,6 +1260,9 @@ impl MemoryWrite<u16, u8> for Ppu {
                 } else {
                     log::info!("Blocked sprite palette write to 0x{:X}: 0x{:X}", addr, value);
                 }
+            }
+            0xFF6C => {
+                self.opri = value;
             }
             _ => panic!("Unexpected write to addr {} value {}", addr, value),
         }

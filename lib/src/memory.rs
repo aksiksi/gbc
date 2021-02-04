@@ -252,7 +252,7 @@ impl MemoryRead<u16, u8> for Io {
                 self.hdma[idx]
             }
             0xFF56 => self.rp,
-            0xFF03 | 0xFF08..=0xFF0E | 0xFF27..=0xFF2F | 0xFF4C..=0xFF4E | 0xFF57..=0xFF67 | 0xFF6C..=0xFF6F | 0xFF71..=0xFF7F => {
+            0xFF03 | 0xFF08..=0xFF0E | 0xFF27..=0xFF2F | 0xFF4C..=0xFF4E | 0xFF57..=0xFF67 | 0xFF6D..=0xFF6F | 0xFF71..=0xFF7F => {
                 // Invalid registers -- ignore reads from these
                 log::warn!("Invalid read from 0x{:X}", addr);
                 0xFF
@@ -579,7 +579,7 @@ impl MemoryWrite<u16, u8> for MemoryBus {
             0xE000..=0xFDFF => {
                 // Echo RAM
             }
-            Vram::BASE_ADDR..=Vram::LAST_ADDR | 0xFE00..=0xFE9F | 0xFF40..=0xFF4B | 0xFF68..=0xFF6B | Vram::BANK_SELECT_ADDR => {
+            Vram::BASE_ADDR..=Vram::LAST_ADDR | 0xFE00..=0xFE9F | 0xFF40..=0xFF4B | 0xFF68..=0xFF6C | Vram::BANK_SELECT_ADDR => {
                 self.ppu.write(addr, value);
             }
             0xFF80..=0xFFFE => {
