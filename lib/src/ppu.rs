@@ -387,6 +387,12 @@ pub struct Ppu {
     wy: u8,
     wx: u8,
 
+    /// Internal window line counter
+    ///
+    /// Incremented for each line the window is enabled on, and is
+    /// reset at the end of the frame
+    window_line_counter: u8,
+
     /// Color palette index registers (0xFF68-0xFF6B)
     bcps: u8,
     ocps: u8,
@@ -460,6 +466,7 @@ impl Ppu {
             obp1: 0xFF,
             wy: 0,
             wx: 0,
+            window_line_counter: 0,
             bcps: 0,
             ocps: 0,
             opri: 0,
@@ -627,10 +634,24 @@ impl Ppu {
                 //
                 // Both VRAM and OAM are locked in this mode.
                 self.render_scanline();
+
+                // If the window has been drawn on this scanline, increment the
+                // internal window line counter
+                let window_drawn =
+                    self.lcdc.window_display_enable() &&
+                    self.ly >= self.wy &&
+                    159 >= self.wx.wrapping_sub(7);
+
+                if window_drawn {
+                    self.window_line_counter += 1;
+                }
             }
             StatMode::Vblank => {
                 // Mark the frame as ready for rendering
                 self.frame_buffer.ready = true;
+
+                // Reset the window line counter
+                self.window_line_counter = 0;
             }
             _ => (),
         }
@@ -734,7 +755,7 @@ impl Ppu {
             } else {
                 // Window pixel
                 let pixel_x = pixel - self.wx.wrapping_sub(7);
-                let pixel_y = scanline - self.wy;
+                let pixel_y = self.window_line_counter;
                 self.fetch_bg_pixel_data(pixel_x, pixel_y, window_tile_map_base)
             };
 
@@ -822,7 +843,7 @@ impl Ppu {
         let horizontal_flip = (tile_data_attr & (1 << 5)) != 0; // bit 5
         let vertical_flip = (tile_data_attr & (1 << 6)) != 0; // bit 6
         let bg_priority = if self.cgb {
-            (tile_data_attr & (1 << 7)) == 1 // bit 7
+            (tile_data_attr & (1 << 7)) != 0 // bit 7
         } else {
             // On DMG, BG priority is based on the color index
             false
