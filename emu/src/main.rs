@@ -172,23 +172,15 @@ fn handle_frame(gameboy: &mut Gameboy, canvas: &mut Canvas<Window>, texture: &mu
     // Run the Gameboy until the next frame is ready (i.e., start of VBLANK).
     //
     // This means we run from VBLANK to VBLANK. From the rendering side, it doesn't
-    // really matter: as long as the frame is ready, we can render. The emulator
-    // will catch up & process the VBLANK in the next call to this function.
-    loop {
-        // Runs the CPU and all peripherals in lock step for a single "step". The size
-        // of this step is controlled by the CPU based on the last executed instruction.
-        let (frame_buffer, _) = gameboy.step();
-
-        if let Some(frame_buffer) = frame_buffer {
-            render_frame(frame_buffer, canvas, texture, outline);
-            break;
-        }
-    }
-
-    gameboy.update_joypad(Some(joypad_events));
+    // really matter: as long as the frame is ready, we can render it! The emulator
+    // will catch up & process the current VBLANK in the next call to this function.
+    let frame_buffer = gameboy.frame(Some(joypad_events));
 
     // Clear out all processed input events
     joypad_events.clear();
+
+    // Render the frame
+    render_frame(frame_buffer, canvas, texture, outline);
 }
 
 fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {

@@ -92,3 +92,20 @@ From worst to best:
     * With HW, copy time decreases, but render time increases (makes sense)
 * SW w/ streaming texture: ~4 ms, render time goes way down (50 us), but copy overhead remains
 * HW w/ streaming texture: ~2 ms, both render and copy time decrease
+
+# WASM Support
+
+## Cartridge
+
+* Build a `Cartridge` from raw ROM bytes
+    * Remove `rom_path` and `rom_file` fields
+    * Figure out how to handle battery-backed RAM and RTC
+
+In JS:
+
+* Use `FileReader` to read the file in JS and pass that in (or underlying buffer) to WASM
+* Pass the buffer to the Gameboy to initialize it
+
+## Save States
+
+* Use `Vec<u8>` for save state methods. Allow the upper layer to figure out how to handle the raw data.

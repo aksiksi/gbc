@@ -62,17 +62,10 @@ impl Gameboy {
         Ok(gameboy)
     }
 
-    /// Figure out the number of clock cycles we can execute in a single frame
-    #[inline]
-    fn cycles_per_frame(speed: bool) -> u32 {
-        let cycle_time = Cpu::cycle_time(speed);
-        Self::FRAME_DURATION as u32 / cycle_time
-    }
-
     /// Run the Gameboy for a single step.
     ///
-    /// Returns a tuple of: (pointer to `FrameBuffer`, cycles consumed)
-    pub fn step(&mut self) -> (Option<&FrameBuffer>, u32) {
+    /// Returns the number of cycles consumed by the CPU.
+    pub fn step(&mut self) -> u32 {
         let speed = self.cpu.speed;
 
         #[cfg(feature = "debug")]
@@ -109,21 +102,22 @@ impl Gameboy {
             self.cpu.stopped = false;
         }
 
-        (self.cpu.memory.ppu_mut().frame_buffer(), cycles_taken as u32)
+        cycles_taken as u32
     }
 
-    /// Runs the Gameboy for a single frame.
-    pub fn frame(&mut self, joypad_events: Option<&[JoypadEvent]>) {
-        let mut cycle = 0;
-        let speed = self.cpu.speed;
-        let num_cycles = Self::cycles_per_frame(speed);
-
-        while cycle < num_cycles {
-            let (_, cycles_taken) = self.step();
-            cycle += cycles_taken;
+    /// Run the Gameboy until a frame is ready (i.e., start of VBLANK).
+    ///
+    /// Returns a pointer to the frame buffer.
+    pub fn frame(&mut self, joypad_events: Option<&[JoypadEvent]>) -> &FrameBuffer {
+        while !self.cpu.memory.ppu().is_frame_ready() {
+            self.step();
         }
 
         self.update_joypad(joypad_events);
+
+        // This is a clear-on-read operation. That is, the frame will be marked as
+        // "not ready" within this method.
+        self.cpu.memory.ppu_mut().frame_buffer().unwrap()
     }
 
     pub fn update_joypad(&mut self, joypad_events: Option<&[JoypadEvent]>) {

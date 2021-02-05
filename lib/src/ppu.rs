@@ -1143,6 +1143,10 @@ impl Ppu {
             None
         }
     }
+
+    pub fn is_frame_ready(&self) -> bool {
+        self.frame_buffer.ready
+    }
 }
 
 impl MemoryRead<u16, u8> for Ppu {
