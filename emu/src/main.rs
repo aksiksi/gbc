@@ -1,10 +1,12 @@
+use std::fs::OpenOptions;
+use std::io::{BufWriter, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::time::{Instant, Duration};
 
 use gbc::Gameboy;
 use gbc::cartridge::Cartridge;
 use gbc::joypad::{JoypadEvent, JoypadInput};
-use gbc::ppu::{FrameBuffer, GameboyRgba, LCD_WIDTH, LCD_HEIGHT};
+use gbc::ppu::{FrameBuffer, GameboyRgb, LCD_WIDTH, LCD_HEIGHT};
 
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
@@ -133,8 +135,8 @@ fn render_frame(frame_buffer: &FrameBuffer, canvas: &mut Canvas<Window>, texture
         // Draw the rendered frame
         for x in 0..LCD_WIDTH {
             for y in 0..LCD_HEIGHT {
-                let GameboyRgba { red, green, blue, alpha } = frame_buffer.read(x, y);
-                canvas.set_draw_color(Color::RGBA(red, green, blue, alpha));
+                let GameboyRgb { red, green, blue } = frame_buffer.read(x, y);
+                canvas.set_draw_color(Color::RGBA(red, green, blue, 0xFF));
                 canvas.draw_point((x as i32, y as i32)).unwrap();
             }
         }
@@ -169,12 +171,16 @@ fn render_frame(frame_buffer: &FrameBuffer, canvas: &mut Canvas<Window>, texture
 /// picked up in the next frame.
 fn handle_frame(gameboy: &mut Gameboy, canvas: &mut Canvas<Window>, texture: &mut Texture,
                 joypad_events: &mut Vec<JoypadEvent>, outline: bool) {
+    let start = Instant::now();
+
     // Run the Gameboy until the next frame is ready (i.e., start of VBLANK).
     //
     // This means we run from VBLANK to VBLANK. From the rendering side, it doesn't
     // really matter: as long as the frame is ready, we can render it! The emulator
     // will catch up & process the current VBLANK in the next call to this function.
     let frame_buffer = gameboy.frame(Some(joypad_events));
+
+    log::debug!("Emulator time: {:?}", start.elapsed());
 
     // Clear out all processed input events
     joypad_events.clear();
@@ -235,6 +241,15 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
     if let Ok(data) = std::fs::read(persist_path) {
         gameboy.unpersist(&data).expect("Failed to load existing state");
     }
+
+    // Wrap the persist file in a `BufWriter`
+    let persist_file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(persist_path)
+        .unwrap();
+    let mut persist_file = BufWriter::new(persist_file);
 
     let mut paused = false;
     let mut outline = false;
@@ -297,11 +312,14 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
 
             // If state needs to be persisted, do this at the end of each frame.
             if let Some(state) = gameboy.persist() {
-                std::fs::write(persist_path, &state).unwrap();
+                persist_file.seek(SeekFrom::Start(0)).unwrap();
+                persist_file.write_all(&state).unwrap();
             }
         }
 
         let elapsed = frame_start.elapsed();
+
+        log::debug!("Frame time: {:?}", elapsed);
 
         // Sleep for the rest of the frame
         //
