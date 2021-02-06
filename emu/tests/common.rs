@@ -2,7 +2,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use gbc::Gameboy;
+use gbc::{Gameboy, cartridge::Cartridge};
 
 /// Run a single ROM and check each line in stdout using the provided `line_check_fn`
 ///
@@ -16,7 +16,9 @@ pub fn run_single_test_rom(
     timeout: Option<u64>,
     output_check_fn: impl Fn(String) -> Option<bool> + Send + Sync + 'static,
 ) -> bool {
-    let mut gameboy = Gameboy::init(rom_path, false, false).unwrap();
+    let data = std::fs::read(rom_path).unwrap();
+    let cartridge = Cartridge::from_bytes(data, false);
+    let mut gameboy = Gameboy::init(cartridge, false).unwrap();
 
     let start = Instant::now();
     let timeout = Duration::from_secs(timeout.unwrap_or(60)); // Default timeout is 60 seconds

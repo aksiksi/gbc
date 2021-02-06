@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::time::{Instant, Duration};
 
-use gbc::Gameboy;
+use gbc::{Gameboy, GameboyState};
 use gbc::cartridge::Cartridge;
 use gbc::joypad::{JoypadEvent, JoypadInput};
 use gbc::ppu::{FrameBuffer, GameboyRgba, LCD_WIDTH, LCD_HEIGHT};
@@ -226,7 +226,24 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
                                                      LCD_WIDTH as u32,
                                                      LCD_HEIGHT as u32).unwrap();
 
-    let mut gameboy = Gameboy::init(&rom_file, boot_rom, trace).unwrap();
+    let cartridge = get_cartridge(&rom_file, boot_rom);
+    let mut gameboy = Gameboy::init(cartridge, trace).unwrap();
+
+    if let Ok(data) = std::fs::read(rom_file.with_extension("sav")) {
+        let state = GameboyState {
+            ram: Some(&data),
+            ..Default::default()
+        };
+        gameboy.unpersist(state).unwrap();
+    }
+
+    if let Ok(data) = std::fs::read(rom_file.with_extension("rtc")) {
+        let state = GameboyState {
+            rtc: Some(data),
+            ..Default::default()
+        };
+        gameboy.unpersist(state).unwrap();
+    }
 
     let mut paused = false;
     let mut outline = false;
@@ -264,12 +281,15 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
                     outline = !outline;
                 }
                 Event::KeyDown { keycode: Some(Keycode::K), .. } => {
-                    // Save this Gameboy to disk
-                    gameboy.dump("save.state").unwrap();
+                    // Save this Gameboy state to disk
+                    let state = gameboy.dump().unwrap();
+                    std::fs::write("save.state", state).unwrap();
                 }
                 Event::KeyDown { keycode: Some(Keycode::L), .. } => {
-                    // Load a Gameboy from disk
-                    gameboy = Gameboy::load(&rom_file, "save.state").unwrap();
+                    // Load a Gameboy from a save state
+                    let cartridge = get_cartridge(&rom_file, boot_rom);
+                    let data = std::fs::read("save.state").expect("Save state not found!");
+                    gameboy = Gameboy::load(&data, cartridge).unwrap();
                 }
                 Event::KeyDown { .. } | Event::KeyUp { .. } => {
                     if let Some(e) = event_to_joypad(event) {
@@ -283,6 +303,21 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
         if !paused {
             // Render a single frame
             handle_frame(&mut gameboy, &mut canvas, &mut texture, &mut joypad_events, outline);
+
+            // If state needs to be persisted, do this at the end of each frame.
+            //
+            // Note that this is a no-op if nothing needs to be persisted for this ROM.
+            gameboy.persist(|state| {
+                if let Some(ram) = state.ram {
+                    std::fs::write(rom_file.with_extension("sav"), ram).expect("Failed to persist RAM");
+                }
+
+                if let Some(rtc) = state.rtc {
+                    std::fs::write(rom_file.with_extension("rtc"), &rtc).expect("Failed to persist RTC");
+                }
+
+                Ok(())
+            }).unwrap();
         }
 
         let elapsed = frame_start.elapsed();
@@ -301,6 +336,12 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
     }
 }
 
+fn get_cartridge(path: &PathBuf, boot_rom: bool) -> Cartridge {
+    let data = std::fs::read(path).expect("Failed to open ROM file");
+    let cartridge = Cartridge::from_bytes(data, boot_rom);
+    cartridge
+}
+
 fn main() {
     env_logger::init();
 
@@ -317,13 +358,7 @@ fn main() {
         }
         Args::Inspect { rom_file } => {
             for f in &rom_file {
-                let cartridge = match Cartridge::from_file(f, false) {
-                    Err(e) => {
-                        eprintln!("Error reading cartridge: {}", e);
-                        return;
-                    }
-                    Ok(c) => c,
-                };
+                let cartridge = get_cartridge(f, false);
 
                 println!("\nTitle: {}", cartridge.title().unwrap_or("N/A"));
                 println!("Manufacturer: {}", cartridge.manufacturer_code().unwrap_or("N/A"));
