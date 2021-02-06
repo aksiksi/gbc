@@ -626,7 +626,9 @@ impl MemoryWrite<u16, u8> for Controller {
                 }
             }
             0x6000..=0x7FFF if self.cartridge_type.is_mbc3() => {
-                self.rtc.as_mut().unwrap().latch(value);
+                if let Some(rtc) = &mut self.rtc {
+                    rtc.latch(value);
+                }
             }
             0x0000..=0x1FFF if self.cartridge_type.is_mbc5() => {
                 // Cartridge RAM enable/disable
