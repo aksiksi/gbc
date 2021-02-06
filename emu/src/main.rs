@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::time::{Instant, Duration};
 
-use gbc::{Gameboy, GameboyState};
+use gbc::Gameboy;
 use gbc::cartridge::Cartridge;
 use gbc::joypad::{JoypadEvent, JoypadInput};
 use gbc::ppu::{FrameBuffer, GameboyRgba, LCD_WIDTH, LCD_HEIGHT};
@@ -229,20 +229,11 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
     let cartridge = get_cartridge(&rom_file, boot_rom);
     let mut gameboy = Gameboy::init(cartridge, trace).unwrap();
 
-    if let Ok(data) = std::fs::read(rom_file.with_extension("sav")) {
-        let state = GameboyState {
-            ram: Some(&data),
-            ..Default::default()
-        };
-        gameboy.unpersist(state).unwrap();
-    }
+    let persist_path = &rom_file.with_extension("nvm");
 
-    if let Ok(data) = std::fs::read(rom_file.with_extension("rtc")) {
-        let state = GameboyState {
-            rtc: Some(data),
-            ..Default::default()
-        };
-        gameboy.unpersist(state).unwrap();
+    // Load persisted state, if any, into the `Gameboy`
+    if let Ok(data) = std::fs::read(persist_path) {
+        gameboy.unpersist(&data).expect("Failed to load existing state");
     }
 
     let mut paused = false;
@@ -305,19 +296,9 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
             handle_frame(&mut gameboy, &mut canvas, &mut texture, &mut joypad_events, outline);
 
             // If state needs to be persisted, do this at the end of each frame.
-            //
-            // Note that this is a no-op if nothing needs to be persisted for this ROM.
-            gameboy.persist(|state| {
-                if let Some(ram) = state.ram {
-                    std::fs::write(rom_file.with_extension("sav"), ram).expect("Failed to persist RAM");
-                }
-
-                if let Some(rtc) = state.rtc {
-                    std::fs::write(rom_file.with_extension("rtc"), &rtc).expect("Failed to persist RTC");
-                }
-
-                Ok(())
-            }).unwrap();
+            if let Some(state) = gameboy.persist() {
+                std::fs::write(persist_path, &state).unwrap();
+            }
         }
 
         let elapsed = frame_start.elapsed();

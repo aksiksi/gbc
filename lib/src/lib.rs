@@ -13,6 +13,8 @@ mod timer;
 #[cfg(feature = "debug")]
 pub mod debug;
 
+use std::io::Write;
+
 pub use cpu::Cpu;
 use cpu::Interrupt;
 use cartridge::{Cartridge, Controller};
@@ -21,10 +23,10 @@ use joypad::JoypadEvent;
 use memory::MemoryWrite;
 use ppu::FrameBuffer;
 
-#[derive(Default)]
-pub struct GameboyState<'a> {
-    pub ram: Option<&'a [u8]>,
-    pub rtc: Option<Vec<u8>>,
+#[derive(serde::Deserialize, serde::Serialize)]
+struct GameboyState<'a> {
+    ram: Option<&'a [u8]>,
+    rtc: Option<Vec<u8>>,
 }
 
 #[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
@@ -173,7 +175,7 @@ impl Gameboy {
     /// This data can be used by the emulator to "persist" state across runs
     /// of a ROM. Note that it should be sufficient to call this method once
     /// per frame.
-    pub fn state(&self) -> GameboyState {
+    fn state(&self) -> GameboyState {
         let (mut ram_data, mut rtc_data) = (None, None);
 
         if let Some(ram) = &self.cpu.memory.controller().ram {
@@ -197,17 +199,32 @@ impl Gameboy {
         ram.is_some() || rtc.is_some()
     }
 
-    /// If this `Gameboy` requires state to be persisted, the provided callback
-    /// will be triggered with the current state.
-    pub fn persist(&self, persist_fn: impl Fn(GameboyState) -> Result<()>) -> Result<()>{
+    /// Persist `Gameboy` state into a writer.
+    ///
+    /// This is a no-op if nothing needs to be persisted.
+    pub fn persist_into(&self, writer: &mut impl Write) -> Result<()>{
         if self.is_persist_required() {
-            persist_fn(self.state())?;
+            bincode::serialize_into(writer, &self.state())?;
         }
 
         Ok(())
     }
 
-    pub fn unpersist(&mut self, state: GameboyState) -> Result<()> {
+    /// Persist `Gameboy` into a `Vec` of bytes
+    ///
+    /// Returns `None` if nothing needs to be persisted for the current ROM.
+    pub fn persist(&self) -> Option<Vec<u8>> {
+        if self.is_persist_required() {
+            Some(bincode::serialize(&self.state()).expect("Persist failed!"))
+        } else {
+            None
+        }
+    }
+
+    /// Load persisted state into this `Gameboy`.
+    pub fn unpersist(&mut self, data: &[u8]) -> Result<()> {
+        let state: GameboyState = bincode::deserialize(data)?;
+
         if let Some(ram) = state.ram {
             self.cpu.memory.controller_mut().load_ram(ram)?;
         }
