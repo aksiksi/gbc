@@ -68,6 +68,9 @@ enum Args {
 
         #[structopt(long, help = "Trace all instructions to a file in the current directory")]
         trace: bool,
+
+        #[structopt(long, help = "Load emulator from existing save state file (/path/to/rom_file.state)")]
+        load: bool,
     },
     #[structopt(about = "Inspect a ROM")]
     Inspect {
@@ -189,7 +192,7 @@ fn handle_frame(gameboy: &mut Gameboy, canvas: &mut Canvas<Window>, texture: &mu
     render_frame(frame_buffer, canvas, texture, outline);
 }
 
-fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
+fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool, load: bool) {
     let rom_name = match rom_file.file_name() {
         None => None,
         Some(n) => Some(n.to_str().unwrap()),
@@ -233,9 +236,18 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
                                                      LCD_HEIGHT as u32).unwrap();
 
     let cartridge = get_cartridge(&rom_file, boot_rom);
-    let mut gameboy = Gameboy::init(cartridge, trace).unwrap();
 
     let persist_path = &rom_file.with_extension("nvm");
+    let save_state_path = &rom_file.with_extension("state");
+
+    let mut gameboy = if load {
+        // Load the Gameboy from an existing save state
+        let data = std::fs::read(save_state_path).expect("Failed to open save state file");
+        let gameboy = Gameboy::load(&data, cartridge).expect("Failed to load Gameboy from save state");
+        gameboy
+    } else {
+        Gameboy::init(cartridge, trace).unwrap()
+    };
 
     // Load persisted state, if any, into the `Gameboy`
     if let Ok(data) = std::fs::read(persist_path) {
@@ -289,12 +301,14 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
                 Event::KeyDown { keycode: Some(Keycode::K), .. } => {
                     // Save this Gameboy state to disk
                     let state = gameboy.dump().unwrap();
-                    std::fs::write("save.state", state).unwrap();
+                    std::fs::write(save_state_path, state)
+                            .expect("Failed to dump save state to disk");
                 }
                 Event::KeyDown { keycode: Some(Keycode::L), .. } => {
                     // Load a Gameboy from a save state
                     let cartridge = get_cartridge(&rom_file, boot_rom);
-                    let data = std::fs::read("save.state").expect("Save state not found!");
+                    let data = std::fs::read(save_state_path)
+                                       .expect("Save state not found!");
                     gameboy = Gameboy::load(&data, cartridge).unwrap();
                 }
                 Event::KeyDown { .. } | Event::KeyUp { .. } => {
@@ -347,13 +361,13 @@ fn main() {
     let cli = Args::from_args();
 
     match cli {
-        Args::Run { rom_file, scale, speed, boot_rom, trace } => {
+        Args::Run { rom_file, scale, speed, boot_rom, trace, load } => {
             if speed == 0 || speed > 5 {
                 eprintln!("Error: Maximum supported emulator speed is 5x!");
                 return;
             }
 
-            gui(rom_file, scale, speed, boot_rom, trace);
+            gui(rom_file, scale, speed, boot_rom, trace, load);
         }
         Args::Inspect { rom_file } => {
             for f in &rom_file {
