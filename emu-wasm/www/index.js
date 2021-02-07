@@ -1,18 +1,53 @@
 import * as wasm from "gbcemu";
 import { memory } from "gbcemu/gbcemu_bg";
 
-wasm.init()
-
 class Emulator {
     constructor() {
         this.lcd_width = wasm.Gameboy.lcd_width();
         this.lcd_height = wasm.Gameboy.lcd_height();
-        this.canvas = document.getElementById("emulator");
-        this.ctx = this.canvas.getContext("2d");
         this.frameTimer = null;
         this.gameboy = null;
+
+        this.canvas = document.getElementById("emulator");
+        this.ctx = this.canvas.getContext("2d");
+
+        this.startButton = document.getElementById("start");
+        this.pauseButton = document.getElementById("pause");
+        this.resetButton = document.getElementById("reset");
+        this.romPicker = document.getElementById("rompicker");
+
+        this.startButton.onclick = () => {
+            if (this.romPicker.files.length == 0) {
+                alert("Please load a ROM first!");
+                return;
+            }
+
+            const romFile = this.romPicker.files[0];
+            romFile.arrayBuffer().then((buffer) => {
+                this.pause();
+                this.init(buffer);
+                this.start();
+            });
+        };
+
+        this.pauseButton.onclick = () => {
+            if (this.pauseButton.textContent == "Pause") {
+                this.pause();
+                this.pauseButton.textContent = "Resume";
+            } else if (this.pauseButton.textContent == "Resume") {
+                this.start();
+                this.pauseButton.textContent = "Pause";
+            }
+        };
+
+        this.resetButton.onclick = () => {
+            if (this.gameboy != null) {
+                this.gameboy.reset();
+            }
+        };
     }
 
+    // Initialize the emulator from raw ROM data
     init(romBuffer) {
         // Setup a Gameboy from the given ROM file
         const romData = new Uint8Array(romBuffer);
@@ -26,8 +61,11 @@ class Emulator {
         this.frameTimer = window.setInterval(() => this.renderFrame(), 16.7504);
     }
 
-    stop() {
-        clearInterval(this.frameTimer);
+    pause() {
+        if (this.frameTimer != null) {
+            clearInterval(this.frameTimer);
+            this.frameTimer = null;
+        }
     }
 
     renderFrame() {
@@ -61,20 +99,64 @@ class Emulator {
 
         // Render the frame on the canvas at position (0, 0)
         this.ctx.putImageData(imageData, 0, 0);
+    }
 
-        console.log("Rendered a frame!");
+    // Map a raw keycode to a emulator joypad input
+    mapKeyCodeToInput(keycode) {
+        let joypad_input = null;
+
+        switch (keycode) {
+            case "ArrowUp":
+                joypad_input = wasm.JoypadInput.Up;
+                break;
+            case "ArrowDown":
+                joypad_input = wasm.JoypadInput.Down;
+                break;
+            case "ArrowLeft":
+                joypad_input = wasm.JoypadInput.Left;
+                break;
+            case "ArrowRight":
+                joypad_input = wasm.JoypadInput.Right;
+                break;
+            case "KeyS":
+                joypad_input = wasm.JoypadInput.A;
+                break;
+            case "KeyA":
+                joypad_input = wasm.JoypadInput.B;
+                break;
+            case "Enter":
+            case "NumpadEnter":
+                joypad_input = wasm.JoypadInput.Start;
+                break;
+            case "ShiftLeft":
+            case "ShiftRight":
+                joypad_input = wasm.JoypadInput.Select;
+                break;
+            default:
+                // Ignored
+                break;
+        }
+
+        return joypad_input;
+    }
+
+    handleKey(keyevent, down) {
+        const joypad_input = this.mapKeyCodeToInput(keyevent.code);
+
+        if (this.gameboy != null && joypad_input != null) {
+            this.gameboy.joypad_input(joypad_input, down);
+        }
     }
 }
 
-async function handleROM() {
-    const romFile = this.files[0];
-    const romBuffer = await romFile.arrayBuffer();
-    emulator.init(romBuffer);
-    emulator.start();
-}
-
-// Wait for user to upload a ROM
-const romPicker = document.getElementById("rompicker");
-romPicker.addEventListener("change", handleROM, false);;
+wasm.init()
 
 const emulator = new Emulator();
+
+document.addEventListener("keydown", (event) => {
+    emulator.handleKey(event, true);
+});
+
+document.addEventListener("keyup", (event) => {
+    emulator.handleKey(event, false);
+});
