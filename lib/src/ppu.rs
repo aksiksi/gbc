@@ -104,7 +104,7 @@ static DMG_PALETTE: [GameboyRgb; 4] = [
 /// Buffer that holds pixel data for a single frame.
 #[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 pub struct FrameBuffer {
-    data: Box<[GameboyRgb]>,
+    pub data: Box<[GameboyRgb]>,
     pub(crate) ready: bool,
 }
 

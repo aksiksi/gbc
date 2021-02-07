@@ -1,6 +1,6 @@
 use std::convert::TryFrom;
 
-use crate::error::{Error, Result};
+use crate::error::{CartridgeError, Error, Result};
 use crate::memory::{MemoryRead, MemoryWrite};
 use crate::rtc::Rtc;
 
@@ -833,6 +833,35 @@ impl Cartridge {
             data,
             boot_rom,
         }
+    }
+
+    /// Tries to figure out if this is a valid cartridge.
+    pub fn validate(&self) -> Result<()> {
+        if self.title().is_err() {
+            return Err(CartridgeError::Title.into());
+        }
+
+        if self.manufacturer_code().is_err() {
+            return Err(CartridgeError::ManufacturerCode.into());
+        }
+
+        if self.licensee_code().is_err() {
+            return Err(CartridgeError::LicenseeCode.into());
+        }
+
+        if self.cartridge_type().is_err() {
+            return Err(CartridgeError::Type.into());
+        }
+
+        if self.rom_size().is_err() {
+            return Err(CartridgeError::RomSize.into());
+        }
+
+        if self.ram_size().is_err() {
+            return Err(CartridgeError::RamSize.into());
+        }
+
+        Ok(())
     }
 
     /// Nintendo logo
