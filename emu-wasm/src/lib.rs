@@ -100,6 +100,24 @@ impl Gameboy {
         Ok(())
     }
 
+    /// Save the state of the Gameboy
+    pub fn save(&self) -> Result<Box<[u8]>, JsValue> {
+        self.inner
+            .save()
+            .map(|v| v.into_boxed_slice())
+            .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    /// Create a Gameboy from an existing save state
+    pub fn load(data: &[u8], cartridge: Cartridge) -> Result<Gameboy, JsValue> {
+        Gameboy_::load(data, cartridge.0)
+                 .map(|gameboy| Self {
+                     inner: gameboy,
+                     inputs: Vec::new(),
+                 })
+                 .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
     pub fn lcd_width() -> usize {
         LCD_WIDTH
     }

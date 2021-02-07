@@ -1,5 +1,6 @@
 import * as wasm from "gbcemu";
 import { memory } from "gbcemu/gbcemu_bg";
+import { get, set } from "idb-keyval";
 
 class Emulator {
     constructor() {
@@ -7,44 +8,23 @@ class Emulator {
         this.lcd_height = wasm.Gameboy.lcd_height();
         this.frameTimer = null;
         this.gameboy = null;
+        this.romName = null;
 
         this.canvas = document.getElementById("emulator");
         this.ctx = this.canvas.getContext("2d");
 
+        this.romPicker = document.getElementById("rompicker");
         this.startButton = document.getElementById("start");
         this.pauseButton = document.getElementById("pause");
         this.resetButton = document.getElementById("reset");
-        this.romPicker = document.getElementById("rompicker");
+        this.saveStateButton = document.getElementById("save-state");
+        this.loadStateButton = document.getElementById("load-state");
 
-        this.startButton.onclick = () => {
-            if (this.romPicker.files.length == 0) {
-                alert("Please load a ROM first!");
-                return;
-            }
-
-            const romFile = this.romPicker.files[0];
-            romFile.arrayBuffer().then((buffer) => {
-                this.pause();
-                this.init(buffer);
-                this.start();
-            });
-        };
-
-        this.pauseButton.onclick = () => {
-            if (this.pauseButton.textContent == "Pause") {
-                this.pause();
-                this.pauseButton.textContent = "Resume";
-            } else if (this.pauseButton.textContent == "Resume") {
-                this.start();
-                this.pauseButton.textContent = "Pause";
-            }
-        };
-
-        this.resetButton.onclick = () => {
-            if (this.gameboy != null) {
-                this.gameboy.reset();
-            }
-        };
+        this.startButton.onclick = () => this.start();
+        this.pauseButton.onclick = () => this.pause();
+        this.resetButton.onclick = () => this.reset();
+        this.saveStateButton.onclick = () => this.saveState();
+        this.loadStateButton.onclick = () => this.loadState();
     }
 
     // Initialize the emulator from raw ROM data
@@ -56,15 +36,69 @@ class Emulator {
         console.log("Gameboy loaded!");
     }
 
+    async loadRom() {
+        if (this.romPicker.files.length == 0) {
+            alert("Please load a ROM first!");
+            return;
+        }
+
+        const romFile = this.romPicker.files[0];
+        this.romName = romFile.name;
+
+        return await romFile.arrayBuffer();
+    }
+
     start() {
+        this.loadRom().then((romBuffer) => {
+            this.init(romBuffer);
+            this.render();
+        });
+    }
+
+    render() {
+        if (this.frameTimer != null) {
+            clearInterval(this.frameTimer);
+        }
+
         // Start a timer for frame rendering (59.7 FPS)
         this.frameTimer = window.setInterval(() => this.renderFrame(), 16.7504);
     }
 
+    reset() {
+        if (this.gameboy != null) {
+            this.gameboy.reset();
+        }
+    }
+
+    async saveState() {
+        if (this.gameboy != null && this.romName != null) {
+            let buffer = this.gameboy.save();
+            await set(this.romName, buffer);
+        }
+    }
+
+    async loadState() {
+        const romBuffer = await this.loadRom();
+        const romData = new Uint8Array(romBuffer);
+        const cartridge = new wasm.Cartridge(romData);
+        const saveState = await get(this.romName);
+
+        this.gameboy = wasm.Gameboy.load(saveState, cartridge);
+
+        this.render();
+    }
+
     pause() {
-        if (this.frameTimer != null) {
-            clearInterval(this.frameTimer);
-            this.frameTimer = null;
+        if (this.pauseButton.textContent == "Pause") {
+            if (this.frameTimer != null) {
+                clearInterval(this.frameTimer);
+                this.frameTimer = null;
+            }
+
+            this.pauseButton.textContent = "Resume";
+        } else if (this.pauseButton.textContent == "Resume") {
+            this.render();
+            this.pauseButton.textContent = "Pause";
         }
     }
 
@@ -74,13 +108,14 @@ class Emulator {
         const frameBufferPtr = this.gameboy.frame();
 
         // Each pixel in the frame buffer consists of 3 bytes for RGB values
-        const frameBuffer = new Uint8Array(memory.buffer, frameBufferPtr, this.lcd_width * this.lcd_height * 3);
+        const frameBuffer = new Uint8Array(memory.buffer, frameBufferPtr,
+                                           this.lcd_width * this.lcd_height * 3);
 
         // Create an `imageData` to write pixels to
         const imageData = this.ctx.createImageData(this.lcd_width, this.lcd_height);
         const data = imageData.data;
 
-        // Iterate over the frame buffer pixels and write it to the imageData
+        // Iterate over the frame buffer pixels and write each one to the imageData buffer
         for (var x = 0; x < this.lcd_width; x += 1) {
             for (var y = 0; y < this.lcd_height; y += 1) {
                 const source_idx = y * this.lcd_width * 3 + x * 3;
@@ -124,26 +159,28 @@ class Emulator {
             case "KeyA":
                 joypad_input = wasm.JoypadInput.B;
                 break;
-            case "Enter":
-            case "NumpadEnter":
+            case "KeyX":
                 joypad_input = wasm.JoypadInput.Start;
                 break;
-            case "ShiftLeft":
-            case "ShiftRight":
+            case "KeyZ":
                 joypad_input = wasm.JoypadInput.Select;
                 break;
             default:
-                // Ignored
                 break;
         }
 
         return joypad_input;
     }
 
-    handleKey(keyevent, down) {
-        const joypad_input = this.mapKeyCodeToInput(keyevent.code);
+    handleKey(keyEvent, down) {
+        if (this.gameboy == null) {
+            return;
+        }
 
-        if (this.gameboy != null && joypad_input != null) {
+        const keyCode = keyEvent.code;
+        const joypad_input = this.mapKeyCodeToInput(keyCode);
+
+        if (joypad_input != null) {
             this.gameboy.joypad_input(joypad_input, down);
         }
     }
