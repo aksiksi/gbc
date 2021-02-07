@@ -85,7 +85,7 @@ impl Gameboy {
         self.inputs.clear();
     }
 
-    /// Record a joypad input and push it to the emulator in the next frame
+    /// Record a joypad input for the next frame
     pub fn joypad_input(&mut self, input: JoypadInput, down: JsValue) -> Result<(), JsValue> {
         let input = JoypadInput_::from(input);
 
