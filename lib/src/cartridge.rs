@@ -1,9 +1,6 @@
-use std::convert::{TryFrom, TryInto};
-use std::fs::{File, OpenOptions};
-use std::io::{Read, Seek, SeekFrom, Write};
-use std::path::{Path, PathBuf};
+use std::convert::TryFrom;
 
-use crate::error::{Error, Result};
+use crate::error::{CartridgeError, Error, Result};
 use crate::memory::{MemoryRead, MemoryWrite};
 use crate::rtc::Rtc;
 
@@ -34,6 +31,22 @@ impl From<RamSize> for usize {
     }
 }
 
+/// Convert from raw RAM size in bytes to a RAM size variant
+impl TryFrom<usize> for RamSize {
+    type Error = Error;
+
+    fn try_from(size: usize) -> std::result::Result<Self, Self::Error> {
+        match size {
+            x if x == 2 * 1024 => Ok(RamSize::_2K),
+            x if x == 8 * 1024 => Ok(RamSize::_8K),
+            x if x == 32 * 1024 => Ok(RamSize::_32K),
+            x if x == 64 * 1024 => Ok(RamSize::_64K),
+            x if x == 128 * 1024 => Ok(RamSize::_128K),
+            _ => Err(Error::InvalidValue(format!("Invalid RamSize: {}", size))),
+        }
+    }
+}
+
 impl TryFrom<u8> for RamSize {
     type Error = Error;
 
@@ -54,12 +67,9 @@ impl TryFrom<u8> for RamSize {
 #[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 pub struct Ram {
     data: Vec<u8>,
-    pub active_bank: u8,
+    pub(crate) active_bank: u8,
     num_banks: u8,
     ram_size: RamSize,
-
-    #[cfg_attr(feature = "save", serde(skip))]
-    file: Option<File>,
 }
 
 /// 8 KB switchable/banked external RAM
@@ -68,8 +78,8 @@ impl Ram {
     pub const BASE_ADDR: u16 = 0xA000;
     pub const LAST_ADDR: u16 = 0xBFFF;
 
-    pub fn new(ram_size: RamSize) -> Option<Self> {
-        // TODO: Handle MBC2 internal RAM (512 bytes)
+    /// Create empty RAM
+    fn new(ram_size: RamSize) -> Option<Self> {
         match ram_size {
             RamSize::NotPresent => {
                 None
@@ -90,41 +100,40 @@ impl Ram {
                     active_bank: 0,
                     num_banks,
                     ram_size,
-                    file: None,
                 })
             }
         }
     }
 
-    /// Create a new battery-backed RAM (i.e., save file support).
+    /// Create `Ram` from raw bytes
     ///
-    /// If `overwrite` is `true`, overwrite any existing file with the current state. This
-    /// is used when loading from a save state.
-    pub fn enable_battery<P: AsRef<Path>>(&mut self, rom_path: P, overwrite: bool) -> Result<()> {
-        let save_path = rom_path.as_ref().with_extension("sav");
-        let mut save_file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .open(save_path)?;
+    /// This function will return an error if the data does not have
+    /// a valid RAM size.
+    pub fn from_bytes(data: &[u8]) -> Result<Self> {
+        let size = data.len();
+        let ram_size = RamSize::try_from(size)?;
 
-        if overwrite {
-            // Overwrite the contents of the backing file
-            save_file.write_all(&self.data)?;
-        } else if !overwrite && save_file.metadata()?.len() as usize == self.data.len() {
-            // Load all data from the file into RAM
-            save_file.read_exact(&mut self.data)?;
-        }
+        let data = data.to_owned();
+        let num_banks = if ram_size == RamSize::_2K {
+            1
+        } else {
+            (size / Self::BANK_SIZE) as u8
+        };
 
-        save_file.set_len(self.data.len() as u64)?;
+        Ok(Self {
+            data,
+            active_bank: 0,
+            num_banks,
+            ram_size,
+        })
+    }
 
-        self.file = Some(save_file);
-
-        Ok(())
+    pub(crate) fn data(&self) -> &[u8] {
+        &self.data
     }
 
     /// Handle a bank change request
-    pub fn set_bank(&mut self, bank: u8) {
+    pub(crate) fn set_bank(&mut self, bank: u8) {
         if self.num_banks == 1 {
             log::warn!("Switching bank on unbanked RAM!");
         }
@@ -150,14 +159,7 @@ impl MemoryWrite<u16, u8> for Ram {
         let addr = (addr - Self::BASE_ADDR) as usize;
         let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
         let index = bank_offset + addr;
-
         self.data[index] = value;
-
-        if let Some(file) = &mut self.file {
-            // Write through to the save file
-            file.seek(SeekFrom::Start(index as u64)).unwrap();
-            file.write(&[value]).unwrap();
-        }
     }
 }
 
@@ -263,22 +265,28 @@ impl Rom {
         }
     }
 
-    pub fn load(&mut self, rom_file: &mut File) -> Result<()> {
-        let size = usize::from(self.rom_size);
+    /// Construct a `Rom` from raw bytes
+    pub fn from_bytes(data: &[u8], rom_size: RomSize) -> Self {
+        let size = usize::from(rom_size);
+        let num_banks = size / Self::BANK_SIZE;
+        let data = data.to_owned();
 
-        // Seek to beginning of the ROM file and read all banks
-        rom_file.seek(SeekFrom::Start(0))?;
+        assert!(size == data.len());
 
-        if self.data.len() == 0 {
-            // No data in ROM; read everything from the file
-            rom_file.read_to_end(&mut self.data)?;
-        } else {
-            rom_file.read_exact(&mut self.data)?;
+        Self {
+            data,
+            active_bank_0: 0,
+            active_bank_1: 1,
+            num_banks: num_banks as u16,
+            rom_size,
         }
+    }
 
-        assert!(self.data.len() == size, "Expected {} bytes in ROM, found {}", size, self.data.len());
-
-        Ok(())
+    /// Load data into this ROM
+    pub fn load(&mut self, data: Vec<u8>) {
+        let size = usize::from(self.rom_size);
+        assert!(size == data.len());
+        self.data = data;
     }
 
     pub fn update_bank_0(&mut self, bank: u16) {
@@ -365,13 +373,13 @@ impl MemoryRead<u16, u8> for BootRom {
 pub struct Controller {
     /// Boot ROM
     #[cfg_attr(feature = "save", serde(skip))]
-    pub boot_rom: Option<BootRom>,
+    pub(crate) boot_rom: Option<BootRom>,
 
     /// Cartridge ROM
-    pub rom: Rom,
+    pub(crate) rom: Rom,
 
     /// Cartridge RAM
-    pub ram: Option<Ram>,
+    pub(crate) ram: Option<Ram>,
 
     /// ROM size
     rom_size: RomSize,
@@ -383,7 +391,7 @@ pub struct Controller {
     cartridge_type: CartridgeType,
 
     /// RTC
-    pub rtc: Option<Rtc>,
+    pub(crate) rtc: Option<Rtc>,
 
     /// If `true`, RTC will be mapped in to cartridge RAM address range
     rtc_active: bool,
@@ -422,27 +430,22 @@ impl Controller {
     }
 
     /// Create a controller from a `Cartridge`
-    pub fn from_cartridge(mut cartridge: Cartridge) -> Result<Self> {
+    pub fn from_cartridge(cartridge: Cartridge) -> Result<Self> {
         // Extract ROM and RAM info from cartridge header
         let cartridge_type = cartridge.cartridge_type()?;
         let rom_size = cartridge.rom_size()?;
         let ram_size = cartridge.ram_size()?;
-        let rom = cartridge.rom()?;
+        let rom = Rom::from_bytes(&cartridge.data, rom_size);
         let boot_rom = if cartridge.boot_rom {
             BootRom::new().into()
         } else {
             None
         };
 
-        let mut ram = Ram::new(ram_size);
-        if ram.is_some() && cartridge_type.is_battery_backed() {
-            ram.as_mut().unwrap().enable_battery(&cartridge.rom_path, false)?;
-        }
+        let ram = Ram::new(ram_size);
 
         let rtc = if cartridge_type.is_rtc() {
-            let mut rtc = Rtc::new();
-            rtc.with_file(&cartridge.rom_path, false)?;
-            rtc.into()
+            Rtc::new().into()
         } else {
             None
         };
@@ -462,40 +465,33 @@ impl Controller {
         })
     }
 
-    #[cfg(feature = "save")]
-    /// Load data into controller from a ROM file
-    pub fn load<P: AsRef<Path>>(&mut self, rom_path: P) -> Result<()> {
-        // Load the ROM contents from disk
-        let mut rom_file = File::open(&rom_path)?;
-        self.rom.load(&mut rom_file)?;
-
-        // Check if we need to create a file for battery-backed cartridge RAM
-        if self.cartridge_type.is_battery_backed() {
-            let ram = match self.ram.as_mut() {
-                None => panic!("Cartridge is battery-backed, yet save file contains no RAM!"),
-                Some(ram) => ram,
-            };
-
-            ram.enable_battery(&rom_path, true)?;
-        }
-
-        // Check if we need to create a file for the RTC
-        if self.cartridge_type.is_rtc() {
-            let rtc = match self.rtc.as_mut() {
-                None => panic!("Cartridge has RTC enabled, yet save file contains no RTC!"),
-                Some(rtc) => rtc,
-            };
-
-            rtc.with_file(&rom_path, true)?;
-        }
-
+    /// Load raw RAM data into this controller
+    pub fn load_ram(&mut self, data: &[u8]) -> Result<()> {
+        let ram = Ram::from_bytes(data)?;
+        self.ram.replace(ram);
         Ok(())
+    }
+
+    /// Load raw RTC data into this controller
+    pub fn load_rtc(&mut self, data: &[u8]) -> Result<()> {
+        let mut rtc = Rtc::from_bytes(data)?;
+        rtc.advance();
+        self.rtc.replace(rtc);
+        Ok(())
+    }
+
+    /// Load data into this controller from raw ROM data
+    ///
+    /// This is used by the save state feature.
+    #[cfg(feature = "save")]
+    pub(crate) fn load_rom(&mut self, data: Vec<u8>) {
+        self.rom.load(data);
     }
 
     /// Reset this controller
     ///
-    /// ROM remains unchanged, RAM is reset
-    pub fn reset(&mut self) {
+    /// ROM remains unchanged, while the RAM is reset
+    pub(crate) fn reset(&mut self) {
         self.ram = Ram::new(self.ram_size);
     }
 }
@@ -630,7 +626,9 @@ impl MemoryWrite<u16, u8> for Controller {
                 }
             }
             0x6000..=0x7FFF if self.cartridge_type.is_mbc3() => {
-                self.rtc.as_mut().unwrap().latch(value);
+                if let Some(rtc) = &mut self.rtc {
+                    rtc.latch(value);
+                }
             }
             0x0000..=0x1FFF if self.cartridge_type.is_mbc5() => {
                 // Cartridge RAM enable/disable
@@ -821,62 +819,64 @@ impl TryFrom<u8> for CartridgeType {
 }
 
 pub struct Cartridge {
-    /// ROM file
-    pub rom_file: File,
-    pub rom_path: PathBuf,
+    /// Raw cartridge data
+    pub(crate) data: Vec<u8>,
 
     /// If `true`, boot ROM is executed on boot/reset,
     /// prior to loading the game
-    pub boot_rom: bool,
-
-    /// Cartridge header
-    ///
-    /// See: https://gbdev.gg8.se/wiki/articles/The_Cartridge_Header
-    pub header: [u8; Self::HEADER_SIZE],
+    pub(crate) boot_rom: bool,
 }
 
 impl Cartridge {
-    const HEADER_SIZE: usize = 0x50; // bytes
-    const HEADER_OFFSET: u64 = 0x100;
-
-    pub fn from_file<P: AsRef<Path>>(path: P, boot_rom: bool) -> Result<Self> {
-        let mut rom_file = File::open(&path)?;
-        let rom_path = PathBuf::from(path.as_ref());
-        let mut header = [0u8; Self::HEADER_SIZE];
-
-        // Read the header in
-        rom_file.seek(SeekFrom::Start(Self::HEADER_OFFSET))?;
-        rom_file.read(&mut header)?;
-
-        let cartridge = Self {
-            rom_file,
-            rom_path,
+    pub fn from_bytes(data: Vec<u8>, boot_rom: bool) -> Self {
+        Self {
+            data,
             boot_rom,
-            header,
-        };
-
-        Ok(cartridge)
+        }
     }
 
-    /// Entry point
-    pub fn entry_point(&self) -> [u8; 4] {
-        let raw = &self.header[0..=3];
-        raw.try_into().unwrap()
+    /// Tries to figure out if this is a valid cartridge.
+    pub fn validate(&self) -> Result<()> {
+        if self.title().is_err() {
+            return Err(CartridgeError::Title.into());
+        }
+
+        if self.manufacturer_code().is_err() {
+            return Err(CartridgeError::ManufacturerCode.into());
+        }
+
+        if self.licensee_code().is_err() {
+            return Err(CartridgeError::LicenseeCode.into());
+        }
+
+        if self.cartridge_type().is_err() {
+            return Err(CartridgeError::Type.into());
+        }
+
+        if self.rom_size().is_err() {
+            return Err(CartridgeError::RomSize.into());
+        }
+
+        if self.ram_size().is_err() {
+            return Err(CartridgeError::RamSize.into());
+        }
+
+        Ok(())
     }
 
     /// Nintendo logo
     pub fn logo(&self) -> &[u8] {
-        &self.header[4..=0x33]
+        &self.data[0x104..=0x133]
     }
 
     /// Game title (uppercase ASCII)
     pub fn title(&self) -> Result<&str> {
-        let raw = &self.header[0x34..0x43];
+        let raw = &self.data[0x134..0x143];
         Ok(std::str::from_utf8(raw)?)
     }
 
     pub fn manufacturer_code(&self) -> Result<&str> {
-        let raw = &self.header[0x3F..=0x42];
+        let raw = &self.data[0x13F..=0x142];
         Ok(std::str::from_utf8(raw)?)
     }
 
@@ -884,7 +884,7 @@ impl Cartridge {
     /// `false`: supports old functions
     /// `true`: CGB only
     pub fn cgb(&self) -> bool {
-        let cgb = self.header[0x43];
+        let cgb = self.data[0x143];
         match cgb {
             0x80 | 0xC0 => true,
             _ => false,
@@ -892,7 +892,7 @@ impl Cartridge {
     }
 
     pub fn licensee_code(&self) -> Result<&str> {
-        let raw = &self.header[0x44..=0x45];
+        let raw = &self.data[0x144..=0x145];
         let code: &str = std::str::from_utf8(raw)?;
 
         Ok(match code {
@@ -906,7 +906,7 @@ impl Cartridge {
 
     /// SGB flag
     pub fn sgb(&self) -> bool {
-        let sgb = self.header[0x46];
+        let sgb = self.data[0x146];
         match sgb {
             0x0 => false,
             0x3 => true,
@@ -916,24 +916,24 @@ impl Cartridge {
 
     /// Cartridge type
     pub fn cartridge_type(&self) -> Result<CartridgeType> {
-        CartridgeType::try_from(self.header[0x47])
+        CartridgeType::try_from(self.data[0x147])
     }
 
     /// ROM size
     pub fn rom_size(&self) -> Result<RomSize> {
-        RomSize::try_from(self.header[0x48])
+        RomSize::try_from(self.data[0x148])
     }
 
     /// RAM size
     pub fn ram_size(&self) -> Result<RamSize> {
-        RamSize::try_from(self.header[0x49])
+        RamSize::try_from(self.data[0x149])
     }
 
     /// Destination code
     ///
     /// `true` if Japanese, `false` otherwise
     pub fn destination_code(&self) -> bool {
-        let code = self.header[0x4A];
+        let code = self.data[0x14A];
         match code {
             0x0 => true,
             0x1 => false,
@@ -942,13 +942,13 @@ impl Cartridge {
     }
 
     pub fn header_checksum(&self) -> u8 {
-        self.header[0x4D]
+        self.data[0x14D]
     }
 
     /// Returns `true` if computed checksum matches the header checksum
     pub fn verify_header_checksum(&self) -> bool {
         let mut checksum: u8 = 0;
-        for b in &self.header[0x34..=0x4C] {
+        for b in &self.data[0x134..=0x14C] {
             checksum = checksum.wrapping_sub(*b).wrapping_sub(1);
         }
 
@@ -956,22 +956,18 @@ impl Cartridge {
     }
 
     pub fn global_checksum(&self) -> u16 {
-        let upper = self.header[0x4E] as u16;
-        let lower = self.header[0x4F] as u16;
+        let upper = self.data[0x14E] as u16;
+        let lower = self.data[0x14F] as u16;
         upper << 8 | lower
-    }
-
-    /// Get a Rom from this Cartridge.
-    pub fn rom(&mut self) -> Result<Rom> {
-        let rom_size = self.rom_size()?;
-        let mut rom = Rom::new(rom_size);
-        rom.load(&mut self.rom_file)?;
-        Ok(rom)
     }
 }
 
 #[cfg(test)]
 mod test {
+    use std::fs::File;
+    use std::io::Read;
+    use std::path::Path;
+
     use super::*;
 
     #[test]
@@ -981,7 +977,11 @@ mod test {
             .join("samples")
             .join("pokemon_gold.gbc");
 
-        let cartridge = Cartridge::from_file(&sample_rom_path, false).unwrap();
+        let mut file = File::open(sample_rom_path).unwrap();
+        let mut data = Vec::new();
+        file.read_to_end(&mut data).unwrap();
+
+        let cartridge = Cartridge::from_bytes(data, false);
 
         // Info: https://datacrystal.romhacking.net/wiki/Pok%C3%A9mon_Gold_and_Silver
         assert_eq!(cartridge.title().unwrap(), "POKEMON_GLDAAUE");

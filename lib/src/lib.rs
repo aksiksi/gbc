@@ -1,6 +1,3 @@
-use std::fs::File;
-use std::path::Path;
-
 pub mod cartridge;
 mod cpu;
 mod dma;
@@ -16,13 +13,21 @@ mod timer;
 #[cfg(feature = "debug")]
 pub mod debug;
 
+use std::io::Write;
+
 pub use cpu::Cpu;
 use cpu::Interrupt;
-use cartridge::Cartridge;
+use cartridge::{Cartridge, Controller};
 pub use error::{Error, Result};
 use joypad::JoypadEvent;
 use memory::MemoryWrite;
 use ppu::FrameBuffer;
+
+#[derive(serde::Deserialize, serde::Serialize)]
+struct GameboyState<'a> {
+    ram: Option<&'a [u8]>,
+    rtc: Option<Vec<u8>>,
+}
 
 #[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 /// Gameboy
@@ -40,12 +45,8 @@ impl Gameboy {
     /// Frame duration, in ns
     pub const FRAME_DURATION: u64 = ((1f64 / Self::FRAME_FREQUENCY) * 1e9) as u64;
 
-    /// Initialize the emulator with an optional ROM.
-    ///
-    /// If no ROM is provided, the emulator will boot into the CGB BIOS ROM. You can
-    /// use `Self::insert` to load a cartridge later.
-    pub fn init<P: AsRef<Path>>(rom_path: P, boot_rom: bool, trace: bool) -> Result<Self> {
-        let cartridge = Cartridge::from_file(rom_path, boot_rom)?;
+    /// Initialize the emulator from a `Cartridge`.
+    pub fn init(cartridge: Cartridge, trace: bool) -> Result<Self> {
         let cpu = Cpu::from_cartridge(cartridge, trace)?;
 
         #[cfg(feature = "debug")]
@@ -131,30 +132,28 @@ impl Gameboy {
     }
 
     /// Insert a new cartridge and reset the emulator
-    pub fn insert<P: AsRef<Path>>(&mut self, rom_path: P, boot_rom: bool) -> Result<()> {
-        let cartridge = Cartridge::from_file(rom_path, boot_rom)?;
+    pub fn insert(&mut self, cartridge: Cartridge) -> Result<()> {
         self.cpu = Cpu::from_cartridge(cartridge, false)?;
         Ok(())
     }
 
-    /// Load a Gameboy from a save state file on disk.
+    /// Load a Gameboy from a save state and a `Cartridge`.
     #[cfg(feature = "save")]
-    pub fn load<P: AsRef<Path>, Q: AsRef<Path>>(rom_path: P, save_path: Q) -> Result<Self> {
-        let file = File::open(save_path)?;
-        let mut gameboy: Self = bincode::deserialize_from(&file)?;
+    pub fn load(save_data: &[u8], cartridge: Cartridge) -> Result<Self> {
+        let mut gameboy: Self = bincode::deserialize_from(save_data)?;
 
         // Load ROM and any other cartridge-related info
-        gameboy.cpu.memory.controller().load(rom_path)?;
+        gameboy.cpu.memory.controller_mut().load_rom(cartridge.data);
 
         Ok(gameboy)
     }
 
-    /// Dump the current state of this Gameboy to a file on disk.
+    /// Dump the current state of this Gameboy to a byte `Vec`.
     #[cfg(feature = "save")]
-    pub fn dump<P: AsRef<Path>>(&self, path: P) -> Result<()> {
-        let mut file = File::create(path)?;
-        bincode::serialize_into(&mut file, self)?;
-        Ok(())
+    pub fn dump(&self) -> Result<Vec<u8>> {
+        let mut data = Vec::new();
+        bincode::serialize_into(&mut data, &self)?;
+        Ok(data)
     }
 
     /// Reset the emulator
@@ -167,8 +166,74 @@ impl Gameboy {
         &mut self.cpu
     }
 
-    pub fn speed(&self) -> bool {
-        self.cpu.speed
+    pub fn controller(&mut self) -> &mut Controller {
+        self.cpu.memory.controller_mut()
+    }
+
+    /// Returns raw cartridge RAM and RTC state
+    ///
+    /// This data can be used by the emulator to "persist" state across runs
+    /// of a ROM. Note that it should be sufficient to call this method once
+    /// per frame.
+    fn state(&self) -> GameboyState {
+        let (mut ram_data, mut rtc_data) = (None, None);
+
+        if let Some(ram) = &self.cpu.memory.controller().ram {
+            ram_data = Some(ram.data());
+        }
+
+        if let Some(rtc) = &self.cpu.memory.controller().rtc {
+            rtc_data = Some(rtc.dump());
+        }
+
+        GameboyState {
+            ram: ram_data,
+            rtc: rtc_data,
+        }
+    }
+
+    #[inline]
+    pub fn is_persist_required(&self) -> bool {
+        let ram = &self.cpu.memory.controller().ram;
+        let rtc = &self.cpu.memory.controller().rtc;
+        ram.is_some() || rtc.is_some()
+    }
+
+    /// Persist `Gameboy` state into a writer.
+    ///
+    /// This is a no-op if nothing needs to be persisted.
+    pub fn persist_into(&self, writer: &mut impl Write) -> Result<()>{
+        if self.is_persist_required() {
+            bincode::serialize_into(writer, &self.state())?;
+        }
+
+        Ok(())
+    }
+
+    /// Persist `Gameboy` into a `Vec` of bytes
+    ///
+    /// Returns `None` if nothing needs to be persisted for the current ROM.
+    pub fn persist(&self) -> Option<Vec<u8>> {
+        if self.is_persist_required() {
+            Some(bincode::serialize(&self.state()).expect("Persist failed!"))
+        } else {
+            None
+        }
+    }
+
+    /// Load persisted state into this `Gameboy`.
+    pub fn unpersist(&mut self, data: &[u8]) -> Result<()> {
+        let state: GameboyState = bincode::deserialize(data)?;
+
+        if let Some(ram) = state.ram {
+            self.cpu.memory.controller_mut().load_ram(ram)?;
+        }
+
+        if let Some(rtc) = state.rtc {
+            self.cpu.memory.controller_mut().load_rtc(&rtc)?;
+        }
+
+        Ok(())
     }
 
     /// Returns a String containing the serial output of this Gameboy _so far_.

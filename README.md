@@ -59,7 +59,8 @@ Emulator keys:
 The emulator is divided into two crates:
 
 1. `lib`: the main library for emulating a Gameboy
-2. `emu`: the emulator frontend GUI (using SDL)
+2. `emu`: emulator frontend GUI written in SDL (runs on macOS, Windows, and Linux)
+3. `emu-wasm`: `lib` compiled to WASM and running on a Canvas 2D in JS
 
 ### Tests
 

@@ -483,7 +483,11 @@ impl MemoryBus {
         }
     }
 
-    pub fn controller(&mut self) -> &mut Controller {
+    pub fn controller(&self) -> &Controller {
+        &self.controller
+    }
+
+    pub fn controller_mut(&mut self) -> &mut Controller {
         &mut self.controller
     }
 

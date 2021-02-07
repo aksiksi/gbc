@@ -1,10 +1,12 @@
+use std::fs::OpenOptions;
+use std::io::{BufWriter, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::time::{Instant, Duration};
 
 use gbc::Gameboy;
 use gbc::cartridge::Cartridge;
 use gbc::joypad::{JoypadEvent, JoypadInput};
-use gbc::ppu::{FrameBuffer, GameboyRgba, LCD_WIDTH, LCD_HEIGHT};
+use gbc::ppu::{FrameBuffer, GameboyRgb, LCD_WIDTH, LCD_HEIGHT};
 
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
@@ -66,6 +68,9 @@ enum Args {
 
         #[structopt(long, help = "Trace all instructions to a file in the current directory")]
         trace: bool,
+
+        #[structopt(long, help = "Load emulator from existing save state file (/path/to/rom_file.state)")]
+        load: bool,
     },
     #[structopt(about = "Inspect a ROM")]
     Inspect {
@@ -133,8 +138,8 @@ fn render_frame(frame_buffer: &FrameBuffer, canvas: &mut Canvas<Window>, texture
         // Draw the rendered frame
         for x in 0..LCD_WIDTH {
             for y in 0..LCD_HEIGHT {
-                let GameboyRgba { red, green, blue, alpha } = frame_buffer.read(x, y);
-                canvas.set_draw_color(Color::RGBA(red, green, blue, alpha));
+                let GameboyRgb { red, green, blue } = frame_buffer.read(x, y);
+                canvas.set_draw_color(Color::RGBA(red, green, blue, 0xFF));
                 canvas.draw_point((x as i32, y as i32)).unwrap();
             }
         }
@@ -169,12 +174,16 @@ fn render_frame(frame_buffer: &FrameBuffer, canvas: &mut Canvas<Window>, texture
 /// picked up in the next frame.
 fn handle_frame(gameboy: &mut Gameboy, canvas: &mut Canvas<Window>, texture: &mut Texture,
                 joypad_events: &mut Vec<JoypadEvent>, outline: bool) {
+    let start = Instant::now();
+
     // Run the Gameboy until the next frame is ready (i.e., start of VBLANK).
     //
     // This means we run from VBLANK to VBLANK. From the rendering side, it doesn't
     // really matter: as long as the frame is ready, we can render it! The emulator
     // will catch up & process the current VBLANK in the next call to this function.
     let frame_buffer = gameboy.frame(Some(joypad_events));
+
+    log::debug!("Emulator time: {:?}", start.elapsed());
 
     // Clear out all processed input events
     joypad_events.clear();
@@ -183,7 +192,7 @@ fn handle_frame(gameboy: &mut Gameboy, canvas: &mut Canvas<Window>, texture: &mu
     render_frame(frame_buffer, canvas, texture, outline);
 }
 
-fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
+fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool, load: bool) {
     let rom_name = match rom_file.file_name() {
         None => None,
         Some(n) => Some(n.to_str().unwrap()),
@@ -226,7 +235,33 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
                                                      LCD_WIDTH as u32,
                                                      LCD_HEIGHT as u32).unwrap();
 
-    let mut gameboy = Gameboy::init(&rom_file, boot_rom, trace).unwrap();
+    let cartridge = get_cartridge(&rom_file, boot_rom);
+
+    let persist_path = &rom_file.with_extension("nvm");
+    let save_state_path = &rom_file.with_extension("state");
+
+    let mut gameboy = if load {
+        // Load the Gameboy from an existing save state
+        let data = std::fs::read(save_state_path).expect("Failed to open save state file");
+        let gameboy = Gameboy::load(&data, cartridge).expect("Failed to load Gameboy from save state");
+        gameboy
+    } else {
+        Gameboy::init(cartridge, trace).unwrap()
+    };
+
+    // Load persisted state, if any, into the `Gameboy`
+    if let Ok(data) = std::fs::read(persist_path) {
+        gameboy.unpersist(&data).expect("Failed to load existing state");
+    }
+
+    // Wrap the persist file in a `BufWriter`
+    let persist_file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(persist_path)
+        .unwrap();
+    let mut persist_file = BufWriter::new(persist_file);
 
     let mut paused = false;
     let mut outline = false;
@@ -264,12 +299,17 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
                     outline = !outline;
                 }
                 Event::KeyDown { keycode: Some(Keycode::K), .. } => {
-                    // Save this Gameboy to disk
-                    gameboy.dump("save.state").unwrap();
+                    // Save this Gameboy state to disk
+                    let state = gameboy.dump().unwrap();
+                    std::fs::write(save_state_path, state)
+                            .expect("Failed to dump save state to disk");
                 }
                 Event::KeyDown { keycode: Some(Keycode::L), .. } => {
-                    // Load a Gameboy from disk
-                    gameboy = Gameboy::load(&rom_file, "save.state").unwrap();
+                    // Load a Gameboy from a save state
+                    let cartridge = get_cartridge(&rom_file, boot_rom);
+                    let data = std::fs::read(save_state_path)
+                                       .expect("Save state not found!");
+                    gameboy = Gameboy::load(&data, cartridge).unwrap();
                 }
                 Event::KeyDown { .. } | Event::KeyUp { .. } => {
                     if let Some(e) = event_to_joypad(event) {
@@ -283,9 +323,17 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
         if !paused {
             // Render a single frame
             handle_frame(&mut gameboy, &mut canvas, &mut texture, &mut joypad_events, outline);
+
+            // If state needs to be persisted, do this at the end of each frame.
+            if let Some(state) = gameboy.persist() {
+                persist_file.seek(SeekFrom::Start(0)).unwrap();
+                persist_file.write_all(&state).unwrap();
+            }
         }
 
         let elapsed = frame_start.elapsed();
+
+        log::debug!("Frame time: {:?}", elapsed);
 
         // Sleep for the rest of the frame
         //
@@ -301,29 +349,29 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool) {
     }
 }
 
+fn get_cartridge(path: &PathBuf, boot_rom: bool) -> Cartridge {
+    let data = std::fs::read(path).expect("Failed to open ROM file");
+    let cartridge = Cartridge::from_bytes(data, boot_rom);
+    cartridge
+}
+
 fn main() {
     env_logger::init();
 
     let cli = Args::from_args();
 
     match cli {
-        Args::Run { rom_file, scale, speed, boot_rom, trace } => {
+        Args::Run { rom_file, scale, speed, boot_rom, trace, load } => {
             if speed == 0 || speed > 5 {
                 eprintln!("Error: Maximum supported emulator speed is 5x!");
                 return;
             }
 
-            gui(rom_file, scale, speed, boot_rom, trace);
+            gui(rom_file, scale, speed, boot_rom, trace, load);
         }
         Args::Inspect { rom_file } => {
             for f in &rom_file {
-                let cartridge = match Cartridge::from_file(f, false) {
-                    Err(e) => {
-                        eprintln!("Error reading cartridge: {}", e);
-                        return;
-                    }
-                    Ok(c) => c,
-                };
+                let cartridge = get_cartridge(f, false);
 
                 println!("\nTitle: {}", cartridge.title().unwrap_or("N/A"));
                 println!("Manufacturer: {}", cartridge.manufacturer_code().unwrap_or("N/A"));

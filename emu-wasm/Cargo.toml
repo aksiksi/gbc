@@ -1,0 +1,20 @@
+[package]
+name = "gbcemu"
+version = "0.1.0"
+authors = ["Assil Ksiksi <cyph0nik@gmail.com>"]
+edition = "2018"
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+gbc = { path = "../lib" }
+wasm-bindgen = "0.2.70"
+log = "0.4.14"
+wasm-logger = "0.2.0"
+
+[profile.release]
+# Tell `rustc` to optimize for small code size.
+opt-level = "s"

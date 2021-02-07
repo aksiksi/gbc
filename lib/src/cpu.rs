@@ -1161,7 +1161,7 @@ mod test {
         // LcdStat:
         // 1. NOP
         // 2. RET
-        let controller = cpu.memory.controller();
+        let controller = cpu.memory.controller_mut();
         controller.rom.write(0x40, 0x80u8);
         controller.rom.write(0x41, 0xD9u8);
         controller.rom.write(0x48, 0x00u8);

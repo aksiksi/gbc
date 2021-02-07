@@ -1,8 +1,4 @@
 //! Real-time Clock implementation for MBC3.
-use std::fs::{File, OpenOptions};
-use std::io::{Seek, SeekFrom};
-use std::path::Path;
-
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -10,17 +6,17 @@ use crate::cpu::Cpu;
 use crate::error::Result;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-pub struct RtcTime {
-    pub seconds: u8,
-    pub minutes: u8,
-    pub hours: u8,
-    pub days: u16, 
-    pub halt: bool,
-    pub carry: bool,
+struct RtcTime {
+    seconds: u8,
+    minutes: u8,
+    hours: u8,
+    days: u16,
+    halt: bool,
+    carry: bool,
 }
 
 impl RtcTime {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             seconds: 0,
             minutes: 0,
@@ -57,7 +53,7 @@ struct RtcState {
 }
 
 impl RtcState {
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             current: RtcTime::new(),
             latched: RtcTime::new(),
@@ -69,22 +65,19 @@ impl RtcState {
         }
     }
 
-    pub fn step(&mut self, cycles: u16, speed: bool) -> bool {
+    fn step(&mut self, cycles: u16, speed: bool) {
         let cycle_time = Cpu::cycle_time(speed) as u64;
 
         if self.current.halt {
             // Clock is halted
             self.timestamp = Utc::now();
-            return false;
+            return;
         }
 
         self.cycle += cycles as u64;
 
         if (self.cycle - self.tick_cycle) / cycle_time >= Rtc::TICK_INTERVAL {
             self.tick();
-            true
-        } else {
-            false
         }
     }
 
@@ -119,11 +112,11 @@ impl RtcState {
         self.tick_cycle = self.cycle;
     }
 
-    pub fn select(&mut self, register: u8) {
+    fn select(&mut self, register: u8) {
         self.selected = register;
     }
 
-    pub fn latch(&mut self, value: u8) {
+    fn latch(&mut self, value: u8) {
         if value == 0 {
             self.latch_started = true;
         } else if self.latch_started {
@@ -132,7 +125,7 @@ impl RtcState {
         }
     }
 
-    pub fn read(&self) -> u8 {
+    fn read(&self) -> u8 {
         match self.selected {
             0x08 => {
                 // Seconds
@@ -173,7 +166,7 @@ impl RtcState {
         }
     }
 
-    pub fn write(&mut self, value: u8) {
+    fn write(&mut self, value: u8) {
         match self.selected {
             0x08 => {
                 // Seconds
@@ -205,7 +198,7 @@ impl RtcState {
     /// Advance the RTC to the current timestamp.
     ///
     /// This needs to be done right after loading an RTC state from a file.
-    pub fn advance(&mut self) {
+    fn advance(&mut self) {
         let now = Utc::now();
 
         if self.current.halt {
@@ -240,10 +233,6 @@ impl RtcState {
 pub struct Rtc {
     /// RTC state
     state: RtcState,
-
-    /// RTC state file
-    #[cfg_attr(feature = "save", serde(skip))]
-    file: Option<File>,
 }
 
 impl Rtc {
@@ -256,16 +245,26 @@ impl Rtc {
     pub fn new() -> Self {
         Self {
             state: RtcState::new(),
-            file: None,
         }
     }
 
+    /// Create RTC state from raw bytes
+    pub fn from_bytes(data: &[u8]) -> Result<Self> {
+        let state = bincode::deserialize_from(data)?;
+        Ok(Self {
+            state
+        })
+    }
+
+    /// Dump the state of the RTC
+    pub fn dump(&self) -> Vec<u8> {
+        let mut data = Vec::new();
+        bincode::serialize_into(&mut data, &self).unwrap();
+        data
+    }
+
     pub fn step(&mut self, cycles: u16, speed: bool) {
-        let tick = self.state.step(cycles, speed);
-        if tick {
-            // Serialize RTC state to file after each tick
-            self.dump().unwrap();
-        }
+        self.state.step(cycles, speed);
     }
 
     pub fn select(&mut self, register: u8) {
@@ -282,55 +281,9 @@ impl Rtc {
 
     pub fn write(&mut self, value: u8) {
         self.state.write(value);
-
-        // Serialize RTC state to file after each write
-        self.dump().unwrap();
     }
 
-    /// Dump current RTC state to a file. The file is overwritten
-    /// every time.
-    fn dump(&mut self) -> Result<()> {
-        if let Some(file) = &mut self.file {
-            file.seek(SeekFrom::Start(0))?;
-            bincode::serialize_into(file, &self.state)?;
-        }
-
-        Ok(())
-    }
-
-    /// If an RTC file exists, load the state it. Otherwise, create a new state.
-    ///
-    /// Once the state is loaded, adjust current clock based on difference between it and the
-    /// last timestamp.
-    ///
-    /// If `overwrite` is `true`, overwrite any existing file with the current state. This
-    /// is used when loading from a save state.
-    pub fn with_file<P: AsRef<Path>>(&mut self, rom_path: P, overwrite: bool) -> Result<()> {
-        let rtc_path = rom_path.as_ref().with_extension("rtcs");
-        let rtc_file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .open(rtc_path)?;
-
-        self.file = Some(rtc_file);
-
-        let rtc_file = self.file.as_mut().unwrap();
-
-        if overwrite {
-            // Overwrite the contents of the backing file with the current RTC state
-            self.dump()?;
-        } else if rtc_file.metadata()?.len() > 0 {
-            // Load last RTC state from file
-            self.state = bincode::deserialize_from(rtc_file)?;
-
-            // If the RTC was not halted, advance the RTC until the current time in UTC
-            self.state.advance();
-
-            // Persist the updated state to disk
-            self.dump()?;
-        }
-
-        Ok(())
+    pub fn advance(&mut self) {
+        self.state.advance()
     }
 }

@@ -53,20 +53,18 @@ pub const LCD_HEIGHT: usize = 144;
 
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
-pub struct GameboyRgba {
+pub struct GameboyRgb {
     pub red: u8,
     pub green: u8,
     pub blue: u8,
-    pub alpha: u8,
 }
 
-impl GameboyRgba {
+impl GameboyRgb {
     pub fn white() -> Self {
         Self {
             red: 0xFF,
             green: 0xFF,
             blue: 0xFF,
-            alpha: 0xFF,
         }
     }
 
@@ -81,39 +79,39 @@ impl GameboyRgba {
 }
 
 // Basic DMG/monochrome color palette
-static DMG_PALETTE: [GameboyRgba; 4] = [
+static DMG_PALETTE: [GameboyRgb; 4] = [
     // White
-    GameboyRgba {
-        red: 0xE0, green: 0xF8, blue: 0xD0, alpha: 255
+    GameboyRgb {
+        red: 0xE0, green: 0xF8, blue: 0xD0,
     },
 
     // Light gray
-    GameboyRgba {
-        red: 0x88, green: 0xC0, blue: 0x70, alpha: 255
+    GameboyRgb {
+        red: 0x88, green: 0xC0, blue: 0x70,
     },
 
     // Dark gray
-    GameboyRgba {
-        red: 0x34, green: 0x68, blue: 0x56, alpha: 255
+    GameboyRgb {
+        red: 0x34, green: 0x68, blue: 0x56,
     },
 
     // Black
-    GameboyRgba {
-        red: 0x08, green: 0x18, blue: 0x20, alpha: 255
+    GameboyRgb {
+        red: 0x08, green: 0x18, blue: 0x20,
     },
 ];
 
 /// Buffer that holds pixel data for a single frame.
 #[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 pub struct FrameBuffer {
-    data: Box<[GameboyRgba]>,
+    pub data: Box<[GameboyRgb]>,
     pub(crate) ready: bool,
 }
 
 impl FrameBuffer {
     pub fn new() -> Self {
         Self {
-            data: Box::new([GameboyRgba::white(); LCD_WIDTH * LCD_HEIGHT]),
+            data: Box::new([GameboyRgb::white(); LCD_WIDTH * LCD_HEIGHT]),
             ready: false,
         }
     }
@@ -122,7 +120,7 @@ impl FrameBuffer {
     ///
     /// `x` is the "column", `y` is the "row".
     #[inline]
-    pub fn read(&self, x: usize, y: usize) -> GameboyRgba {
+    pub fn read(&self, x: usize, y: usize) -> GameboyRgb {
         self.data[y * LCD_WIDTH + x]
     }
 
@@ -130,7 +128,7 @@ impl FrameBuffer {
     ///
     /// `x` is the "column", `y` is the "row".
     #[inline]
-    pub fn write(&mut self, x: usize, y: usize, pixel: GameboyRgba) {
+    pub fn write(&mut self, x: usize, y: usize, pixel: GameboyRgb) {
         self.data[y * LCD_WIDTH + x] = pixel;
     }
 }
@@ -815,7 +813,7 @@ impl Ppu {
     ///    compute the RGB value for the pixel.
     ///
     /// Returns: (pixel data, BG priority, pixel color index)
-    fn fetch_bg_pixel_data(&self, bg_pixel_x: u8, bg_pixel_y: u8, tile_map_base: u16) -> (GameboyRgba, bool, u8) {
+    fn fetch_bg_pixel_data(&self, bg_pixel_x: u8, bg_pixel_y: u8, tile_map_base: u16) -> (GameboyRgb, bool, u8) {
         // Select base address for BG tile data based on LCDC register
         let (tile_data_base, tile_data_index_signed) = if !self.lcdc.bg_tile_data_select() {
             (0x8000, false)
@@ -899,7 +897,7 @@ impl Ppu {
     /// The second difference is that sprites can be either a single tile (8x8) or two
     /// vertically stacked tiles (8x16). In case of the latter, we need to adjust our logic
     /// based on which tile the current pixel lies in (upper vs. lower).
-    fn fetch_sprite_pixel_data(&self, pixel: u8) -> Option<(GameboyRgba, bool)> {
+    fn fetch_sprite_pixel_data(&self, pixel: u8) -> Option<(GameboyRgb, bool)> {
         let tile_data_base = 0x8000;
 
         let size = if self.lcdc.sprite_size() {
@@ -1010,7 +1008,7 @@ impl Ppu {
     ///
     /// Returns: (pixel data, color index)
     fn fetch_pixel_data(&self, tile_data: [u8; 16], tile_pixel_x: u8,
-                        tile_pixel_y: u8, tile_palette_num: u8, sprite: bool) -> (GameboyRgba, u8) {
+                        tile_pixel_y: u8, tile_palette_num: u8, sprite: bool) -> (GameboyRgb, u8) {
         // (7)
         //
         // The y position of the pixel maps to the "line" (2 bytes) in the tile data
@@ -1042,13 +1040,11 @@ impl Ppu {
             let red = (pixel_color & 0x001F) as u8;
             let green = ((pixel_color & 0x03E0) >> 5) as u8;
             let blue = ((pixel_color & 0x7C00) >> 10) as u8;
-            let alpha = 0xFF; // BG is always opaque
 
-            pixel_data = GameboyRgba {
+            pixel_data = GameboyRgb {
                 red,
                 blue,
                 green,
-                alpha,
             };
 
             pixel_data.scale_to_rgb();
