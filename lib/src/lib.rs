@@ -148,9 +148,9 @@ impl Gameboy {
         Ok(gameboy)
     }
 
-    /// Dump the current state of this Gameboy to a byte `Vec`.
+    /// Save the current state of this Gameboy to a byte `Vec`.
     #[cfg(feature = "save")]
-    pub fn dump(&self) -> Result<Vec<u8>> {
+    pub fn save(&self) -> Result<Vec<u8>> {
         let mut data = Vec::new();
         bincode::serialize_into(&mut data, &self)?;
         Ok(data)

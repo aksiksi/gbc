@@ -29,16 +29,18 @@ Controls:
 * Arrows for direction keys
 * `S`: A button
 * `A`: B button
-* `Enter`: start button
-* `Shift`: select button
+* `X`: start button
+* `Z`: select button
 
-Emulator keys:
+Emulator GUI keys:
 
 * `K`: save emulator state
 * `L`: load emulator state
 * `;`: reset the emulator
 * `O`: draw basic tile outline (toggle)
 * `P`: pause (toggle)
+
+Note: these are replaced with buttons in the WASM version.
 
 ## Games Tested
 

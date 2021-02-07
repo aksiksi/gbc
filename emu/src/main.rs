@@ -84,8 +84,8 @@ fn keycode_to_joypad_input(keycode: Option<Keycode>) -> Option<JoypadInput> {
         // TODO: Make the key mapping configurable
         Keycode::A => Some(JoypadInput::B),
         Keycode::S => Some(JoypadInput::A),
-        Keycode::Return | Keycode::KpEnter => Some(JoypadInput::Start),
-        Keycode::RShift | Keycode::LShift => Some(JoypadInput::Select),
+        Keycode::X => Some(JoypadInput::Start),
+        Keycode::Z => Some(JoypadInput::Select),
         Keycode::Up => Some(JoypadInput::Up),
         Keycode::Down => Some(JoypadInput::Down),
         Keycode::Left => Some(JoypadInput::Left),
@@ -300,7 +300,7 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool, lo
                 }
                 Event::KeyDown { keycode: Some(Keycode::K), .. } => {
                     // Save this Gameboy state to disk
-                    let state = gameboy.dump().unwrap();
+                    let state = gameboy.save().unwrap();
                     std::fs::write(save_state_path, state)
                             .expect("Failed to dump save state to disk");
                 }
