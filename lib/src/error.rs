@@ -23,7 +23,6 @@ impl std::fmt::Display for CartridgeError {
     }
 }
 
-
 #[derive(Debug)]
 pub enum Error {
     IoError(String),
