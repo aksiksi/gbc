@@ -50,7 +50,7 @@ impl FpsCounter {
 }
 
 #[derive(Debug, StructOpt)]
-#[structopt(about = "A simple GBC emulator")]
+#[structopt(about = "A simple GBC emulator written in Rust")]
 enum Args {
     #[structopt(about = "Run a ROM on the emulator")]
     Run {
@@ -72,7 +72,7 @@ enum Args {
         #[structopt(long, help = "Load emulator from existing save state file (/path/to/rom_file.state)")]
         load: bool,
     },
-    #[structopt(about = "Inspect a ROM")]
+    #[structopt(about = "Inspect one or more ROMs")]
     Inspect {
         #[structopt(parse(from_os_str))]
         rom_file: Vec<PathBuf>,
@@ -324,8 +324,9 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool, lo
             // Render a single frame
             handle_frame(&mut gameboy, &mut canvas, &mut texture, &mut joypad_events, outline);
 
-            // If state needs to be persisted, do this at the end of each frame.
-            if let Some(state) = gameboy.persist() {
+            // If state needs to be persisted, do this at the end of each frame
+            if gameboy.is_persist_required() {
+                let state = gameboy.persist().expect("Failed to persist state");
                 persist_file.seek(SeekFrom::Start(0)).unwrap();
                 persist_file.write_all(&state).unwrap();
             }

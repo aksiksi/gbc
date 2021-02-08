@@ -210,15 +210,11 @@ impl Gameboy {
         Ok(())
     }
 
-    /// Persist `Gameboy` into a `Vec` of bytes
+    /// Persist non-volatile state into a `Vec` of bytes.
     ///
-    /// Returns `None` if nothing needs to be persisted for the current ROM.
-    pub fn persist(&self) -> Option<Vec<u8>> {
-        if self.is_persist_required() {
-            Some(bincode::serialize(&self.state()).expect("Persist failed!"))
-        } else {
-            None
-        }
+    /// If nothing needs to be persisted, this returns an empty `Vec`.
+    pub fn persist(&self) -> Result<Vec<u8>> {
+        bincode::serialize(&self.state()).map_err(Error::from)
     }
 
     /// Load persisted state into this `Gameboy`.

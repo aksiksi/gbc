@@ -61,7 +61,10 @@ class Emulator {
         }
 
         // Start a timer for frame rendering (59.7 FPS)
-        this.frameTimer = window.setInterval(() => this.renderFrame(), 16.7504);
+        this.frameTimer = window.setInterval(() => {
+            // Render a frame
+            this.renderFrame()
+        }, 16.7504);
     }
 
     reset() {
@@ -73,7 +76,7 @@ class Emulator {
     async saveState() {
         if (this.gameboy != null && this.romName != null) {
             let buffer = this.gameboy.save();
-            await set(this.romName, buffer);
+            await set(this.romName + ".state", buffer);
         }
     }
 
@@ -81,7 +84,7 @@ class Emulator {
         const romBuffer = await this.loadRom();
         const romData = new Uint8Array(romBuffer);
         const cartridge = new wasm.Cartridge(romData);
-        const saveState = await get(this.romName);
+        const saveState = await get(this.romName + ".state");
 
         this.gameboy = wasm.Gameboy.load(saveState, cartridge);
 
