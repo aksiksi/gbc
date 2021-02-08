@@ -9,6 +9,7 @@ class Emulator {
         this.frameTimer = null;
         this.gameboy = null;
         this.romName = null;
+        this.running = false;
 
         this.canvas = document.getElementById("emulator");
         this.ctx = this.canvas.getContext("2d");
@@ -51,11 +52,11 @@ class Emulator {
     start() {
         this.loadRom().then((romBuffer) => {
             this.init(romBuffer);
-            this.render();
+            this.run();
         });
     }
 
-    render() {
+    run() {
         if (this.frameTimer != null) {
             clearInterval(this.frameTimer);
         }
@@ -65,6 +66,17 @@ class Emulator {
             // Render a frame
             this.renderFrame()
         }, 16.7504);
+
+        this.running = true;
+    }
+
+    stop() {
+        if (this.frameTimer != null) {
+            clearInterval(this.frameTimer);
+            this.frameTimer = null;
+        }
+
+        this.running = false;
     }
 
     reset() {
@@ -88,19 +100,15 @@ class Emulator {
 
         this.gameboy = wasm.Gameboy.load(saveState, cartridge);
 
-        this.render();
+        this.run();
     }
 
     pause() {
         if (this.pauseButton.textContent == "Pause") {
-            if (this.frameTimer != null) {
-                clearInterval(this.frameTimer);
-                this.frameTimer = null;
-            }
-
+            this.stop();
             this.pauseButton.textContent = "Resume";
         } else if (this.pauseButton.textContent == "Resume") {
-            this.render();
+            this.run();
             this.pauseButton.textContent = "Pause";
         }
     }
@@ -183,7 +191,7 @@ class Emulator {
         const keyCode = keyEvent.code;
         const joypad_input = this.mapKeyCodeToInput(keyCode);
 
-        if (joypad_input != null) {
+        if (joypad_input != null && this.running) {
             this.gameboy.joypad_input(joypad_input, down);
         }
     }
