@@ -1,5 +1,5 @@
 use std::fs::OpenOptions;
-use std::io::{BufWriter, Seek, SeekFrom, Write};
+use std::io::{Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::time::{Instant, Duration};
 
@@ -192,6 +192,15 @@ fn handle_frame(gameboy: &mut Gameboy, canvas: &mut Canvas<Window>, texture: &mu
     render_frame(frame_buffer, canvas, texture, outline);
 }
 
+fn new_persist_file(path: &PathBuf) -> std::fs::File {
+    OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(path)
+        .unwrap()
+}
+
 fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool, load: bool) {
     let rom_name = match rom_file.file_name() {
         None => None,
@@ -237,7 +246,6 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool, lo
 
     let cartridge = get_cartridge(&rom_file, boot_rom);
 
-    let persist_path = &rom_file.with_extension("nvm");
     let save_state_path = &rom_file.with_extension("state");
 
     let mut gameboy = if load {
@@ -249,19 +257,27 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool, lo
         Gameboy::init(cartridge, trace).unwrap()
     };
 
-    // Load persisted state, if any, into the `Gameboy`
-    if let Ok(data) = std::fs::read(persist_path) {
-        gameboy.unpersist(&data).expect("Failed to load existing state");
-    }
+    let ram_path = &rom_file.with_extension("ram");
+    let rtc_path = &rom_file.with_extension("rtc");
+    let mut ram_persist = None;
+    let mut rtc_persist = None;
 
-    // Wrap the persist file in a `BufWriter`
-    let persist_file = OpenOptions::new()
-        .create(true)
-        .read(true)
-        .write(true)
-        .open(persist_path)
-        .unwrap();
-    let mut persist_file = BufWriter::new(persist_file);
+    // Load persisted state, if any, into the `Gameboy`
+    if gameboy.is_persist_required() {
+        let ram_state = std::fs::read(ram_path).ok();
+        let rtc_state = std::fs::read(rtc_path).ok();
+
+        gameboy.unpersist(ram_state.as_ref(), rtc_state.as_ref())
+               .expect("Failed to load persisted data");
+
+        if gameboy.is_persist_ram() {
+            ram_persist = Some(new_persist_file(ram_path));
+        }
+
+        if gameboy.is_persist_rtc() {
+            rtc_persist = Some(new_persist_file(rtc_path));
+        }
+    }
 
     let mut paused = false;
     let mut outline = false;
@@ -327,8 +343,16 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool, lo
             // If state needs to be persisted, do this at the end of each frame
             if gameboy.is_persist_required() {
                 let state = gameboy.persist().expect("Failed to persist state");
-                persist_file.seek(SeekFrom::Start(0)).unwrap();
-                persist_file.write_all(&state).unwrap();
+
+                if let Some(state) = state.ram {
+                    ram_persist.as_mut().unwrap().seek(SeekFrom::Start(0)).unwrap();
+                    ram_persist.as_mut().unwrap().write_all(&state).unwrap();
+                }
+
+                if let Some(state) = state.rtc {
+                    rtc_persist.as_mut().unwrap().seek(SeekFrom::Start(0)).unwrap();
+                    rtc_persist.as_mut().unwrap().write_all(&state).unwrap();
+                }
             }
         }
 

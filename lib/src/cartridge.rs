@@ -70,6 +70,9 @@ pub struct Ram {
     pub(crate) active_bank: u8,
     num_banks: u8,
     ram_size: RamSize,
+
+    /// Dirty flag that is set on write to cartridge RAM
+    pub(crate) is_dirty: bool,
 }
 
 /// 8 KB switchable/banked external RAM
@@ -100,6 +103,7 @@ impl Ram {
                     active_bank: 0,
                     num_banks,
                     ram_size,
+                    is_dirty: false,
                 })
             }
         }
@@ -125,6 +129,7 @@ impl Ram {
             active_bank: 0,
             num_banks,
             ram_size,
+            is_dirty: false,
         })
     }
 
@@ -160,6 +165,7 @@ impl MemoryWrite<u16, u8> for Ram {
         let bank_offset = self.active_bank as usize * Self::BANK_SIZE;
         let index = bank_offset + addr;
         self.data[index] = value;
+        self.is_dirty = true;
     }
 }
 

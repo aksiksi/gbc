@@ -13,8 +13,6 @@ mod timer;
 #[cfg(feature = "debug")]
 pub mod debug;
 
-use std::io::Write;
-
 pub use cpu::Cpu;
 use cpu::Interrupt;
 use cartridge::{Cartridge, Controller};
@@ -24,9 +22,9 @@ use memory::MemoryWrite;
 use ppu::FrameBuffer;
 
 #[derive(serde::Deserialize, serde::Serialize)]
-struct GameboyState<'a> {
-    ram: Option<&'a [u8]>,
-    rtc: Option<Vec<u8>>,
+pub struct GameboyState<'a> {
+    pub ram: Option<&'a [u8]>,
+    pub rtc: Option<Vec<u8>>,
 }
 
 #[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
@@ -170,63 +168,77 @@ impl Gameboy {
         self.cpu.memory.controller_mut()
     }
 
-    /// Returns raw cartridge RAM and RTC state
+    #[inline]
+    pub fn is_persist_required(&self) -> bool {
+        let controller = &self.cpu.memory.controller();
+        let ram = &controller.ram;
+        let rtc = &controller.rtc;
+        ram.is_some() || rtc.is_some()
+    }
+
+    #[inline]
+    pub fn is_persist_ram(&self) -> bool {
+        let controller = &self.cpu.memory.controller();
+        let ram = &controller.ram;
+        ram.is_some()
+    }
+
+    #[inline]
+    pub fn is_persist_rtc(&self) -> bool {
+        let controller = &self.cpu.memory.controller();
+        let rtc = &controller.rtc;
+        rtc.is_some()
+    }
+
+    /// Returns raw persisted state for this Gameboy (i.e., RAM and/or RTC).
     ///
     /// This data can be used by the emulator to "persist" state across runs
     /// of a ROM. Note that it should be sufficient to call this method once
     /// per frame.
-    fn state(&self) -> GameboyState {
-        let (mut ram_data, mut rtc_data) = (None, None);
-
-        if let Some(ram) = &self.cpu.memory.controller().ram {
-            ram_data = Some(ram.data());
+    ///
+    /// For cartridge RAM, the contents of the RAM will only be returned if
+    /// a write has occurred since the last frame.
+    pub fn persist(&mut self) -> Option<GameboyState> {
+        if !self.is_persist_required() {
+            return None;
         }
 
-        if let Some(rtc) = &self.cpu.memory.controller().rtc {
+        let (mut ram_data, mut rtc_data) = (None, None);
+        let controller = self.cpu.memory.controller_mut();
+
+        if let Some(ram) = &mut controller.ram {
+            if ram.is_dirty {
+                ram.is_dirty = false;
+                ram_data = Some(ram.data());
+            }
+        }
+
+        if let Some(rtc) = &controller.rtc {
             rtc_data = Some(rtc.dump());
         }
 
-        GameboyState {
+        let state = GameboyState {
             ram: ram_data,
             rtc: rtc_data,
-        }
-    }
+        };
 
-    #[inline]
-    pub fn is_persist_required(&self) -> bool {
-        let ram = &self.cpu.memory.controller().ram;
-        let rtc = &self.cpu.memory.controller().rtc;
-        ram.is_some() || rtc.is_some()
-    }
-
-    /// Persist `Gameboy` state into a writer.
-    ///
-    /// This is a no-op if nothing needs to be persisted.
-    pub fn persist_into(&self, writer: &mut impl Write) -> Result<()>{
-        if self.is_persist_required() {
-            bincode::serialize_into(writer, &self.state())?;
-        }
-
-        Ok(())
-    }
-
-    /// Persist non-volatile state into a `Vec` of bytes.
-    ///
-    /// If nothing needs to be persisted, this returns an empty `Vec`.
-    pub fn persist(&self) -> Result<Vec<u8>> {
-        bincode::serialize(&self.state()).map_err(Error::from)
+        Some(state)
     }
 
     /// Load persisted state into this `Gameboy`.
-    pub fn unpersist(&mut self, data: &[u8]) -> Result<()> {
-        let state: GameboyState = bincode::deserialize(data)?;
-
-        if let Some(ram) = state.ram {
-            self.cpu.memory.controller_mut().load_ram(ram)?;
+    pub fn unpersist<T, U>(&mut self, ram: Option<T>, rtc: Option<U>) -> Result<()>
+        where T: AsRef<[u8]>, U: AsRef<[u8]>
+    {
+        if !self.is_persist_required() {
+            return Ok(());
         }
 
-        if let Some(rtc) = state.rtc {
-            self.cpu.memory.controller_mut().load_rtc(&rtc)?;
+        if let Some(ram) = ram {
+            self.cpu.memory.controller_mut().load_ram(ram.as_ref())?;
+        }
+
+        if let Some(rtc) = rtc {
+            self.cpu.memory.controller_mut().load_rtc(rtc.as_ref())?;
         }
 
         Ok(())
