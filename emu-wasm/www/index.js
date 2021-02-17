@@ -33,7 +33,14 @@ class Emulator {
         // Setup a Gameboy from the given ROM file
         const romData = new Uint8Array(romBuffer);
         const cartridge = new wasm.Cartridge(romData);
-        this.gameboy = new wasm.Gameboy(cartridge);
+
+        try {
+            this.gameboy = new wasm.Gameboy(cartridge);
+        } catch (e) {
+            console.error(e);
+            throw e;
+        }
+
         console.log("Gameboy loaded!");
     }
 
@@ -87,7 +94,7 @@ class Emulator {
 
     async saveState() {
         if (this.gameboy != null && this.romName != null) {
-            let buffer = this.gameboy.save();
+            const buffer = this.gameboy.save();
             await set(this.romName + ".state", buffer);
         }
     }
@@ -98,9 +105,12 @@ class Emulator {
         const cartridge = new wasm.Cartridge(romData);
         const saveState = await get(this.romName + ".state");
 
-        this.gameboy = wasm.Gameboy.load(saveState, cartridge);
-
-        this.run();
+        if (saveState == null) {
+            window.alert("No save state found for this ROM!");
+        } else {
+            this.gameboy = wasm.Gameboy.load(saveState, cartridge);
+            this.run();
+        }
     }
 
     pause() {

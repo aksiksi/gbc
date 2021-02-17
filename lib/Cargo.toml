@@ -8,6 +8,7 @@ edition = "2018"
 default = ["save"]
 debug = []
 save = []
+wasm = ["chrono/wasmbind"]
 
 [dependencies]
 log = "0.4"

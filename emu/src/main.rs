@@ -174,16 +174,12 @@ fn render_frame(frame_buffer: &FrameBuffer, canvas: &mut Canvas<Window>, texture
 /// picked up in the next frame.
 fn handle_frame(gameboy: &mut Gameboy, canvas: &mut Canvas<Window>, texture: &mut Texture,
                 joypad_events: &mut Vec<JoypadEvent>, outline: bool) {
-    let start = Instant::now();
-
     // Run the Gameboy until the next frame is ready (i.e., start of VBLANK).
     //
     // This means we run from VBLANK to VBLANK. From the rendering side, it doesn't
     // really matter: as long as the frame is ready, we can render it! The emulator
     // will catch up & process the current VBLANK in the next call to this function.
     let frame_buffer = gameboy.frame(Some(joypad_events));
-
-    log::debug!("Emulator time: {:?}", start.elapsed());
 
     // Clear out all processed input events
     joypad_events.clear();
