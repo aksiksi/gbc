@@ -58,11 +58,11 @@ Note: these are replaced with buttons in the WASM version.
 
 ### Project Structure
 
-The emulator is divided into two crates:
+The emulator is divided into three crates:
 
-1. `lib`: the main library for emulating a Gameboy
-2. `emu`: emulator frontend GUI written in SDL (runs on macOS, Windows, and Linux)
-3. `emu-wasm`: `lib` compiled to WASM and running on a Canvas 2D in JS
+1. `lib`: main library for emulating a Gameboy
+2. `emu`: emulator frontend GUI written using SDL2 (runs on macOS, Windows, and Linux)
+3. `emu-wasm`: `lib` compiled to WASM and running on a [`Canvas2D`](https://developer.mozilla.org/en-US/docs/Web/API/Canvas_API) in JS
 
 ### Tests
 
