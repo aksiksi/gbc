@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>gbcemu</title>
+    <style>
+      #emulator {
+        width: 640px;
+        height: 576px;
+        image-rendering: -moz-crisp-edges;
+        image-rendering: -webkit-crisp-edges;
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+      }
+    </style>
+  </head>
+  <body>
+    <noscript>This page contains webassembly and javascript content, please enable javascript in your browser.</noscript>
+    <input type="file" id="rompicker" accept=".gb,.gbc">
+    <canvas id="emulator" width="160" height="144"></canvas>
+    <button id="start">Start</button>
+    <button id="pause">Pause</button>
+    <button id="reset">Reset</button>
+    <button id="save-state">Save State</button>
+    <button id="load-state">Load State</button>
+    <script src="./bootstrap.js"></script>
+  </body>
+</html>
