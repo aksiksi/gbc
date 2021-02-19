@@ -243,7 +243,7 @@ impl Cpu {
     /// Execute a single step of DMA (if active).
     fn dma(&mut self, cycles: u16) -> u16 {
         let memory = &mut self.memory;
-        self.dma.step(cycles, memory)
+        self.dma.step(cycles, self.speed, memory)
     }
 
     /// Fetch the next instruction and return it

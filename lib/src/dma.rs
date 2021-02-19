@@ -50,7 +50,7 @@ impl DmaController {
     /// Execute a single step of the DMA controller.
     ///
     /// If HDMA is executed, this returns the number of cycles consumed.
-    pub fn step(&mut self, cycles: u16, memory: &mut MemoryBus) -> u16 {
+    pub fn step(&mut self, cycles: u16, speed: bool, memory: &mut MemoryBus) -> u16 {
         let mut cycles_taken = 0;
 
         // OAM DMA
@@ -63,7 +63,7 @@ impl DmaController {
             // HDMA is a blocking operation. However, it needs the number of
             // cycles spent in the CPU to be able to figure out the next PPU
             // mode for the HBLANK check.
-            cycles_taken = self.hdma(cycles, memory);
+            cycles_taken = self.hdma(cycles, speed, memory);
         }
 
         cycles_taken
@@ -102,9 +102,7 @@ impl DmaController {
         }
     }
 
-    fn hdma(&mut self, cycles: u16, memory: &mut MemoryBus) -> u16 {
-        let speed = memory.io().speed();
-
+    fn hdma(&mut self, cycles: u16, speed: bool, memory: &mut MemoryBus) -> u16 {
         // Determine source and destination addresses
         let source_addr_upper = memory.read(0xFF51) as u16;
         let source_addr_lower = memory.read(0xFF52) as u16;
