@@ -1,23 +1,28 @@
-name: Test
-
 on:
   push:
     branches: [ master ]
     paths:
       - "emu/**"
+      - "emu-wasm/**"
       - "lib/**"
   pull_request:
     branches: [ master ]
     paths:
       - "emu/**"
+      - "emu-wasm/**"
       - "lib/**"
+  workflow_dispatch:
 
-env:
-  CARGO_TERM_COLOR: always
+defaults:
+  run:
+    shell: bash
 
 jobs:
-  build:
+  test:
+    name: Run tests
     runs-on: ubuntu-latest
+    env:
+      CARGO_TERM_COLOR: always
 
     steps:
     - uses: actions/checkout@v2
@@ -25,3 +30,34 @@ jobs:
       run: cargo build --verbose
     - name: Run tests
       run: cargo test --verbose
+
+  deploy:
+    name: Deploy WASM emulator
+    if: github.ref == 'refs/heads/master'
+    needs:
+      - test
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./emu-wasm
+
+    steps:
+    - uses: actions/checkout@v2
+    - uses: jetli/wasm-pack-action@v0.3.0
+      with:
+        version: 'latest'
+    - uses: actions/setup-node@v2
+      with:
+        node-version: '12'
+    - name: Build WASM
+      run: wasm-pack build
+    - name: Install dependencies
+      run: cd ./www && npm install
+    - name: Build web app
+      run: cd ./www && npm run build
+    - name: Deploy to GH pages
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./emu-wasm/www/dist
