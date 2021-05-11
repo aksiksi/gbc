@@ -53,6 +53,10 @@ Note: these are replaced with buttons in the WASM version.
 - [x] Donkey Kong Country (GBC, MBC5)
 - [x] Dragon Warrior Monsters (GBC, MBC5)
 - [x] The Legend of Zelda: Link's Awakening DX (GBC, MBC5)
+- [ ] Pokemon Gold (GBC, MBC3+RTC)
+    - Hits glitch after intro (#3)
+- [ ] Shantae (GBC, MBC5)
+    - Not working, stuck on blue screen
 
 ## Details
 
