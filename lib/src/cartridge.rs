@@ -328,7 +328,7 @@ impl MemoryRead<u16, u8> for Rom {
     }
 }
 
-// This is only used by tests
+#[cfg(test)]
 impl MemoryWrite<u16, u8> for Rom {
     #[inline]
     fn write(&mut self, addr: u16, value: u8) {
