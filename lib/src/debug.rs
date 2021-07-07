@@ -15,6 +15,13 @@ pub enum Mode {
     StepN(u32),
 }
 
+impl Default for Mode {
+    fn default() -> Self {
+        Mode::Continue
+    }
+}
+
+#[derive(Default)]
 pub struct Debugger {
     mode: Mode,
     breakpoints: Vec<(u16, bool)>,
@@ -47,7 +54,7 @@ impl Debugger {
 
     pub fn triggered(&mut self, cpu: &Cpu) -> bool {
         // If the CPU is currently halted, keep waiting
-        if cpu.is_halted {
+        if cpu.halted {
             return false;
         }
 

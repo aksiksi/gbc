@@ -32,6 +32,8 @@ jobs:
       run: cargo build --verbose
     - name: Run tests
       run: cargo test --verbose
+    - name: Verify that the debugger compiles
+      run: cargo build --manifest-path emu/Cargo.toml --features debug
 
   deploy:
     name: Deploy WASM emulator
