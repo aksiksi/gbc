@@ -383,8 +383,8 @@ fn main() {
 
     match cli {
         Args::Run { rom_file, scale, speed, boot_rom, trace, load } => {
-            if speed == 0 || speed > 5 {
-                eprintln!("Error: Maximum supported emulator speed is 5x!");
+            if speed == 0 {
+                eprintln!("Error: Speed must be greater than 0");
                 return;
             }
 
