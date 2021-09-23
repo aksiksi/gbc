@@ -182,6 +182,13 @@ impl Vram {
         let bank_offset = bank as usize * Self::BANK_SIZE;
         self.data[bank_offset + addr]
     }
+
+    /// Get a slice starting from the address provided in the given bank
+    pub fn get_bank_slice(&self, bank: u8, start_addr: u16, length: usize) -> &[u8] {
+        let bank_offset = bank as usize * Self::BANK_SIZE;
+        let start_addr = (start_addr - Self::BASE_ADDR) as usize + bank_offset;
+        &self.data[start_addr..start_addr+length]
+    }
 }
 
 impl MemoryRead<u16, u8> for Vram {
@@ -821,12 +828,12 @@ impl Ppu {
             (0x9000, true)
         };
 
-        // (2) and (3)
+        // (1) and (2)
         let bg_tile_x = bg_pixel_x / 8;
         let bg_tile_y = bg_pixel_y / 8;
         let tile_map_index = (bg_tile_y as u16 * 32 + bg_tile_x as u16) as u16;
 
-        // (4)
+        // (3)
         let tile_number = self.vram.read_bank(0, tile_map_base + tile_map_index);
         let tile_data_attr = if self.cgb {
             self.vram.read_bank(1, tile_map_base + tile_map_index)
@@ -835,7 +842,7 @@ impl Ppu {
             0
         };
 
-        // (5)
+        // (4)
         let tile_palette_num = tile_data_attr & 0x07; // bits 0-2
         let tile_data_bank = (tile_data_attr & (1 << 3)) >> 3; // bit 3
         let horizontal_flip = (tile_data_attr & (1 << 5)) != 0; // bit 5
@@ -847,7 +854,7 @@ impl Ppu {
             false
         };
 
-        // (6)
+        // (5)
         let mut tile_data = [0u8; 16];
         for i in 0..tile_data.len() as u16 {
             let addr;
@@ -869,7 +876,7 @@ impl Ppu {
             tile_data[i as usize] = self.vram.read_bank(tile_data_bank, addr);
         }
 
-        // (7)
+        // (6)
         let mut tile_pixel_x = bg_pixel_x - bg_tile_x * 8;
         let mut tile_pixel_y = bg_pixel_y - bg_tile_y * 8;
 
@@ -877,7 +884,6 @@ impl Ppu {
         if horizontal_flip {
             tile_pixel_x = 7 - tile_pixel_x;
         }
-
         if vertical_flip {
             tile_pixel_y = 7 - tile_pixel_y;
         }
