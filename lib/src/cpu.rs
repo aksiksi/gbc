@@ -1,6 +1,9 @@
+use std::cell::RefCell;
 use std::fs::File;
 use std::io::{BufWriter, Write};
+use std::rc::Rc;
 
+use crate::{Operation, OperationsQueue};
 use crate::cartridge::Cartridge;
 use crate::dma::DmaController;
 use crate::error::Result;
@@ -8,8 +11,9 @@ use crate::instructions::{Arg, Cond, Cycles, Instruction};
 use crate::memory::{MemoryBus, MemoryRead, MemoryWrite};
 use crate::registers::{Flag, Reg16, Reg8, RegisterFile, RegisterOps};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(u8)]
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 pub enum Interrupt {
     Vblank = 0,
     LcdStat,
@@ -62,7 +66,8 @@ impl HalfCarry<u16> for u16 {
 #[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 pub struct Cpu {
     pub registers: RegisterFile,
-    pub memory: MemoryBus,
+    #[cfg_attr(feature = "save", serde(skip))]
+    pub memory: Rc<RefCell<MemoryBus>>,
     dma: DmaController,
     pub cgb: bool,
 
@@ -94,7 +99,7 @@ impl Cpu {
 
         Self {
             registers,
-            memory,
+            memory: Rc::new(RefCell::new(memory)),
             dma: DmaController::new(cgb),
             cgb,
             ime: false,
@@ -131,7 +136,7 @@ impl Cpu {
 
         Ok(Self {
             registers,
-            memory,
+            memory: Rc::new(RefCell::new(memory)),
             dma,
             cgb,
             ime: false,
@@ -158,7 +163,7 @@ impl Cpu {
     /// This involves resetting memory, the ROM controller, and the PPU
     pub fn reset(&mut self) {
         self.registers = RegisterFile::new(self.cgb);
-        self.memory.reset();
+        self.memory.borrow_mut().reset();
         self.dma = DmaController::new(self.cgb);
         self.ime = false;
         self.halted = false;
@@ -168,56 +173,82 @@ impl Cpu {
 
     /// Executes the next instruction and returns the number of cycles it
     /// took to complete.
-    pub fn step(&mut self) -> (u16, Instruction) {
-        // Check for pending interrupts before fetching the next instruction.
+    pub fn handle(&mut self, op: Operation, operations: &mut OperationsQueue) -> u16 {
+        let mut cycles_taken: u16 = 0;
+
+        // Always check for pending interrupts before handling an operation.
         // If an interrupt is serviced, PC will jump to the ISR address.
-        let int_cycles = self.service_interrupts();
+        cycles_taken += self.service_interrupts() as u16;
 
-        // If the CPU is halted, bail out
+        // If the CPU is halted, execute a NOP and return.
         if self.halted {
-            return (4, Instruction::Nop);
+            // TODO(aksiksi): This just might be 4.
+            cycles_taken += 4;
+            operations.push_back((Operation::InstFetch, 4));
+            return cycles_taken;
         }
 
-        // Fetch and decode the next instruction at PC
+        match op {
+            Operation::InstFetch => {
+                let (inst, size, cycles) = self.fetch(None);
+
+                operations.push_back((Operation::InstExecute { inst, size, cycles }, 4));
+
+                cycles_taken += 4;
+            }
+            Operation::InstExecute { inst, size, cycles } => {
+                // First, figure out how many memory accesses we need for this instruction
+
+                // After enqueuing the memory operations, place the instruction itself on the queue
+
+                // Finally, put an instruction fetch that will execute _in parallel_ to the final cycle
+                // of the executed instruction
+
+                let (jump, taken) = self.execute(inst);
+                cycles_taken += if !jump || jump && !taken {
+                    // For regular instructions and jumps that are *not* taken,
+                    // update the PC based on the size of this instruction
+                    self.registers.PC += size as u16;
+                    cycles.not_taken() as u16
+                } else {
+                    // For jumps that are taken, the PC is updated within `execute()`
+                    cycles.taken() as u16
+                };
+
+                if let Some(_) = &mut self.trace {
+                    self.trace(&inst);
+                }
+            }
+            Operation::TriggerInterrupt(interrupt) => self.trigger_interrupt(interrupt),
+            Operation::Dma => {
+                if self.stopped {
+                    // If we've entered STOP mode for a speed switch, block the CPU for a bit.
+                    // Also, do not run through DMA.
+                    cycles_taken += 8200;
+                } else {
+                    cycles_taken += self.dma(cycles_taken);
+                }
+            },
+            _ => (),
+        }
+
+        cycles_taken
+    }
+
+    fn step(&mut self) {
         let (inst, size, cycles) = self.fetch(None);
-
-        if let Some(_) = &mut self.trace {
-            self.trace(&inst);
-        }
-
-        // Execute the instruction on this CPU
-        let (jump, taken) = self.execute(inst);
-        let mut cycles = if !jump || jump && !taken {
-            // For regular instructions and jumps that are *not* taken,
-            // update the PC based on the size of this instruction
-            self.registers.PC += size as u16;
-            cycles.not_taken() as u16
-        } else {
-            // For jumps that are taken, the PC is updated within `execute()`
-            cycles.taken() as u16
-        };
-
-        if self.stopped {
-            // If we've entered STOP mode for a speed switch, block the CPU for a bit.
-            // Also, do not run through DMA.
-            cycles += 8200;
-        } else {
-            cycles += int_cycles as u16;
-            cycles += self.dma(cycles);
-        }
-
-        (cycles, inst)
+        self.execute(inst);
     }
 
     /// Switch CPU speed
     fn speed_switch(&mut self) {
         if !self.speed {
             // Normal to double speed
-            self.memory.io_mut().prep_speed_switch = 1 << 7;
+            self.memory.borrow_mut().io_mut().prep_speed_switch = 1 << 7;
             self.speed = true;
         } else {
             // Double to normal speed
-            self.memory.io_mut().prep_speed_switch = 0;
+            self.memory.borrow_mut().io_mut().prep_speed_switch = 0;
             self.speed = false;
         }
 
@@ -228,7 +259,7 @@ impl Cpu {
     fn trace(&mut self, inst: &Instruction) {
         // Figure out the currently active ROM bank based on the memory region of PC
         let pc = self.registers.PC;
-        let (memory_type, bank) = self.memory.memory_info(pc);
+        let (memory_type, bank) = self.memory.borrow().memory_info(pc);
         let f = &mut self.trace.as_mut().unwrap();
 
         // First, write the register state prior to executing this instruction
@@ -242,8 +273,8 @@ impl Cpu {
 
     /// Execute a single step of DMA (if active).
     fn dma(&mut self, cycles: u16) -> u16 {
-        let memory = &mut self.memory;
-        self.dma.step(cycles, self.speed, memory)
+        let memory = self.memory.borrow_mut();
+        self.dma.step(cycles, self.speed, &mut memory)
     }
 
     /// Fetch the next instruction and return it
@@ -255,9 +286,9 @@ impl Cpu {
         //
         // TODO: Evaluate the boundary cases
         let data: [u8; 3] = [
-            self.memory.read(addr),
-            self.memory.read(addr+1),
-            self.memory.read(addr+2),
+            self.memory.borrow().read(addr),
+            self.memory.borrow().read(addr+1),
+            self.memory.borrow().read(addr+2),
         ];
 
         // Decode the instruction
@@ -285,8 +316,8 @@ impl Cpu {
     ///
     /// See: pg. 27 of GB Programming Manual
     fn service_interrupts(&mut self) -> u8 {
-        let int_enable = self.memory.read(0xFFFF);
-        let int_flags = self.memory.read(0xFF0F);
+        let int_enable = self.memory.borrow().read(0xFFFF);
+        let int_flags = self.memory.borrow().read(0xFF0F);
 
         // If no interrupts are pending, bail out now
         if int_enable & int_flags == 0 {
@@ -315,7 +346,7 @@ impl Cpu {
                 self.ime = false;
 
                 // Clear the pending flag
-                self.memory.write(0xFF0F, int_flags & !(1 << int));
+                self.memory.borrow_mut().write(0xFF0F, int_flags & !(1 << int));
 
                 // Push current PC to the stack
                 self.push(self.registers.PC);
@@ -336,8 +367,8 @@ impl Cpu {
     #[inline]
     pub fn trigger_interrupt(&mut self, interrupt: Interrupt) {
         let bit = interrupt as u8;
-        let int_flags = self.memory.read(0xFF0F);
-        self.memory.write(0xFF0F, int_flags | 1 << bit);
+        let int_flags = self.memory.borrow().read(0xFF0F);
+        self.memory.borrow_mut().write(0xFF0F, int_flags | 1 << bit);
     }
 
     /// Execute a single instruction on this CPU
@@ -349,6 +380,8 @@ impl Cpu {
     pub fn execute(&mut self, instruction: Instruction) -> (bool, bool) {
         use Instruction::*;
 
+        let memory: &mut MemoryBus = &mut self.memory.borrow_mut();
+
         let mut jump = false;
         let mut taken = false;
 
@@ -358,7 +391,7 @@ impl Cpu {
                 self.halted = true;
             }
             Stop => {
-                if self.cgb && self.memory.io().prep_speed_switch & 0x1 != 0 {
+                if self.cgb && memory.io().prep_speed_switch & 0x1 != 0 {
                     // Switch speed
                     self.speed_switch();
                 }
@@ -383,25 +416,25 @@ impl Cpu {
                 }
                 (Arg::Reg8(dst), Arg::Mem(src)) => {
                     let addr = self.registers.read(src);
-                    let value = self.memory.read(addr);
+                    let value = memory.read(addr);
                     self.registers.write(dst, value);
                 }
                 (Arg::Mem(dst), Arg::Reg8(src)) => {
                     let addr = self.registers.read(dst);
-                    self.memory.write(addr, self.registers.read(src));
+                    memory.write(addr, self.registers.read(src));
                 }
                 (Arg::Mem(dst), Arg::Imm8(src)) => {
                     let addr = self.registers.read(dst);
-                    self.memory.write(addr, src);
+                    memory.write(addr, src);
                 }
                 (Arg::MemImm(dst), Arg::Reg8(src)) => {
-                    self.memory.write(dst, self.registers.read(src));
+                    memory.write(dst, self.registers.read(src));
                 }
                 (Arg::MemImm(dst), Arg::Reg16(src)) => {
-                    self.memory.write(dst, self.registers.read(src));
+                    memory.write(dst, self.registers.read(src));
                 }
                 (Arg::Reg8(dst), Arg::MemImm(src)) => {
-                    let value = self.memory.read(src);
+                    let value = memory.read(src);
                     self.registers.write(dst, value);
                 }
                 (Arg::Reg16(Reg16::SP), Arg::Reg16(Reg16::HL)) => {
@@ -412,41 +445,41 @@ impl Cpu {
             },
             LdMemCA => {
                 let addr = 0xFF00 + self.registers.read(Reg8::C) as u16;
-                self.memory.write(addr, self.registers.read(Reg8::A));
+                memory.write(addr, self.registers.read(Reg8::A));
             }
             LdAMemC => {
                 let addr = 0xFF00 + self.registers.read(Reg8::C) as u16;
-                self.registers.write(Reg8::A, self.memory.read(addr));
+                self.registers.write(Reg8::A, memory.read(addr));
             }
             LdiAMemHl => {
                 let addr = self.registers.read(Reg16::HL);
-                let value = self.memory.read(addr);
+                let value = self.memory.borrow().read(addr);
                 self.registers.write(Reg8::A, value);
                 self.registers.write(Reg16::HL, addr.wrapping_add(1));
             }
             LdiMemHlA => {
                 let addr = self.registers.read(Reg16::HL);
-                self.memory.write(addr, self.registers.read(Reg8::A));
+                memory.write(addr, self.registers.read(Reg8::A));
                 self.registers.write(Reg16::HL, addr.wrapping_add(1));
             }
             LddAMemHl => {
                 let addr = self.registers.read(Reg16::HL);
-                let value = self.memory.read(addr);
+                let value = memory.read(addr);
                 self.registers.write(Reg8::A, value);
                 self.registers.write(Reg16::HL, addr.wrapping_sub(1));
             }
             LddMemHlA => {
                 let addr = self.registers.read(Reg16::HL);
-                self.memory.write(addr, self.registers.read(Reg8::A));
+                memory.write(addr, self.registers.read(Reg8::A));
                 self.registers.write(Reg16::HL, addr.wrapping_sub(1));
             }
             LdhA { offset } => {
-                let value = self.memory.read(0xFF00 + offset as u16);
+                let value = memory.read(0xFF00 + offset as u16);
                 self.registers.write(Reg8::A, value);
             }
             Ldh { offset } => {
                 let a = self.registers.read(Reg8::A);
-                self.memory.write(0xFF00 + offset as u16, a);
+                memory.write(0xFF00 + offset as u16, a);
             }
             LdHlSpImm8i { offset } | AddSpImm8i { offset } => {
                 let offset = offset as u16;
@@ -595,9 +628,9 @@ impl Cpu {
                     }
                     Arg::MemHl => {
                         let addr = self.registers.read(Reg16::HL);
-                        let value = self.memory.read(addr);
+                        let value = memory.read(addr);
                         let value = (value << 4) | (value >> 4);
-                        self.memory.write(addr, value);
+                        memory.write(addr, value);
                         value
                     }
                     _ => unreachable!("Unexpected dst: {}", dst),
@@ -615,7 +648,7 @@ impl Cpu {
                     Arg::Reg8(dst) => self.registers.read(dst),
                     Arg::MemHl => {
                         let addr = self.registers.read(Reg16::HL);
-                        self.memory.read(addr)
+                        memory.read(addr)
                     }
                     _ => unreachable!("Unexpected dst: {}", dst),
                 };
@@ -667,7 +700,7 @@ impl Cpu {
             }
             Arg::MemHl => {
                 let addr = self.registers.read(Reg16::HL);
-                self.memory.read(addr)
+                self.memory.borrow().read(addr)
             }
             _ => unreachable!("Unexpected dst: {}", dst),
         };
@@ -708,7 +741,7 @@ impl Cpu {
             }
             Arg::MemHl => {
                 let addr = self.registers.read(Reg16::HL);
-                self.memory.write(addr, value);
+                self.memory.borrow_mut().write(addr, value);
             }
             _ => unreachable!("Unexpected dst: {}", dst),
         }
@@ -734,7 +767,7 @@ impl Cpu {
             }
             Arg::MemHl => {
                 let addr = self.registers.read(Reg16::HL);
-                self.memory.read(addr)
+                self.memory.borrow().read(addr)
             }
             _ => unreachable!("Unexpected dst: {}", dst),
         };
@@ -764,7 +797,7 @@ impl Cpu {
             }
             Arg::MemHl => {
                 let addr = self.registers.read(Reg16::HL);
-                self.memory.write(addr, value);
+                self.memory.borrow_mut().write(addr, value);
             }
             _ => unreachable!("Unexpected dst: {}", dst),
         }
@@ -779,8 +812,8 @@ impl Cpu {
     /// Helper that pops 2 bytes off the stack
     fn pop(&mut self) -> u16 {
         // Read upper and lower bytes from stack.
-        let lower = self.memory.read(self.registers.SP);
-        let upper = self.memory.read(self.registers.SP + 1);
+        let lower = self.memory.borrow().read(self.registers.SP);
+        let upper = self.memory.borrow().read(self.registers.SP + 1);
         let value = (upper as u16) << 8 | lower as u16;
 
         // Increment SP
@@ -797,8 +830,8 @@ impl Cpu {
         // Write upper and lower bytes seperately to the stack.
         // We cannot use the `MemoryWrite` trait because it assumes
         // that memory addresses increase instead of decrease.
-        self.memory.write(self.registers.SP-1, upper);
-        self.memory.write(self.registers.SP-2, lower);
+        self.memory.borrow_mut().write(self.registers.SP-1, upper);
+        self.memory.borrow_mut().write(self.registers.SP-2, lower);
 
         // Decrement SP
         self.registers.SP -= 2;
@@ -812,7 +845,7 @@ impl Cpu {
             Arg::Imm8(src) => src,
             Arg::MemHl => {
                 let addr = self.registers.read(Reg16::HL);
-                let val = self.memory.read(addr);
+                let val = self.memory.borrow().read(addr);
                 val
             }
             _ => unreachable!("Unexpected src: {}", src),
@@ -838,7 +871,7 @@ impl Cpu {
             Arg::Imm8(src) => src,
             Arg::MemHl => {
                 let addr = self.registers.read(Reg16::HL);
-                let val = self.memory.read(addr);
+                let val = self.memory.borrow().read(addr);
                 val
             }
             _ => unreachable!("Unexpected src: {}", src),
@@ -890,7 +923,7 @@ impl Cpu {
             Arg::Imm8(src) => src,
             Arg::MemHl => {
                 let addr = self.registers.read(Reg16::HL);
-                let val = self.memory.read(addr);
+                let val = self.memory.borrow().read(addr);
                 val
             }
             _ => unreachable!("Unexpected src: {}", src),
@@ -919,7 +952,7 @@ impl Cpu {
             Arg::Imm8(src) => src,
             Arg::MemHl => {
                 let addr = self.registers.read(Reg16::HL);
-                let val = self.memory.read(addr);
+                let val = self.memory.borrow().read(addr);
                 val
             }
             _ => unreachable!("Unexpected src: {}", src),
@@ -953,7 +986,7 @@ impl Cpu {
             Arg::Imm8(src) => src,
             Arg::MemHl => {
                 let addr = self.registers.read(Reg16::HL);
-                let val = self.memory.read(addr);
+                let val = self.memory.borrow().read(addr);
                 val
             }
             _ => unreachable!("Unexpected src: {}", src),
@@ -1000,10 +1033,10 @@ impl Cpu {
             }
             Arg::MemHl => {
                 let addr = self.registers.read(Reg16::HL);
-                let curr = self.memory.read(addr);
+                let curr = self.memory.borrow().read(addr);
                 let result = curr.wrapping_add(1);
                 half_carry = curr.half_carry(1);
-                self.memory.write(addr, result);
+                self.memory.borrow_mut().write(addr, result);
                 result as u16
             }
             _ => unreachable!("Unexpected dst: {}", dst),
@@ -1041,13 +1074,13 @@ impl Cpu {
             }
             Arg::MemHl => {
                 let addr = self.registers.read(Reg16::HL);
-                let curr = self.memory.read(addr);
+                let curr = self.memory.borrow().read(addr);
 
                 // If lower nibble == 0, set the half-carry bit
                 half_carry = curr & 0x0F == 0;
 
                 let result = curr.wrapping_sub(1);
-                self.memory.write(addr, result);
+                self.memory.borrow_mut().write(addr, result);
 
                 result as u16
             }
@@ -1067,7 +1100,7 @@ impl Cpu {
             Arg::Reg8(dst) => self.registers.read(dst),
             Arg::MemHl => {
                 let addr = self.registers.read(Reg16::HL);
-                self.memory.read(addr)
+                self.memory.borrow().read(addr)
             }
             _ => unreachable!("Unexpected dst: {}", dst),
         };
@@ -1084,7 +1117,7 @@ impl Cpu {
             Arg::Reg8(dst) => self.registers.write(dst, result),
             Arg::MemHl => {
                 let addr = self.registers.read(Reg16::HL);
-                self.memory.write(addr, result);
+                self.memory.borrow_mut().write(addr, result);
             }
             _ => unreachable!("Unexpected dst: {}", dst),
         }
@@ -1123,10 +1156,6 @@ impl Cpu {
         self.registers.clear(Flag::HalfCarry);
         self.registers.set(Flag::Carry, carry);
     }
-
-    pub fn memory(&self) -> &MemoryBus {
-        &self.memory
-    }
 }
 
 #[cfg(test)]
@@ -1150,7 +1179,7 @@ mod test {
         cpu.execute(inst);
 
         // Enable VBLANK and LCD STAT
-        cpu.memory.write(0xFFFF, 0x03u8);
+        cpu.memory.borrow_mut().write(0xFFFF, 0x03u8);
 
         // Prepare basic ISRs in ROM:
         //
@@ -1161,7 +1190,7 @@ mod test {
         // LcdStat:
         // 1. NOP
         // 2. RET
-        let controller = cpu.memory.controller_mut();
+        let controller = cpu.memory.borrow_mut().controller_mut();
         controller.rom.write(0x40, 0x80u8);
         controller.rom.write(0x41, 0xD9u8);
         controller.rom.write(0x48, 0x00u8);
@@ -1434,7 +1463,7 @@ mod test {
         assert!(cpu.registers.subtract());
 
         let (addr, value) = (0xC000, 0x40u8);
-        cpu.memory.write(addr, value);
+        cpu.memory.borrow_mut().write(addr, value);
         cpu.registers.write(Reg16::HL, addr);
         let inst = Instruction::Cp { src: Arg::MemHl };
         cpu.execute(inst);

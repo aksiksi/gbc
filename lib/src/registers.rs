@@ -1,6 +1,7 @@
 /// 8-bit register names
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[allow(non_snake_case)]
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 pub enum Reg8 {
     A,
     F,
@@ -31,6 +32,7 @@ impl std::fmt::Display for Reg8 {
 /// This includes the "combo" registers
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[allow(non_snake_case)]
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 pub enum Reg16 {
     AF,
     BC,

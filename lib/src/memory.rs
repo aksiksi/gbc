@@ -68,6 +68,12 @@ impl Ram {
     }
 }
 
+impl Default for Ram {
+    fn default() -> Self {
+        Self::new(true)
+    }
+}
+
 impl MemoryRead<u16, u8> for Ram {
     #[inline]
     fn read(&self, addr: u16) -> u8 {
@@ -111,6 +117,7 @@ impl MemoryWrite<u16, u8> for Ram {
 /// Memory-mapped I/O registers and buffers
 ///
 /// TODO: Move some stuff to PPU
+#[derive(Default)]
 #[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 pub struct Io {
     /// Joypad register: 0xFF00
@@ -346,6 +353,7 @@ impl std::fmt::Display for MemoryType {
     }
 }
 
+#[derive(Default)]
 #[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 /// 64K memory map for the GBC
 pub struct MemoryBus {

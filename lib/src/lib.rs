@@ -13,10 +13,13 @@ mod timer;
 #[cfg(feature = "debug")]
 pub mod debug;
 
+use std::collections::VecDeque;
+
 pub use cpu::Cpu;
 use cpu::Interrupt;
 use cartridge::{Cartridge, Controller};
 pub use error::{Error, Result};
+use instructions::{Arg, Cycles, Instruction};
 use joypad::JoypadEvent;
 use memory::MemoryWrite;
 use ppu::FrameBuffer;
@@ -27,10 +30,31 @@ pub struct GameboyState<'a> {
     pub rtc: Option<Vec<u8>>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
+pub enum Operation {
+    InstFetch,
+    InstExecute { inst: Instruction, size: u8, cycles: Cycles },
+    MemoryAccess { src: Arg, dst: Arg },
+    Dma,
+    Timer,
+    Ppu,
+    Serial,
+    Rtc,
+    TriggerInterrupt(Interrupt),
+}
+
+pub type OperationsQueue = VecDeque<(Operation, u16)>;
+
 #[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 /// Gameboy
 pub struct Gameboy {
     cpu: Cpu,
+
+    /// Operations queue
+    ///
+    /// Each entry in the queue represents an operation and deadline
+    operations: OperationsQueue,
 
     #[cfg(feature = "debug")]
     #[cfg_attr(feature = "save", serde(skip))]
@@ -50,13 +74,18 @@ impl Gameboy {
         #[cfg(feature = "debug")]
         let gameboy = Self {
             cpu,
+            operations: VecDeque::with_capacity(100),
             debugger: debug::Debugger::new(),
         };
 
         #[cfg(not(feature = "debug"))]
         let gameboy = Self {
             cpu,
+            operations: VecDeque::with_capacity(100),
         };
+
+        // Initially, we just need to fetch the next instruction and service interrupts
+        gameboy.operations.push_back((Operation::InstFetch, 0));
 
         Ok(gameboy)
     }
@@ -76,7 +105,7 @@ impl Gameboy {
         // Execute a step of the CPU
         //
         // This handles interrupt processing and DMA internally.
-        let (cycles_taken, _inst) = self.cpu.step();
+        let cycles_taken = self.cpu.step(&mut self.operations);
 
         let mut interrupts = Vec::new();
 
@@ -99,6 +128,11 @@ impl Gameboy {
             // Reset DIV on speed switch
             self.cpu.memory.write(0xFF04u16, 0u8);
             self.cpu.stopped = false;
+        }
+
+        // Update the deadlines of all pending operations on the queue
+        for operation in &mut self.operations {
+            operation.1 = operation.1.saturating_sub(cycles_taken);
         }
 
         cycles_taken as u32

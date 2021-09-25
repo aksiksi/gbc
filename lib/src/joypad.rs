@@ -64,7 +64,13 @@ enum JoypadSelection {
     Directions,
 }
 
-#[derive(Debug)]
+impl Default for JoypadSelection {
+    fn default() -> Self {
+        JoypadSelection::None
+    }
+}
+
+#[derive(Debug, Default)]
 #[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 pub struct Joypad {
     buttons: u8,

@@ -417,22 +417,7 @@ pub struct Controller {
 impl Controller {
     /// Create a default controller
     pub fn new() -> Self {
-        let rom_size = RomSize::_32K;
-        let ram_size = RamSize::_8K;
-
-        Self {
-            boot_rom: None,
-            rom: Rom::new(rom_size),
-            ram: Ram::new(ram_size),
-            rom_size,
-            ram_size,
-            cartridge_type: CartridgeType::Mbc1,
-            rtc: None,
-            rtc_active: false,
-            banking_mode: false,
-            ram_enable: false,
-            ram_rom_bank: 0,
-        }
+        Self::default()
     }
 
     /// Create a controller from a `Cartridge`
@@ -499,6 +484,27 @@ impl Controller {
     /// ROM remains unchanged, while the RAM is reset
     pub(crate) fn reset(&mut self) {
         self.ram = Ram::new(self.ram_size);
+    }
+}
+
+impl Default for Controller {
+    fn default() -> Self {
+        let rom_size = RomSize::_32K;
+        let ram_size = RamSize::_8K;
+
+        Self {
+            boot_rom: None,
+            rom: Rom::new(rom_size),
+            ram: Ram::new(ram_size),
+            rom_size,
+            ram_size,
+            cartridge_type: CartridgeType::Mbc1,
+            rtc: None,
+            rtc_active: false,
+            banking_mode: false,
+            ram_enable: false,
+            ram_rom_bank: 0,
+        }
     }
 }
 

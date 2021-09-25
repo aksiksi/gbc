@@ -1,7 +1,8 @@
-use crate::registers::{Reg16, Reg8};
+use crate::registers::{Reg16, Reg8, RegisterFile, RegisterOps};
 
 /// A single argument to an instruction.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 pub enum Arg {
     /// 8-bit register
     Reg8(Reg8),
@@ -70,6 +71,7 @@ impl From<Reg16> for Arg {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 pub enum Cond {
     None,
     NotZero,
@@ -96,6 +98,7 @@ impl std::fmt::Display for Cond {
 ///
 /// Tuple contains either: (source) or (dest) or (dest, source)
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 pub enum Instruction {
     /// Load an 8-bit or 16-bit value from `src` into `dst`
     ///
@@ -483,11 +486,18 @@ pub enum Instruction {
     RetI,
 }
 
+impl Instruction {
+    pub fn src() -> Option<Arg> {
+
+    }
+}
+
 /// Number of cycles required to execute to an instruction.
 ///
 /// If this is a conditional instruction, the second arg represents the number of
 /// cycles consumed if the path is not taken (faster).
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 pub struct Cycles(pub u8, pub u8);
 
 impl Cycles {
@@ -507,6 +517,100 @@ impl From<u8> for Cycles {
 }
 
 impl Instruction {
+    /// If the src is in memory, returns the address.
+    pub fn src_addr(&self, registers: &RegisterFile) -> Option<u16> {
+        use Instruction::*;
+        match *self {
+            Ld { dst, src } => match src {
+                Arg::MemHl => Some(registers.read(Reg16::HL)),
+                Arg::MemImm(addr) => Some(addr),
+                Arg::Mem(reg) => Some(registers.read(reg)),
+                _ => None,
+            }
+            LdAMemC => Some(0xFF00 + registers.read(Reg8::A) as u16),
+            LdMemCA => None,
+            LddAMemHl => Some(registers.read(Reg16::HL)),
+            LddMemHlA => None,
+            LdiAMemHl => Some(registers.read(Reg16::HL)),
+            LdiMemHlA => None,
+            LdhA { offset } => Some(0xFF00 + offset as u16),
+            Ldh { offset } => None,
+            LdHlSpImm8i { offset } => None,
+            Push { src } => None,
+            Pop { dst } => Some(registers.read(Reg16::SP)),
+            Add { src } | Adc { src } | Sub { src } | Sbc { src } | And { src } | Or { src } | Xor { src } | Cp { src } => match src {
+                Arg::Mem(reg) => Some(registers.read(reg)),
+                Arg::MemHl => Some(registers.read(Reg16::HL)),
+                _ => None,
+            }
+            Adc { src } => match src {
+                Arg::Mem(reg) => Some(registers.read(reg)),
+                _ => None,
+            }
+            Sub { src } => match src {
+                Arg::Mem(reg) => Some(registers.read(reg)),
+                _ => None,
+            }
+            Sbc { src } => match src {
+                Arg::Mem(reg) => Some(registers.read(reg)),
+                _ => None,
+            }
+            Inc { dst } | Dec { dst } => None,
+            AddHlReg16 { src } => None,
+            AddSpImm8i { offset } => None,
+            Swap { dst } => write!(f, "swap {}", dst),
+            Daa => write!(f, "daa"),
+            Cpl => write!(f, "cpl"),
+            Ccf => write!(f, "ccf"),
+            Scf => write!(f, "scf"),
+            Nop => write!(f, "nop"),
+            Halt => write!(f, "halt"),
+            Stop => write!(f, "stop"),
+            Di => write!(f, "di"),
+            Ei => write!(f, "ei"),
+            Rst { offset } => write!(f, "rst {:#06X}", offset),
+            Rlc { dst } => write!(f, "rlc {}", dst),
+            Rlca => write!(f, "rlca"),
+            Rl { dst } => write!(f, "rl {}", dst),
+            Rla => write!(f, "rla"),
+            Rrc { dst } => write!(f, "rrc {}", dst),
+            Rrca => write!(f, "rrca"),
+            Rr { dst } => write!(f, "rr {}", dst),
+            Rra => write!(f, "rra"),
+            Sla { dst } => write!(f, "sla {}", dst),
+            Sra { dst } => write!(f, "sra {}", dst),
+            Srl { dst } => write!(f, "srl {}", dst),
+            Bit { dst, bit } => write!(f, "bit {}, {}", dst, bit),
+            Set { dst, bit } => write!(f, "set {}, {}", dst, bit),
+            Res { dst, bit } => write!(f, "res {}, {}", dst, bit),
+            Jp { addr, cond } => {
+                match cond {
+                    Cond::None => write!(f, "jp {:#06X}", addr),
+                    cond => write!(f, "jp {}, {:#06X}", cond, addr),
+                }
+            }
+            JpHl => write!(f, "jp (HL)"),
+            Jr { offset, cond } => {
+                match cond {
+                    Cond::None => write!(f, "jr {}", offset),
+                    cond => write!(f, "jr {}, {}", cond, offset),
+                }
+            }
+            Call { addr, cond } => {
+                match cond {
+                    Cond::None => write!(f, "call {:#06X}", addr),
+                    cond => write!(f, "call {}, {:#06X}", cond, addr),
+                }
+            }
+            Ret { cond } => {
+                match cond {
+                    Cond::None => write!(f, "ret"),
+                    cond => write!(f, "ret {}", cond),
+                }
+            }
+            RetI => write!(f, "reti"),
+        }
+    }
     /// Decode a single instruction from a 3 byte array.
     ///
     /// In all cases, we will attempt to extract an argument from the following

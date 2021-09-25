@@ -109,3 +109,9 @@ In JS:
 ## Save States
 
 * Use `Vec<u8>` for save state methods. Allow the upper layer to figure out how to handle the raw data.
+
+## Operations Queue
+
+The idea is to have a global queue of operations that can be modified by any of the subsystems.
+
+For example, for the CPU:
