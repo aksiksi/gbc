@@ -362,6 +362,9 @@ impl Cpu {
                     // Switch speed
                     self.speed_switch();
                 }
+
+                // Reset timer DIV register
+                self.memory.timer().write(0xFF04, 0);
             }
             Di => {
                 self.ime = false;
