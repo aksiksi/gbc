@@ -68,7 +68,7 @@ impl Timer {
             return false;
         }
 
-        let threshold = self.tima_ratio();
+        let threshold = self.tima_ratio(speed);
         let mut interrupt = false;
 
         self.tima_counter += cycles;
@@ -92,13 +92,19 @@ impl Timer {
     /// Returns the ratio of CPU clock cycle time to current TIMA clock
     /// mode in TAC
     #[inline]
-    fn tima_ratio(&self) -> u16 {
-        match self.tac & 0x3 {
+    fn tima_ratio(&self, speed: bool) -> u16 {
+        let threshold = match self.tac & 0x3 {
             0 => Self::TIMER_RATIO * 4,
             1 => Self::TIMER_RATIO / 16,
             2 => Self::TIMER_RATIO / 4,
             3 => Self::TIMER_RATIO,
             _ => unreachable!(),
+        };
+
+        if speed {
+            threshold / 2
+        } else {
+            threshold
         }
     }
 

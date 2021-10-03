@@ -415,7 +415,7 @@ impl MemoryBus {
         // Execute a step of the PPU.
         //
         // The PPU will "catch up" based on what happened in the CPU.
-        self.ppu.step(cycles, speed, interrupts);
+        self.ppu.step(cycles, interrupts);
 
         // Update the internal timer and trigger an interrupt, if needed
         // Note that the timer may tick multiple times for a single instruction

@@ -197,17 +197,18 @@ impl Cpu {
             cycles.taken() as u16
         };
 
+        cycles += int_cycles as u16;
+
+        if self.speed {
+            cycles /= 2;
+        }
+
         if self.stopped {
             // If we've entered STOP mode for a speed switch, block the CPU for a bit.
             // Also, do not run through DMA.
             cycles += 8200;
         } else {
-            cycles += int_cycles as u16;
             cycles += self.dma(cycles);
-        }
-
-        if self.speed {
-            cycles /= 2;
         }
 
         (cycles, inst)
