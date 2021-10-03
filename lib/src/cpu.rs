@@ -206,6 +206,10 @@ impl Cpu {
             cycles += self.dma(cycles);
         }
 
+        if self.speed {
+            cycles /= 2;
+        }
+
         (cycles, inst)
     }
 

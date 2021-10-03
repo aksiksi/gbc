@@ -419,7 +419,7 @@ impl MemoryBus {
 
         // Update the internal timer and trigger an interrupt, if needed
         // Note that the timer may tick multiple times for a single instruction
-        if self.timer().step(cycles) {
+        if self.timer().step(cycles, speed) {
             interrupts.push(Interrupt::Timer);
         }
 
