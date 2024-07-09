@@ -5,11 +5,13 @@ authors = ["Assil Ksiksi <cyph0nik@gmail.com>"]
 edition = "2018"
 
 [features]
+default = ["static"]
 debug = ["gbc/debug"]
+static = ["sdl2/bundled", "sdl2/static-link"]
 
 [dependencies]
 gbc = { path = "../lib" }
-sdl2 = { version = "0.34.3", features = [ "bundled", "static-link" ] }
+sdl2 = { version = "0.34.3" }
 structopt = { version = "0.3", default-features = false }
 log = "0.4"
 env_logger = "0.8"
