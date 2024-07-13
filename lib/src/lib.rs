@@ -18,6 +18,7 @@ use cpu::Interrupt;
 use cartridge::{Cartridge, Controller};
 pub use error::{Error, Result};
 use joypad::JoypadEvent;
+use memory::MemoryWrite;
 use ppu::FrameBuffer;
 
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -95,6 +96,8 @@ impl Gameboy {
         }
 
         if self.cpu.stopped {
+            // Reset DIV on speed switch
+            self.cpu.memory.write(0xFF04u16, 0u8);
             self.cpu.stopped = false;
         }
 

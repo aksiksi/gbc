@@ -486,11 +486,19 @@ impl Ppu {
     }
 
     /// Returns the next: (dot, scanline, STAT mode)
-    fn get_next_dot(&self, cycles: u16) -> (u16, u8, StatMode) {
+    fn get_next_dot(&self, cycles: u16, speed: bool) -> (u16, u8, StatMode) {
         let mut line = self.ly;
         let mut dot = self.dot;
 
-        dot += cycles;
+        // Figure out the number of pixels to render in this step
+        let dots = if speed {
+            // If we are in double-speed mode, we render a pixel every 2 cycles
+            cycles / 2
+        } else {
+            cycles
+        };
+
+        dot += dots;
 
         if dot >= Self::DOTS_PER_LINE {
             // Move to the next scanline
@@ -530,8 +538,8 @@ impl Ppu {
     ///
     /// If any interrupts need to be triggered, they are pushed to the input `interrupts`
     /// vector.
-    pub fn step(&mut self, cycles: u16, interrupts: &mut Vec<Interrupt>) {
-        let (dot, line, mode) = self.get_next_dot(cycles);
+    pub fn step(&mut self, cycles: u16, speed: bool, interrupts: &mut Vec<Interrupt>) {
+        let (dot, line, mode) = self.get_next_dot(cycles, speed);
 
         self.dot = dot;
         self.ly = line;
@@ -591,12 +599,12 @@ impl Ppu {
         stat_mode_change
     }
 
-    /// Given a number of cycles, returns the _next_ mode and number of dots
+    /// Given a number of cycles, returns the _next_ mode and number of cycles
     /// the PPU would remain in that mode.
-    pub fn next_mode(&self, cycles: u16) -> (StatMode, u16) {
-        let (.., mode) = self.get_next_dot(cycles);
+    pub fn next_mode(&self, cycles: u16, speed: bool) -> (StatMode, u16) {
+        let (.., mode) = self.get_next_dot(cycles, speed);
 
-        // Determine the number of dots the PPU would spend in the next mode
+        // Determine the number of cycles the PPU would spend in the next mode
         let dots = match mode {
             StatMode::OamScan => Self::OAM_SCAN_DOTS,
             StatMode::OamRead => Self::OAM_READ_DOTS,
@@ -604,7 +612,13 @@ impl Ppu {
             StatMode::Vblank => Self::VBLANK_DOTS,
         };
 
-        (mode, dots)
+        let cycles_in_mode = if speed {
+            dots * 2
+        } else {
+            dots
+        };
+
+        (mode, cycles_in_mode as u16)
     }
 
     /// Render pixel data to the internal frame buffer

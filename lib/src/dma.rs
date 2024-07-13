@@ -54,9 +54,8 @@ impl DmaController {
         let mut cycles_taken = 0;
 
         // OAM DMA
-        // Runs twice as fast in double-speed mode
         if memory.ppu().oam_dma_active {
-            self.oam_dma(cycles, memory, speed);
+            self.oam_dma(cycles, memory);
         }
 
         // HDMA
@@ -64,23 +63,22 @@ impl DmaController {
             // HDMA is a blocking operation. However, it needs the number of
             // cycles spent in the CPU to be able to figure out the next PPU
             // mode for the HBLANK check.
-            cycles_taken = self.hdma(cycles, memory, speed);
+            cycles_taken = self.hdma(cycles, speed, memory);
         }
 
         cycles_taken
     }
 
-    fn oam_dma(&mut self, mut cycles: u16, memory: &mut MemoryBus, speed: bool) {
+    fn oam_dma(&mut self, mut cycles: u16, memory: &mut MemoryBus) {
         let dma_reg = memory.read(Self::DMA_ADDR);
         let source_start_addr = (dma_reg as u16) << 8;
-        let cycles_per_byte = if speed { 2 } else { 4 };
 
         // OAM DMA transfers 1 byte every 4 clock cycles
-        while cycles >= cycles_per_byte && self.oam_dma_counter < 162 {
+        while cycles >= 4 && self.oam_dma_counter < 162 {
             if self.oam_dma_counter < 2 {
                 // Delay cycles
                 self.oam_dma_counter += 1;
-                cycles -= cycles_per_byte;
+                cycles -= 4;
                 continue;
             }
 
@@ -94,7 +92,7 @@ impl DmaController {
             memory.ppu_mut().oam[oam_index] = data;
 
             self.oam_dma_counter += 1;
-            cycles -= cycles_per_byte;
+            cycles -= 4;
         }
 
         if self.oam_dma_counter == 162 {
@@ -104,8 +102,7 @@ impl DmaController {
         }
     }
 
-    // TODO(aksiksi): Rewrite this method... it's a bit messier than needed
-    fn hdma(&mut self, cycles: u16, memory: &mut MemoryBus, speed: bool) -> u16 {
+    fn hdma(&mut self, cycles: u16, speed: bool, memory: &mut MemoryBus) -> u16 {
         // Determine source and destination addresses
         let source_addr_upper = memory.read(0xFF51) as u16;
         let source_addr_lower = memory.read(0xFF52) as u16;
@@ -153,15 +150,21 @@ impl DmaController {
             // This needs to be done because we could be _just before_ HBLANK, but since
             // DMA kicks in before the PPU has a chance to catch up, we need to look ahead
             // based on the number of cycles spent in the CPU.
-            let (next_mode, _) = memory.ppu().next_mode(cycles);
+            let (next_mode, cycles_in_mode) = memory.ppu().next_mode(cycles, speed);
 
             if next_mode != StatMode::Hblank {
                 // If we are not in HBLANK, there is nothing to do
                 return 0;
             }
 
-            // One 16-byte chunk during each HBLANK, regardless of CPU speed
-            1
+            // Figure out the number of chunks we can transfer during this HBLANK
+            let num_chunks = if speed {
+                cycles_in_mode / 64
+            } else {
+                cycles_in_mode / 32
+            };
+
+            num_chunks as u8
         };
 
         // Figure out the start and end chunks for this step
@@ -215,11 +218,12 @@ impl DmaController {
             memory.io_mut().hdma_reg_write(start_reg | remaining_length);
         }
 
-        // Setup time + num chunks * bytes per chunk (16) * 2 cycles per byte
         if speed {
-            110 + num_chunks as u16 * 16 * 2
+            // In double-speed mode, HDMA transfers a chunk (16 bytes) every
+            // 64 cycles
+            num_chunks as u16 * 64
         } else {
-            220 + num_chunks as u16 * 16 * 2
+            num_chunks as u16 * 32
         }
     }
 }
