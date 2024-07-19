@@ -39,6 +39,10 @@ Emulator GUI keys:
 * `;`: reset the emulator
 * `O`: draw basic tile outline (toggle)
 * `P`: pause (toggle)
+* `]`: Fast-forward (while held)
+* `=`: Increase emulation speed by 1x
+* `-`: Decrease emulation speed by 1x
+* `0`: Reset emulation speed to 1x
 
 Note: these are replaced with buttons in the WASM version.
 

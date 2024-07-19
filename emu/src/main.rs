@@ -197,7 +197,7 @@ fn new_persist_file(path: &PathBuf) -> std::fs::File {
         .unwrap()
 }
 
-fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool, load: bool) {
+fn gui(rom_file: PathBuf, scale: u32, mut speed: u8, boot_rom: bool, trace: bool, load: bool) {
     let rom_name = match rom_file.file_name() {
         None => None,
         Some(n) => Some(n.to_str().unwrap()),
@@ -284,14 +284,17 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool, lo
     // More accurate sleep, especially on Windows
     let sleeper = spin_sleep::SpinSleeper::default();
 
-    let frame_time_ns = Gameboy::FRAME_DURATION / speed as u64;
-    let frame_duration = Duration::from_nanos(frame_time_ns);
-
     let mut fps_counter = FpsCounter::new();
+
+    let mut prev_speed = speed;
+    let mut fast_forward = false;
 
     // Start the event loop
     let mut event_pump = sdl_context.event_pump().unwrap();
     'running: loop {
+        let frame_time_ns = Gameboy::FRAME_DURATION / speed as u64;
+        let frame_duration = Duration::from_nanos(frame_time_ns);
+
         let frame_start = Instant::now();
 
         for event in event_pump.poll_iter() {
@@ -304,12 +307,41 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool, lo
                     // Reset the emulator
                     gameboy.reset();
                 }
+
+                // Emulation speed
+                //
+                // No effect if in fast-forward mode.
+                Event::KeyDown { keycode: Some(Keycode::Equals), .. } if !fast_forward => {
+                    speed += 1;
+                }
+                Event::KeyDown { keycode: Some(Keycode::Minus), .. } if !fast_forward => {
+                    speed -= 1;
+                }
+                Event::KeyDown { keycode: Some(Keycode::Num0), .. } if !fast_forward => {
+                    speed = 1;
+                }
+
+                // Fast-forward mode
+                Event::KeyDown { keycode: Some(Keycode::RightBracket), .. } if !fast_forward => {
+                    fast_forward = true;
+                    (prev_speed, speed) = (speed, 2);
+                }
+                Event::KeyUp { keycode: Some(Keycode::RightBracket), .. } if fast_forward => {
+                    fast_forward = false;
+                    // Restore previous speed setting.
+                    speed = prev_speed;
+                }
+
+                // Pause
                 Event::KeyDown { keycode: Some(Keycode::P), .. } => {
                     paused = !paused;
                 }
+                // Outline
                 Event::KeyDown { keycode: Some(Keycode::O), .. } => {
                     outline = !outline;
                 }
+
+                // Save state
                 Event::KeyDown { keycode: Some(Keycode::K), .. } => {
                     // Save this Gameboy state to disk
                     let state = gameboy.save().unwrap();
@@ -323,6 +355,8 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool, lo
                                        .expect("Save state not found!");
                     gameboy = Gameboy::load(&data, cartridge).unwrap();
                 }
+
+                // Joypad event
                 Event::KeyDown { .. } | Event::KeyUp { .. } => {
                     if let Some(e) = event_to_joypad(event) {
                         joypad_events.push(e);
@@ -365,7 +399,7 @@ fn gui(rom_file: PathBuf, scale: u32, speed: u8, boot_rom: bool, trace: bool, lo
 
         // Update FPS counter in window title
         let fps = fps_counter.frame();
-        let title = format!("{} - {:.2} fps", rom_name, fps);
+        let title = format!("{} - {:.2} fps ({}x speed)", rom_name, fps, speed);
         canvas.window_mut().set_title(&title).unwrap();
     }
 }
