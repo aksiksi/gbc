@@ -38,11 +38,7 @@ impl Ram {
     pub const BANK_SELECT_ADDR: u16 = 0xFF70;
 
     pub fn new(cgb: bool) -> Self {
-        let num_banks = if cgb {
-            8u8
-        } else {
-            2u8
-        };
+        let num_banks = if cgb { 8u8 } else { 2u8 };
 
         Self {
             data: vec![0u8; Self::BANK_SIZE * num_banks as usize],
@@ -55,11 +51,7 @@ impl Ram {
     /// Update the active RAM bank
     pub fn update_bank(&mut self, bank: u8) {
         if self.cgb {
-            self.active_bank = if bank == 0 {
-                1
-            } else {
-                bank & 0b0111
-            };
+            self.active_bank = if bank == 0 { 1 } else { bank & 0b0111 };
 
             assert!(self.active_bank < self.num_banks);
         } else {
@@ -232,9 +224,7 @@ impl MemoryRead<u16, u8> for Io {
                 // Serial control
                 self.serial[1]
             }
-            0xFF04..=0xFF07 => {
-                self.timer.read(addr)
-            }
+            0xFF04..=0xFF07 => self.timer.read(addr),
             0xFF0F => self.int_flags,
             0xFF10..=0xFF26 => {
                 let idx = (addr - 0xFF10) as usize;
@@ -252,7 +242,13 @@ impl MemoryRead<u16, u8> for Io {
                 self.hdma[idx]
             }
             0xFF56 => self.rp,
-            0xFF03 | 0xFF08..=0xFF0E | 0xFF27..=0xFF2F | 0xFF4C..=0xFF4E | 0xFF57..=0xFF67 | 0xFF6D..=0xFF6F | 0xFF71..=0xFF7F => {
+            0xFF03
+            | 0xFF08..=0xFF0E
+            | 0xFF27..=0xFF2F
+            | 0xFF4C..=0xFF4E
+            | 0xFF57..=0xFF67
+            | 0xFF6D..=0xFF6F
+            | 0xFF71..=0xFF7F => {
                 // Invalid registers -- ignore reads from these
                 log::warn!("Invalid read from 0x{:X}", addr);
                 0xFF
@@ -315,7 +311,13 @@ impl MemoryWrite<u16, u8> for Io {
             0xFF56 => {
                 self.rp = value;
             }
-            0xFF03 | 0xFF08..=0xFF0E | 0xFF27..=0xFF2F | 0xFF4C..=0xFF4E | 0xFF57..=0xFF67 | 0xFF6C..=0xFF6F | 0xFF71..=0xFF7F => {
+            0xFF03
+            | 0xFF08..=0xFF0E
+            | 0xFF27..=0xFF2F
+            | 0xFF4C..=0xFF4E
+            | 0xFF57..=0xFF67
+            | 0xFF6C..=0xFF6F
+            | 0xFF71..=0xFF7F => {
                 // Invalid registers -- ignore writes to these
                 log::warn!("Invalid write to 0x{:X}: {}", addr, value)
             }
@@ -462,10 +464,13 @@ impl MemoryBus {
             (MemoryType::Rom, self.controller.rom.active_bank_1)
         } else if addr >= CartridgeRam::BASE_ADDR && addr <= CartridgeRam::LAST_ADDR {
             // Cartridge RAM
-            (MemoryType::CartridgeRam, match &self.controller.ram {
-                None => 0,
-                Some(ram) => ram.active_bank as u16,
-            })
+            (
+                MemoryType::CartridgeRam,
+                match &self.controller.ram {
+                    None => 0,
+                    Some(ram) => ram.active_bank as u16,
+                },
+            )
         } else if addr >= Ram::BASE_ADDR && addr < Ram::BASE_ADDR + Ram::BANK_SIZE as u16 {
             // Work RAM first bank
             (MemoryType::Ram, 0)
@@ -534,9 +539,11 @@ impl MemoryRead<u16, u8> for MemoryBus {
             Rom::BASE_ADDR..=Rom::LAST_ADDR | CartridgeRam::BASE_ADDR..=CartridgeRam::LAST_ADDR => {
                 self.controller.read(addr)
             }
-            Vram::BASE_ADDR..=Vram::LAST_ADDR | 0xFE00..=0xFE9F | 0xFF40..=0xFF4B | 0xFF68..=0xFF6B | Vram::BANK_SELECT_ADDR => {
-                self.ppu.read(addr)
-            }
+            Vram::BASE_ADDR..=Vram::LAST_ADDR
+            | 0xFE00..=0xFE9F
+            | 0xFF40..=0xFF4B
+            | 0xFF68..=0xFF6B
+            | Vram::BANK_SELECT_ADDR => self.ppu.read(addr),
             Ram::BASE_ADDR..=Ram::LAST_ADDR => self.ram.read(addr),
             0xE000..=0xFDFF => {
                 // Echo RAM
@@ -561,9 +568,7 @@ impl MemoryRead<u16, u8> for MemoryBus {
                 }
             }
             Ram::BANK_SELECT_ADDR => self.ram.active_bank,
-            0xFF00..=0xFF7F => {
-                self.io.read(addr)
-            }
+            0xFF00..=0xFF7F => self.io.read(addr),
             0xFF80..=0xFFFE => {
                 let addr = addr as usize - 0xFF80;
                 self.high_ram[addr]
@@ -583,7 +588,11 @@ impl MemoryWrite<u16, u8> for MemoryBus {
             0xE000..=0xFDFF => {
                 // Echo RAM
             }
-            Vram::BASE_ADDR..=Vram::LAST_ADDR | 0xFE00..=0xFE9F | 0xFF40..=0xFF4B | 0xFF68..=0xFF6C | Vram::BANK_SELECT_ADDR => {
+            Vram::BASE_ADDR..=Vram::LAST_ADDR
+            | 0xFE00..=0xFE9F
+            | 0xFF40..=0xFF4B
+            | 0xFF68..=0xFF6C
+            | Vram::BANK_SELECT_ADDR => {
                 self.ppu.write(addr, value);
             }
             0xFF80..=0xFFFE => {
@@ -601,9 +610,7 @@ impl MemoryWrite<u16, u8> for MemoryBus {
                 }
             }
             Ram::BANK_SELECT_ADDR => self.ram.update_bank(value),
-            0xFF00..=0xFF7F => {
-                self.io.write(addr, value)
-            }
+            0xFF00..=0xFF7F => self.io.write(addr, value),
             0xFFFF => {
                 self.int_enable = value;
             }
@@ -618,7 +625,7 @@ impl MemoryWrite<u16, u16> for MemoryBus {
     fn write(&mut self, addr: u16, value: u16) {
         let value = value.to_le_bytes();
         self.write(addr, value[0]);
-        self.write(addr+1, value[1]);
+        self.write(addr + 1, value[1]);
     }
 }
 

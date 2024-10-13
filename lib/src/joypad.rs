@@ -50,7 +50,9 @@ impl JoypadEvent {
 
     fn selection(&self) -> JoypadSelection {
         match self.input() {
-            JoypadInput::A | JoypadInput::B | JoypadInput::Select | JoypadInput::Start => JoypadSelection::Buttons,
+            JoypadInput::A | JoypadInput::B | JoypadInput::Select | JoypadInput::Start => {
+                JoypadSelection::Buttons
+            }
             _ => JoypadSelection::Directions,
         }
     }

@@ -260,8 +260,8 @@ impl Cpu {
         // TODO: Evaluate the boundary cases
         let data: [u8; 3] = [
             self.memory.read(addr),
-            self.memory.read(addr+1),
-            self.memory.read(addr+2),
+            self.memory.read(addr + 1),
+            self.memory.read(addr + 2),
         ];
 
         // Decode the instruction
@@ -273,7 +273,7 @@ impl Cpu {
         let mut addr = addr.unwrap_or(self.registers.PC);
         let mut result = Vec::new();
 
-        for _ in  0..count {
+        for _ in 0..count {
             let (inst, size, _) = self.fetch(Some(addr));
             result.push((inst, addr));
             addr = addr.wrapping_add(size as u16);
@@ -669,9 +669,7 @@ impl Cpu {
     /// * `a`: If true, A variant of the instruction is used
     fn rotate(&mut self, dst: Arg, left: bool, through: bool, a: bool) {
         let curr = match dst {
-            Arg::Reg8(dst) => {
-                self.registers.read(dst)
-            }
+            Arg::Reg8(dst) => self.registers.read(dst),
             Arg::MemHl => {
                 let addr = self.registers.read(Reg16::HL);
                 self.memory.read(addr)
@@ -710,9 +708,7 @@ impl Cpu {
 
         // Write back the result
         match dst {
-            Arg::Reg8(dst) => {
-                self.registers.write(dst, value)
-            }
+            Arg::Reg8(dst) => self.registers.write(dst, value),
             Arg::MemHl => {
                 let addr = self.registers.read(Reg16::HL);
                 self.memory.write(addr, value);
@@ -720,11 +716,7 @@ impl Cpu {
             _ => unreachable!("Unexpected dst: {}", dst),
         }
 
-        let zero_flag = if a {
-            false
-        } else {
-            value == 0
-        };
+        let zero_flag = if a { false } else { value == 0 };
 
         // Flags
         self.registers.set(Flag::Zero, zero_flag);
@@ -736,9 +728,7 @@ impl Cpu {
     /// Handle shift instructions
     fn shift(&mut self, dst: Arg, left: bool, arithmetic: bool) {
         let curr = match dst {
-            Arg::Reg8(dst) => {
-                self.registers.read(dst)
-            }
+            Arg::Reg8(dst) => self.registers.read(dst),
             Arg::MemHl => {
                 let addr = self.registers.read(Reg16::HL);
                 self.memory.read(addr)
@@ -766,9 +756,7 @@ impl Cpu {
 
         // Write back the result
         match dst {
-            Arg::Reg8(dst) => {
-                self.registers.write(dst, value)
-            }
+            Arg::Reg8(dst) => self.registers.write(dst, value),
             Arg::MemHl => {
                 let addr = self.registers.read(Reg16::HL);
                 self.memory.write(addr, value);
@@ -804,8 +792,8 @@ impl Cpu {
         // Write upper and lower bytes seperately to the stack.
         // We cannot use the `MemoryWrite` trait because it assumes
         // that memory addresses increase instead of decrease.
-        self.memory.write(self.registers.SP-1, upper);
-        self.memory.write(self.registers.SP-2, lower);
+        self.memory.write(self.registers.SP - 1, upper);
+        self.memory.write(self.registers.SP - 2, lower);
 
         // Decrement SP
         self.registers.SP -= 2;
@@ -1279,7 +1267,9 @@ mod test {
         assert!(!cpu.registers.carry());
 
         // Overflow
-        let inst = Instruction::Adc { src: Reg8::B.into() };
+        let inst = Instruction::Adc {
+            src: Reg8::B.into(),
+        };
         cpu.registers.set(Flag::Carry, true);
         cpu.registers.write(Reg8::A, 0xE1);
         cpu.registers.write(Reg8::B, 0x1E);
@@ -1322,7 +1312,9 @@ mod test {
         cpu.registers.write(Reg8::F, 0);
         cpu.registers.write(Reg8::A, 0x83);
         cpu.registers.write(Reg8::B, 0x38);
-        let inst = Instruction::Sub { src: Reg8::B.into() };
+        let inst = Instruction::Sub {
+            src: Reg8::B.into(),
+        };
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::A), 0x4B);
         assert!(!cpu.registers.zero());
@@ -1344,7 +1336,9 @@ mod test {
         assert!(!cpu.registers.carry());
 
         // Overflow
-        let inst = Instruction::Sbc { src: Reg8::B.into() };
+        let inst = Instruction::Sbc {
+            src: Reg8::B.into(),
+        };
         cpu.registers.set(Flag::Carry, true);
         cpu.registers.write(Reg8::A, 0x3B);
         cpu.registers.write(Reg8::B, 0x4F);
@@ -1459,7 +1453,9 @@ mod test {
         cpu.registers.write(Reg8::B, 0x38);
 
         // ADD, then DAA
-        let inst = Instruction::Add { src: Reg8::B.into() };
+        let inst = Instruction::Add {
+            src: Reg8::B.into(),
+        };
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::A), 0x7D);
 
@@ -1469,7 +1465,9 @@ mod test {
         assert!(!cpu.registers.carry());
 
         // SUB, then DAA
-        let inst = Instruction::Sub { src: Reg8::B.into() };
+        let inst = Instruction::Sub {
+            src: Reg8::B.into(),
+        };
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::A), 0x4B);
         assert!(cpu.registers.subtract());
@@ -1486,11 +1484,15 @@ mod test {
         cpu.registers.write(Reg16::SP, 0xFFFE);
         cpu.registers.write(Reg16::HL, 0x1234);
 
-        let inst = Instruction::Push { src: Reg16::HL.into() };
+        let inst = Instruction::Push {
+            src: Reg16::HL.into(),
+        };
         cpu.execute(inst);
         assert_eq!(cpu.registers.SP, 0xFFFC);
 
-        let inst = Instruction::Pop { dst: Reg16::AF.into() };
+        let inst = Instruction::Pop {
+            dst: Reg16::AF.into(),
+        };
         cpu.execute(inst);
         assert_eq!(cpu.registers.SP, 0xFFFE);
         assert_eq!(cpu.registers.read(Reg16::AF), 0x1230);
@@ -1500,20 +1502,32 @@ mod test {
     fn jumps() {
         let mut cpu = get_cpu();
 
-        let inst = Instruction::Jp { addr: 0x2345, cond: Cond::None };
+        let inst = Instruction::Jp {
+            addr: 0x2345,
+            cond: Cond::None,
+        };
         cpu.execute(inst);
         assert_eq!(cpu.registers.PC, 0x2345);
 
-        let inst = Instruction::Jp { addr: 0x1234, cond: Cond::Zero };
+        let inst = Instruction::Jp {
+            addr: 0x1234,
+            cond: Cond::Zero,
+        };
         cpu.registers.set(Flag::Zero, true);
         cpu.execute(inst);
         assert_eq!(cpu.registers.PC, 0x1234);
 
-        let inst = Instruction::Jr { offset: -0x36, cond: Cond::None };
+        let inst = Instruction::Jr {
+            offset: -0x36,
+            cond: Cond::None,
+        };
         cpu.execute(inst);
         assert_eq!(cpu.registers.PC, 0x1200);
 
-        let inst = Instruction::Jr { offset: 1, cond: Cond::NotCarry };
+        let inst = Instruction::Jr {
+            offset: 1,
+            cond: Cond::NotCarry,
+        };
         cpu.registers.write(Reg16::PC, 0xFFFF);
         cpu.registers.set(Flag::Carry, false);
         cpu.execute(inst);
@@ -1525,7 +1539,10 @@ mod test {
         assert_eq!(cpu.registers.PC, 0x1234);
 
         // CALL, then RET
-        let inst = Instruction::Call { addr: 0x1234, cond: Cond::None };
+        let inst = Instruction::Call {
+            addr: 0x1234,
+            cond: Cond::None,
+        };
         cpu.registers.write(Reg16::PC, 0xFF00);
         cpu.registers.write(Reg16::SP, 0xFFFE);
         cpu.execute(inst);
@@ -1566,7 +1583,9 @@ mod test {
     fn rotate_shift_swap() {
         let mut cpu = get_cpu();
 
-        let inst = Instruction::Rlc { dst: Reg8::B.into() };
+        let inst = Instruction::Rlc {
+            dst: Reg8::B.into(),
+        };
         cpu.registers.write(Reg8::B, 0x85);
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::B), 0x0B);
@@ -1575,7 +1594,9 @@ mod test {
         assert!(!cpu.registers.half_carry());
         assert!(cpu.registers.carry());
 
-        let inst = Instruction::Rl { dst: Reg8::L.into() };
+        let inst = Instruction::Rl {
+            dst: Reg8::L.into(),
+        };
         cpu.registers.clear(Flag::Carry);
         cpu.registers.write(Reg8::L, 0x80);
         cpu.execute(inst);
@@ -1585,7 +1606,9 @@ mod test {
         assert!(!cpu.registers.half_carry());
         assert!(cpu.registers.carry());
 
-        let inst = Instruction::Rrc { dst: Reg8::C.into() };
+        let inst = Instruction::Rrc {
+            dst: Reg8::C.into(),
+        };
         cpu.registers.clear(Flag::Carry);
         cpu.registers.write(Reg8::C, 0x1);
         cpu.execute(inst);
@@ -1595,7 +1618,9 @@ mod test {
         assert!(!cpu.registers.half_carry());
         assert!(cpu.registers.carry());
 
-        let inst = Instruction::Rr { dst: Reg8::A.into() };
+        let inst = Instruction::Rr {
+            dst: Reg8::A.into(),
+        };
         cpu.registers.clear(Flag::Carry);
         cpu.registers.write(Reg8::A, 0x1);
         cpu.execute(inst);
@@ -1605,7 +1630,9 @@ mod test {
         assert!(!cpu.registers.half_carry());
         assert!(cpu.registers.carry());
 
-        let inst = Instruction::Sla { dst: Reg8::D.into() };
+        let inst = Instruction::Sla {
+            dst: Reg8::D.into(),
+        };
         cpu.registers.write(Reg8::D, 0x80);
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::D), 0);
@@ -1614,7 +1641,9 @@ mod test {
         assert!(!cpu.registers.half_carry());
         assert!(cpu.registers.carry());
 
-        let inst = Instruction::Sra { dst: Reg8::A.into() };
+        let inst = Instruction::Sra {
+            dst: Reg8::A.into(),
+        };
         cpu.registers.write(Reg8::A, 0x8A);
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::A), 0xC5);
@@ -1631,7 +1660,9 @@ mod test {
         assert!(!cpu.registers.half_carry());
         assert!(cpu.registers.carry());
 
-        let inst = Instruction::Srl { dst: Reg8::A.into() };
+        let inst = Instruction::Srl {
+            dst: Reg8::A.into(),
+        };
         cpu.registers.clear(Flag::Carry);
         cpu.registers.write(Reg8::A, 0xFF);
         cpu.execute(inst);
@@ -1641,7 +1672,9 @@ mod test {
         assert!(!cpu.registers.half_carry());
         assert!(cpu.registers.carry());
 
-        let inst = Instruction::Swap { dst: Reg8::A.into() };
+        let inst = Instruction::Swap {
+            dst: Reg8::A.into(),
+        };
         cpu.registers.write(Reg8::A, 0xF1);
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::A), 0x1F);
@@ -1655,19 +1688,28 @@ mod test {
     fn bit() {
         let mut cpu = get_cpu();
 
-        let inst = Instruction::Bit { dst: Reg8::B.into(), bit: 2 };
+        let inst = Instruction::Bit {
+            dst: Reg8::B.into(),
+            bit: 2,
+        };
         cpu.registers.write(Reg8::B, 0x4);
         cpu.execute(inst);
         assert!(!cpu.registers.zero());
         assert!(!cpu.registers.subtract());
         assert!(cpu.registers.half_carry());
 
-        let inst = Instruction::Set { dst: Reg8::B.into(), bit: 3 };
+        let inst = Instruction::Set {
+            dst: Reg8::B.into(),
+            bit: 3,
+        };
         cpu.registers.write(Reg8::B, 0x7);
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::B), 0xF);
 
-        let inst = Instruction::Res { dst: Reg8::B.into(), bit: 3 };
+        let inst = Instruction::Res {
+            dst: Reg8::B.into(),
+            bit: 3,
+        };
         cpu.registers.write(Reg8::B, 0xF);
         cpu.execute(inst);
         assert_eq!(cpu.registers.read(Reg8::B), 0x7);

@@ -244,8 +244,9 @@ impl std::fmt::Display for RegisterFile {
         let de = self.read(Reg16::DE);
         let hl = self.read(Reg16::HL);
 
-        write!(f,
-               "AF: {:#06X}\n\
+        write!(
+            f,
+            "AF: {:#06X}\n\
                 BC: {:#06X}\n\
                 DE: {:#06X}\n\
                 HL: {:#06X}\n\
@@ -255,9 +256,16 @@ impl std::fmt::Display for RegisterFile {
                 Subtract: {}\n\
                 HalfCarry: {}\n\
                 Carry: {}",
-            af, bc, de, hl,
-            self.SP, self.PC, self.zero(),
-            self.subtract(), self.half_carry(), self.carry()
+            af,
+            bc,
+            de,
+            hl,
+            self.SP,
+            self.PC,
+            self.zero(),
+            self.subtract(),
+            self.half_carry(),
+            self.carry()
         )
     }
 }

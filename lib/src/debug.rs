@@ -73,7 +73,7 @@ impl Debugger {
             Mode::Step => true,
             Mode::StepN(n) => {
                 if n > 1 {
-                    self.mode = Mode::StepN(n-1);
+                    self.mode = Mode::StepN(n - 1);
                     false
                 } else {
                     // Revert to `step` mode
@@ -87,7 +87,7 @@ impl Debugger {
 
                 if hit {
                     if n > 1 {
-                        self.mode = Mode::ContinueN(n-1);
+                        self.mode = Mode::ContinueN(n - 1);
                         hit = false;
                     } else {
                         // Revert to `step` mode
@@ -185,7 +185,8 @@ impl Debugger {
                         let _ = self.instruction_dump.take();
                         println!("Disabled instruction dumping");
                     } else {
-                        self.instruction_dump = Some(BufWriter::new(File::create(DEBUG_DUMP_FILE).unwrap()));
+                        self.instruction_dump =
+                            Some(BufWriter::new(File::create(DEBUG_DUMP_FILE).unwrap()));
                         println!("Dumping instructions to {}", DEBUG_DUMP_FILE);
                     }
                 }
@@ -204,9 +205,9 @@ impl Debugger {
 
                     // Print the last 5 instructions we've hit
                     let range = if total < count {
-                        0..total-1
+                        0..total - 1
                     } else {
-                        total-count-1..total-1
+                        total - count - 1..total - 1
                     };
 
                     for (inst, pc) in self.instructions[range].iter() {
@@ -315,21 +316,19 @@ impl Debugger {
                     cpu.memory.write(addr, value);
                 }
                 "w" => eprintln!("'w' requires at least 2 arguments"),
-                "info" if line.len() == 2 => {
-                    match line[1] {
-                        "r" | "reg" | "registers" => {
-                            println!("{}", cpu.registers);
-                        }
-                        "b" | "break" | "breakpoints" => {
-                            let mut i = 0;
-                            for (addr, enabled) in &self.breakpoints {
-                                println!("{}: addr = {:#06X}, enabled = {}", i, addr, enabled);
-                                i += 1;
-                            }
-                        }
-                        unknown => eprintln!("Unknown option for 'info': {}", unknown),
+                "info" if line.len() == 2 => match line[1] {
+                    "r" | "reg" | "registers" => {
+                        println!("{}", cpu.registers);
                     }
-                }
+                    "b" | "break" | "breakpoints" => {
+                        let mut i = 0;
+                        for (addr, enabled) in &self.breakpoints {
+                            println!("{}: addr = {:#06X}, enabled = {}", i, addr, enabled);
+                            i += 1;
+                        }
+                    }
+                    unknown => eprintln!("Unknown option for 'info': {}", unknown),
+                },
                 "info" => eprintln!("'info' requires at least 1 argument"),
                 unknown => eprintln!("Unknown command: {}", unknown),
             }

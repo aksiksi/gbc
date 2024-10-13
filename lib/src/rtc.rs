@@ -146,16 +146,8 @@ impl RtcState {
             0x0C => {
                 // Upper bit of day, carry bit, halt flag
                 let mut value = (self.latched.days & 1 << 8 >> 8) as u8;
-                let halt_bit = if self.latched.halt {
-                    1
-                } else {
-                    0
-                };
-                let carry_bit = if self.latched.carry {
-                    1
-                } else {
-                    0
-                };
+                let halt_bit = if self.latched.halt { 1 } else { 0 };
+                let carry_bit = if self.latched.carry { 1 } else { 0 };
 
                 value |= halt_bit << 6;
                 value |= carry_bit << 7;
@@ -211,7 +203,10 @@ impl RtcState {
         // Figure out the number of seconds, minutes, hours, and days that have
         // occurred since the last RTC timestamp
         let seconds = delta.num_seconds();
-        assert!(seconds >= 0, "RTC timestamp is more recent than current UTC time");
+        assert!(
+            seconds >= 0,
+            "RTC timestamp is more recent than current UTC time"
+        );
         let minutes = seconds / 60;
         let hours = minutes / 60;
         let days = hours / 24;
@@ -251,9 +246,7 @@ impl Rtc {
     /// Create RTC state from raw bytes
     pub fn from_bytes(data: &[u8]) -> Result<Self> {
         let state = bincode::deserialize_from(data)?;
-        Ok(Self {
-            state
-        })
+        Ok(Self { state })
     }
 
     /// Dump the state of the RTC

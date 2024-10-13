@@ -84,9 +84,7 @@ impl Ram {
     /// Create empty RAM
     fn new(ram_size: RamSize) -> Option<Self> {
         match ram_size {
-            RamSize::NotPresent => {
-                None
-            }
+            RamSize::NotPresent => None,
             // Otherwise, we have banked RAM
             _ => {
                 // Get raw RAM size in bytes
@@ -764,7 +762,8 @@ impl CartridgeType {
     pub fn is_battery_backed(&self) -> bool {
         use CartridgeType::*;
         match self {
-            RomRamBattery | Mbc1RamBattery | Mbc3RamBattery | Mbc3TimerRamBattery | Mbc4RamBattery | Mbc5RamBattery | Mbc5RumbleRamBattery => true,
+            RomRamBattery | Mbc1RamBattery | Mbc3RamBattery | Mbc3TimerRamBattery
+            | Mbc4RamBattery | Mbc5RamBattery | Mbc5RumbleRamBattery => true,
             _ => false,
         }
     }
@@ -835,10 +834,7 @@ pub struct Cartridge {
 
 impl Cartridge {
     pub fn from_bytes(data: Vec<u8>, boot_rom: bool) -> Self {
-        Self {
-            data,
-            boot_rom,
-        }
+        Self { data, boot_rom }
     }
 
     /// Tries to figure out if this is a valid cartridge.

@@ -1,9 +1,9 @@
 use wasm_bindgen::prelude::*;
 
-use gbc::Gameboy as Gameboy_;
 use gbc::cartridge::Cartridge as Cartridge_;
 use gbc::joypad::{JoypadEvent, JoypadInput as JoypadInput_};
-use gbc::ppu::{GameboyRgb, LCD_WIDTH, LCD_HEIGHT};
+use gbc::ppu::{GameboyRgb, LCD_HEIGHT, LCD_WIDTH};
+use gbc::Gameboy as Gameboy_;
 
 // Re-exported JopypadInput enum
 #[wasm_bindgen]
@@ -42,9 +42,10 @@ impl Cartridge {
     #[wasm_bindgen(constructor)]
     pub fn new(data: Box<[u8]>) -> Result<Cartridge, JsValue> {
         let cartridge = Cartridge_::from_bytes(Vec::from(data), false);
-        cartridge.validate()
-                 .map(|_| Self(cartridge))
-                 .map_err(|e| JsValue::from_str(&e.to_string()))
+        cartridge
+            .validate()
+            .map(|_| Self(cartridge))
+            .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 }
 
@@ -59,14 +60,11 @@ impl Gameboy {
     /// Create a new `Gameboy` from a valid cartridge
     #[wasm_bindgen(constructor)]
     pub fn new(cartridge: Cartridge) -> Result<Gameboy, JsValue> {
-        let inner = Gameboy_::init(cartridge.0, false)
-            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let inner =
+            Gameboy_::init(cartridge.0, false).map_err(|e| JsValue::from_str(&e.to_string()))?;
         let inputs = Vec::new();
 
-        Ok(Self {
-            inner,
-            inputs,
-        })
+        Ok(Self { inner, inputs })
     }
 
     /// Run the Gameboy for a single frame.
@@ -111,11 +109,11 @@ impl Gameboy {
     /// Create a Gameboy from an existing save state
     pub fn load(data: &[u8], cartridge: Cartridge) -> Result<Gameboy, JsValue> {
         Gameboy_::load(data, cartridge.0)
-                 .map(|gameboy| Self {
-                     inner: gameboy,
-                     inputs: Vec::new(),
-                 })
-                 .map_err(|e| JsValue::from_str(&e.to_string()))
+            .map(|gameboy| Self {
+                inner: gameboy,
+                inputs: Vec::new(),
+            })
+            .map_err(|e| JsValue::from_str(&e.to_string()))
     }
 
     pub fn lcd_width() -> usize {

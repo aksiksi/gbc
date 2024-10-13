@@ -82,22 +82,27 @@ impl GameboyRgb {
 static DMG_PALETTE: [GameboyRgb; 4] = [
     // White
     GameboyRgb {
-        red: 0xE0, green: 0xF8, blue: 0xD0,
+        red: 0xE0,
+        green: 0xF8,
+        blue: 0xD0,
     },
-
     // Light gray
     GameboyRgb {
-        red: 0x88, green: 0xC0, blue: 0x70,
+        red: 0x88,
+        green: 0xC0,
+        blue: 0x70,
     },
-
     // Dark gray
     GameboyRgb {
-        red: 0x34, green: 0x68, blue: 0x56,
+        red: 0x34,
+        green: 0x68,
+        blue: 0x56,
     },
-
     // Black
     GameboyRgb {
-        red: 0x08, green: 0x18, blue: 0x20,
+        red: 0x08,
+        green: 0x18,
+        blue: 0x20,
     },
 ];
 
@@ -187,7 +192,7 @@ impl Vram {
     pub fn get_bank_slice(&self, bank: u8, start_addr: u16, length: usize) -> &[u8] {
         let bank_offset = bank as usize * Self::BANK_SIZE;
         let start_addr = (start_addr - Self::BASE_ADDR) as usize + bank_offset;
-        &self.data[start_addr..start_addr+length]
+        &self.data[start_addr..start_addr + length]
     }
 }
 
@@ -226,9 +231,7 @@ impl LcdControl {
             raw = 0x91;
         }
 
-        Self {
-            raw,
-        }
+        Self { raw }
     }
 
     pub fn lcd_display_enable(&self) -> bool {
@@ -292,9 +295,7 @@ struct LcdStat {
 
 impl LcdStat {
     pub fn new() -> Self {
-        Self {
-            raw: 0,
-        }
+        Self { raw: 0 }
     }
 
     pub fn ly_enabled(&self) -> bool {
@@ -452,7 +453,8 @@ impl Ppu {
     const OAM_SCAN_DOTS: u16 = 80;
     const OAM_READ_DOTS: u16 = 172;
     const HBLANK_DOTS: u16 = 204;
-    const VBLANK_DOTS: u16 = Self::DOTS_PER_LINE * (Self::TOTAL_LINES - Self::VBLANK_START_LINE) as u16;
+    const VBLANK_DOTS: u16 =
+        Self::DOTS_PER_LINE * (Self::TOTAL_LINES - Self::VBLANK_START_LINE) as u16;
 
     pub fn new(cgb: bool, boot_rom: bool) -> Self {
         Self {
@@ -517,7 +519,8 @@ impl Ppu {
         let mode = if line < Self::VBLANK_START_LINE {
             if dot < Self::OAM_SCAN_DOTS {
                 StatMode::OamScan
-            } else if dot >= Self::OAM_SCAN_DOTS && dot < Self::OAM_SCAN_DOTS + Self::OAM_READ_DOTS {
+            } else if dot >= Self::OAM_SCAN_DOTS && dot < Self::OAM_SCAN_DOTS + Self::OAM_READ_DOTS
+            {
                 StatMode::OamRead
             } else {
                 StatMode::Hblank
@@ -612,11 +615,7 @@ impl Ppu {
             StatMode::Vblank => Self::VBLANK_DOTS,
         };
 
-        let cycles_in_mode = if speed {
-            dots * 2
-        } else {
-            dots
-        };
+        let cycles_in_mode = if speed { dots * 2 } else { dots };
 
         (mode, cycles_in_mode as u16)
     }
@@ -642,10 +641,9 @@ impl Ppu {
 
                 // If the window has been drawn on this scanline, increment the
                 // internal window line counter
-                let window_drawn =
-                    self.lcdc.window_display_enable() &&
-                    self.ly >= self.wy &&
-                    159 >= self.wx.wrapping_sub(7);
+                let window_drawn = self.lcdc.window_display_enable()
+                    && self.ly >= self.wy
+                    && 159 >= self.wx.wrapping_sub(7);
 
                 if window_drawn {
                     self.window_line_counter += 1;
@@ -671,11 +669,7 @@ impl Ppu {
     fn find_visible_sprites(&mut self) {
         let scanline = self.ly;
 
-        let size = if self.lcdc.sprite_size() {
-            16
-        } else {
-            8
-        };
+        let size = if self.lcdc.sprite_size() { 16 } else { 8 };
 
         for chunk in self.oam.chunks_exact(4) {
             let y = chunk[0];
@@ -716,9 +710,7 @@ impl Ppu {
         // 1. Non-DMG mode
         // 2. Bit 0 of OPRI is set
         if !self.cgb || (self.opri & 1 != 0) {
-            self.sprites.sort_by(|a, b| {
-                a.x.cmp(&b.x)
-            });
+            self.sprites.sort_by(|a, b| a.x.cmp(&b.x));
         }
     }
 
@@ -747,10 +739,9 @@ impl Ppu {
         // 3. If priority bit is reset (DMG): BG and window turn white and sprites get priority
         if self.lcdc.bg_priority() || self.cgb {
             // Check if this pixel is inside the window area
-            let in_window =
-                self.lcdc.window_display_enable() &&
-                scanline >= self.wy &&
-                pixel >= self.wx.wrapping_sub(7);
+            let in_window = self.lcdc.window_display_enable()
+                && scanline >= self.wy
+                && pixel >= self.wx.wrapping_sub(7);
 
             let (data, priority, color_index) = if !in_window {
                 // Normal BG pixel
@@ -790,7 +781,8 @@ impl Ppu {
 
         // Push the pixel to the frame buffer
         if let Some(data) = pixel_data {
-            self.frame_buffer.write(pixel as usize, scanline as usize, data);
+            self.frame_buffer
+                .write(pixel as usize, scanline as usize, data);
         }
     }
 
@@ -820,7 +812,12 @@ impl Ppu {
     ///    compute the RGB value for the pixel.
     ///
     /// Returns: (pixel data, BG priority, pixel color index)
-    fn fetch_bg_pixel_data(&self, bg_pixel_x: u8, bg_pixel_y: u8, tile_map_base: u16) -> (GameboyRgb, bool, u8) {
+    fn fetch_bg_pixel_data(
+        &self,
+        bg_pixel_x: u8,
+        bg_pixel_y: u8,
+        tile_map_base: u16,
+    ) -> (GameboyRgb, bool, u8) {
         // Select base address for BG tile data based on LCDC register
         let (tile_data_base, tile_data_index_signed) = if !self.lcdc.bg_tile_data_select() {
             (0x8000, false)
@@ -888,9 +885,13 @@ impl Ppu {
             tile_pixel_y = 7 - tile_pixel_y;
         }
 
-        let (pixel_data, color_index) =
-            self.fetch_pixel_data(tile_data, tile_pixel_x,
-                                  tile_pixel_y, tile_palette_num, false);
+        let (pixel_data, color_index) = self.fetch_pixel_data(
+            tile_data,
+            tile_pixel_x,
+            tile_pixel_y,
+            tile_palette_num,
+            false,
+        );
 
         (pixel_data, bg_priority, color_index)
     }
@@ -906,11 +907,7 @@ impl Ppu {
     fn fetch_sprite_pixel_data(&self, pixel: u8) -> Option<(GameboyRgb, bool)> {
         let tile_data_base = 0x8000;
 
-        let size = if self.lcdc.sprite_size() {
-            16
-        } else {
-            8
-        };
+        let size = if self.lcdc.sprite_size() { 16 } else { 8 };
 
         let scanline = self.ly;
 
@@ -997,8 +994,7 @@ impl Ppu {
             }
 
             let (pixel_data, color_index) =
-                self.fetch_pixel_data(tile_data, tile_pixel_x,
-                                      tile_pixel_y, palette_num, true);
+                self.fetch_pixel_data(tile_data, tile_pixel_x, tile_pixel_y, palette_num, true);
 
             // If the sprite pixel is not transparent, return it
             // Otherwise, check the next sprite in the list (priority ordered)
@@ -1013,8 +1009,14 @@ impl Ppu {
     /// Returns pixel data for a single BG/window or sprite pixel.
     ///
     /// Returns: (pixel data, color index)
-    fn fetch_pixel_data(&self, tile_data: [u8; 16], tile_pixel_x: u8,
-                        tile_pixel_y: u8, tile_palette_num: u8, sprite: bool) -> (GameboyRgb, u8) {
+    fn fetch_pixel_data(
+        &self,
+        tile_data: [u8; 16],
+        tile_pixel_x: u8,
+        tile_pixel_y: u8,
+        tile_palette_num: u8,
+        sprite: bool,
+    ) -> (GameboyRgb, u8) {
         // (7)
         //
         // The y position of the pixel maps to the "line" (2 bytes) in the tile data
@@ -1040,18 +1042,14 @@ impl Ppu {
                 &self.bg_palette_ram
             };
 
-            let pixel_color = (palette_ram[palette_index + 1] as u16) << 8 |
-                              palette_ram[palette_index] as u16;
+            let pixel_color =
+                (palette_ram[palette_index + 1] as u16) << 8 | palette_ram[palette_index] as u16;
 
             let red = (pixel_color & 0x001F) as u8;
             let green = ((pixel_color & 0x03E0) >> 5) as u8;
             let blue = ((pixel_color & 0x7C00) >> 10) as u8;
 
-            pixel_data = GameboyRgb {
-                red,
-                blue,
-                green,
-            };
+            pixel_data = GameboyRgb { red, blue, green };
 
             pixel_data.scale_to_rgb();
         } else {
@@ -1131,20 +1129,22 @@ impl Ppu {
 
     /// Returns `true` if VRAM is locked to CPU
     fn vram_locked(&self) -> bool {
-        self.lcdc.lcd_display_enable() && match self.stat.mode() {
-            // Locked during OAM read (mode 3)
-            StatMode::OamRead => true,
-            _ => false,
-        }
+        self.lcdc.lcd_display_enable()
+            && match self.stat.mode() {
+                // Locked during OAM read (mode 3)
+                StatMode::OamRead => true,
+                _ => false,
+            }
     }
 
     /// Returns `true` if OAM is locked to CPU
     pub fn oam_locked(&self) -> bool {
-        self.lcdc.lcd_display_enable() && match self.stat.mode() {
-            // Locked during Scan and Read
-            StatMode::OamScan | StatMode::OamRead => true,
-            StatMode::Vblank | StatMode::Hblank => false,
-        }
+        self.lcdc.lcd_display_enable()
+            && match self.stat.mode() {
+                // Locked during Scan and Read
+                StatMode::OamScan | StatMode::OamRead => true,
+                StatMode::Vblank | StatMode::Hblank => false,
+            }
     }
 
     pub fn vram(&self) -> &Vram {
@@ -1285,7 +1285,11 @@ impl MemoryWrite<u16, u8> for Ppu {
                 if !self.vram_locked() {
                     self.palette_write(value, true);
                 } else {
-                    log::info!("Blocked sprite palette write to 0x{:X}: 0x{:X}", addr, value);
+                    log::info!(
+                        "Blocked sprite palette write to 0x{:X}: 0x{:X}",
+                        addr,
+                        value
+                    );
                 }
             }
             0xFF6C => {

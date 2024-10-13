@@ -13,9 +13,9 @@ mod timer;
 #[cfg(feature = "debug")]
 pub mod debug;
 
+use cartridge::{Cartridge, Controller};
 pub use cpu::Cpu;
 use cpu::Interrupt;
-use cartridge::{Cartridge, Controller};
 pub use error::{Error, Result};
 use joypad::JoypadEvent;
 use memory::MemoryWrite;
@@ -227,7 +227,9 @@ impl Gameboy {
 
     /// Load persisted state into this `Gameboy`.
     pub fn unpersist<T, U>(&mut self, ram: Option<T>, rtc: Option<U>) -> Result<()>
-        where T: AsRef<[u8]>, U: AsRef<[u8]>
+    where
+        T: AsRef<[u8]>,
+        U: AsRef<[u8]>,
     {
         if !self.is_persist_required() {
             return Ok(());
