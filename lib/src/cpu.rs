@@ -7,6 +7,7 @@ use crate::error::Result;
 use crate::instructions::{Arg, Cond, Cycles, Instruction};
 use crate::memory::{MemoryBus, MemoryRead, MemoryWrite};
 use crate::registers::{Flag, Reg16, Reg8, RegisterFile, RegisterOps};
+use crate::{Action, ActionQueue, CpuAction};
 
 #[derive(Clone, Copy)]
 #[repr(u8)]
@@ -168,7 +169,7 @@ impl Cpu {
 
     /// Executes the next instruction and returns the number of cycles it
     /// took to complete.
-    pub fn step(&mut self) -> (u16, Instruction) {
+    pub fn step(&mut self, queue: &mut ActionQueue) -> (u16, Instruction) {
         // Check for pending interrupts before fetching the next instruction.
         // If an interrupt is serviced, PC will jump to the ISR address.
         let int_cycles = self.service_interrupts();
@@ -180,6 +181,8 @@ impl Cpu {
 
         // Fetch and decode the next instruction at PC
         let (inst, size, cycles) = self.fetch(None);
+
+        queue.enqueue(cycles / 4, Action::Cpu(CpuAction::Execute(inst)));
 
         if let Some(_) = &mut self.trace {
             self.trace(&inst);

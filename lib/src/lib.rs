@@ -27,10 +27,91 @@ pub struct GameboyState<'a> {
     pub rtc: Option<Vec<u8>>,
 }
 
+#[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
+pub enum CpuAction {
+    None,
+    Fetch,
+    Execute(instructions::Instruction),
+    MemWait,
+    ServiceInterrupts,
+}
+
+#[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
+pub enum Action {
+    None,
+    Cpu(CpuAction),
+    PpuRenderDot,
+    ProcessDma,
+    ProcessTimer,
+    ProcessRtc,
+}
+
+// Action ring buffer for next C M-cycles. Each cycle can hold up to A actions.
+//
+// 1 M-cycle = 4 CPU cycles
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
+pub struct ActionQueue {
+    idx: u8,
+    buf: Box<[[Action; Self::A]; Self::C]>,
+    counts: [u8; Self::C],
+}
+
+impl ActionQueue {
+    // Number of M-cycles
+    const C: usize = 16;
+    // Number of actions
+    const A: usize = 16;
+
+    fn new() -> Self {
+        let mut q = Self {
+            idx: 0,
+            buf: Box::new([[Action::None; Self::A]; Self::C]),
+            counts: [0; Self::C],
+        };
+        q.buf[0][0] = Action::Cpu(CpuAction::Fetch);
+        q.counts[0] = 1;
+        q
+    }
+
+    // Enqueue an action to be executed a number of M-cycles in the future.
+    fn enqueue(&mut self, cycles: u8, action: Action) {
+        let idx = (self.idx + cycles) as usize % Self::C;
+        assert!(self.counts[idx] <= Self::A as u8);
+        let pos = self.counts[idx] as usize;
+        self.buf[idx][pos] = action;
+        self.counts[idx] += 1;
+    }
+
+    // Returns actions for current M-cycle and advances the buffer to the next
+    // valid M-cycle.
+    fn dequeue(&mut self) -> Option<[Action; Self::A]> {
+        let idx = self.idx as usize;
+
+        // Advance the queue position.
+        self.idx = (self.idx + 1) % Self::C as u8;
+
+        // Fast path: nothing to do for this M-cycle.
+        if self.counts[idx] == 0 {
+            return None;
+        }
+
+        let actions = self.buf[idx];
+
+        // Clear out the current slot in the buffer.
+        self.buf[idx] = [Action::None; Self::A];
+        self.counts[idx] = 0;
+
+        Some(actions)
+    }
+}
+
 #[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 /// Gameboy
 pub struct Gameboy {
     cpu: Cpu,
+    action_queue: ActionQueue,
 
     #[cfg(feature = "debug")]
     #[cfg_attr(feature = "save", serde(skip))]
@@ -56,6 +137,7 @@ impl Gameboy {
         #[cfg(not(feature = "debug"))]
         let gameboy = Self {
             cpu,
+            action_queue: ActionQueue::new(),
         };
 
         Ok(gameboy)
@@ -76,7 +158,7 @@ impl Gameboy {
         // Execute a step of the CPU
         //
         // This handles interrupt processing and DMA internally.
-        let (cycles_taken, _inst) = self.cpu.step();
+        let (cycles_taken, _inst) = self.cpu.step(&mut self.action_queue);
 
         let mut interrupts = Vec::new();
 

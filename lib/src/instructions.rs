@@ -2,6 +2,7 @@ use crate::registers::{Reg16, Reg8};
 
 /// A single argument to an instruction.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 pub enum Arg {
     /// 8-bit register
     Reg8(Reg8),
@@ -70,6 +71,7 @@ impl From<Reg16> for Arg {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 pub enum Cond {
     None,
     NotZero,
@@ -96,6 +98,7 @@ impl std::fmt::Display for Cond {
 ///
 /// Tuple contains either: (source) or (dest) or (dest, source)
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "save", derive(serde::Serialize), derive(serde::Deserialize))]
 pub enum Instruction {
     /// Load an 8-bit or 16-bit value from `src` into `dst`
     ///

@@ -1,5 +1,7 @@
 # Useful References
 
+* https://gbdev.io/pandocs/
+* https://gbdev.io/gb-opcodes/optables/
 * Wiki on how OAM DMA works: https://gbdev.gg8.se/wiki/articles/OAM_DMA_tutorial
 * MAME instruction handler: https://github.com/mamedev/mame/blob/master/src/devices/cpu/lr35902/opc_main.hxx
 * Sameboy (solid emulator in C): https://github.com/LIJI32/SameBoy
@@ -8,6 +10,7 @@
 * Blargg sound tests: https://forums.nesdev.com/viewtopic.php?t=13730
 * Blargg's mem_timing tests: https://www.reddit.com/r/EmuDev/comments/j4xn0s/gb_how_to_get_correct_memory_timings/
     * Passing these tests require that the timer and all peripherals be updated after every memory operation
+* DMA: https://gist.github.com/drhelius/3394856
 
 # NOTES
 
@@ -109,3 +112,114 @@ In JS:
 ## Save States
 
 * Use `Vec<u8>` for save state methods. Allow the upper layer to figure out how to handle the raw data.
+
+## Actions Queue
+
+Idea: enqueue actions to perform in future M-cycles (4 clock cycles).
+
+Core loop:
+    * CPU step -> returns cycles
+    * Memory step - PPU, timer, serial, RTC
+    * Trigger interrupts (write to memory)
+    * Speed switch (?)
+
+CPU step:
+    * Service interrupts
+    * Check CPU halted
+    * Fetch instruction
+    * Trace (debugger)
+    * Execute instruction
+    * Check stopped
+    * Handle DMA if not stopped
+
+Memory step:
+    * PPU step (cycles)
+    * Timer step (cycles)
+    * Serial interrupt
+    * RTC (cycles)
+
+### New Approach
+
+Action queue init: [Fetch]
+
+Core step:
+    * CPU step
+    * Memory step
+    * Trigger interrupts
+    * Speed switch (?)
+
+CPU step:
+
+```
+for action in queue:
+    fetch_cycles = None
+    switch action:
+        case Cpu::ProcessInterrupts
+            # Interrupt triggered?
+            # Determine highest prio ready interrupt
+            # Disable IME
+            # Push PC to stack
+            # Compute JMP addr
+            # Set new PC
+            fetch_cycles = Some(1)
+        case Cpu::Fetch
+            # Fetch instruction at PC
+            # Push Execute(Inst) action to queue in N M-cycles
+            # Update PC
+        case Cpu::Execute:
+            # Execute instruction at PC
+            # Trace inst. w/ debugger
+            # Check taken/not taken
+            # Push Cpu::Delay if taken and fetch next later
+            fetch_cycles = Some(n)
+            # else:
+            fetch_cycles = Some(1)
+        case Cpu::Delay
+            # TODO
+        case Cpu::HandleOamDma(pos)
+            # Check if OAM DMA active
+            # Process 4 bytes every M-cycle (1 per clock cycle)
+            # Copy 4 bytes based on pos
+            if active:
+                queue.push(HandleOamDma(pos+1), 1)
+        case Cpu::HandleHdma:
+            # Check if HDMA active (in HBLANK)
+            # Process 16 bytes???
+
+
+# Process interrupts every cycle if enabled
+if ime:
+    queue.push(ProcessInterrupts, 1)
+
+if not halted:
+    if let Some(cycles) = fetch_cycles {
+        queue.push(Fetch, cycles)
+    }
+
+
+
+
+```
+
+Memory step:
+
+```
+for action in queue:
+    switch action:
+        case HandlePpu:
+            # Render 1 dot
+        case Cpu::Execute:
+            # Execute instruction
+            # Check taken/not taken
+            # Trace w/ debugger
+        case Cpu::Delay
+            # TODO
+        case Cpu::ProcessInterrupts
+            # Interrupt triggered?
+            # Push Execute(Inst) in 1 M-cycle
+        case Cpu::HandleDma
+            # Process 1 M-cycle worth of DMA
+
+queue.push(HandlePpu, 1)
+queue.push(
+```
